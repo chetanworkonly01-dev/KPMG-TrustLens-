@@ -22,7 +22,7 @@ export async function POST(request: NextRequest) {
       type: loginConfig ? 'portal' : 'website',
       loginConfig,
       crawlDepth: Math.min(crawlDepth, 5),
-      maxPages: Math.min(maxPages, 20),
+      maxPages: Math.min(maxPages, 200),
       includeAI,
       wcagLevels
     });

@@ -893,7 +893,8 @@ export async function runCustomRules(
           recommendation: result.recommendation,
           codeFix: result.codeFix,
           category: rule.category,
-          source: 'custom-rule'
+          source: 'custom-rule',
+          confidence: 'medium' as const
         });
       }
     } catch (error) {

@@ -1,40 +1,104 @@
-import { AccessibilityIssue, AuditScore, AuditReport, WcagMappingEntry, RemediationStep, PageBreakdownEntry } from '../types/audit';
+import { AccessibilityIssue, AuditScore, AuditReport, WcagMappingEntry, RemediationStep, PageBreakdownEntry, GroupedIssue, CrawlCoverage, JourneyTestResult } from '../types/audit';
 import { WCAG_CRITERIA } from '../wcag/criteria';
-import { getComplianceLabel } from './scoring';
+import { getComplianceLabel, groupIssues } from './scoring';
 
 export function generateReport(
   auditId: string,
   issues: AccessibilityIssue[],
   score: AuditScore,
-  pages: { url: string; title: string }[]
+  pages: { url: string; title: string }[],
+  crawlCoverage?: CrawlCoverage,
+  journeyResults?: JourneyTestResult[]
 ): AuditReport {
+  const pageCount = pages.length || 1;
+  const grouped = groupIssues(issues, pageCount);
+  const topCritical = getTopCritical(grouped);
+
   return {
     id: `report-${auditId}`,
     auditId,
-    executiveSummary: generateExecutiveSummary(score, issues),
+    executiveSummary: generateExecutiveSummary(score, issues, grouped, crawlCoverage, journeyResults),
     score,
     issues,
+    groupedIssues: grouped,
+    topCritical,
     wcagMapping: generateWcagMapping(issues),
-    remediationPlan: generateRemediationPlan(issues),
+    remediationPlan: generateRemediationPlan(grouped, pageCount),
     pageBreakdown: generatePageBreakdown(issues, pages),
+    crawlCoverage,
+    journeyResults,
     generatedAt: new Date().toISOString()
   };
 }
 
-function generateExecutiveSummary(score: AuditScore, issues: AccessibilityIssue[]): string {
+/**
+ * Get top critical issues to fix first — smart prioritization
+ * Sorted by: severity > frequency > impact on user journeys
+ */
+function getTopCritical(grouped: GroupedIssue[]): GroupedIssue[] {
+  const severityOrder: Record<string, number> = { critical: 0, high: 1, medium: 2, low: 3 };
+
+  return grouped
+    .filter(g => g.severity === 'critical' || g.severity === 'high')
+    .sort((a, b) => {
+      // Primary: severity
+      const sevDiff = severityOrder[a.severity] - severityOrder[b.severity];
+      if (sevDiff !== 0) return sevDiff;
+      // Secondary: frequency across pages
+      if (b.frequency !== a.frequency) return b.frequency - a.frequency;
+      // Tertiary: occurrence count
+      return b.occurrenceCount - a.occurrenceCount;
+    })
+    .slice(0, 10);
+}
+
+function generateExecutiveSummary(
+  score: AuditScore,
+  issues: AccessibilityIssue[],
+  grouped: GroupedIssue[],
+  crawlCoverage?: CrawlCoverage,
+  journeyResults?: JourneyTestResult[]
+): string {
   const compliance = getComplianceLabel(score.complianceLevel);
   const criticalCount = score.issueBySeverity.critical;
   const highCount = score.issueBySeverity.high;
-  
+  const pageCount = [...new Set(issues.map(i => i.pageUrl))].length || 1;
+
   let summary = `This accessibility audit evaluated the target against WCAG 2.2 guidelines. `;
   summary += `The overall accessibility score is ${score.overall}/100, classified as "${compliance}". `;
-  summary += `A total of ${score.totalIssues} issues were identified across ${issues.length > 0 ? [...new Set(issues.map(i => i.pageUrl))].length : 0} page(s). `;
+  summary += `A total of ${score.totalIssues} issues were identified (${score.uniqueIssues} unique issue types) across ${pageCount} page(s). `;
+
+  // Coverage info
+  if (crawlCoverage) {
+    summary += `\n\n📊 CRAWL COVERAGE: ${crawlCoverage.pagesAudited} of ${crawlCoverage.totalPagesFound} discovered pages were audited (${crawlCoverage.coveragePercent}% coverage). `;
+    if (crawlCoverage.pagesSkipped > 0) {
+      summary += `${crawlCoverage.pagesSkipped} page(s) were skipped.`;
+    }
+  }
 
   if (criticalCount > 0) {
     summary += `\n\n⚠️ URGENT: ${criticalCount} critical issue(s) require immediate attention. These block access for users with disabilities. `;
   }
   if (highCount > 0) {
     summary += `${highCount} high-severity issue(s) significantly impact usability. `;
+  }
+
+  // Most widespread issues
+  const widespread = grouped.filter(g => g.frequency > 50);
+  if (widespread.length > 0) {
+    summary += `\n\n🔥 WIDESPREAD: ${widespread.length} issue(s) appear on more than 50% of pages: `;
+    summary += widespread.slice(0, 3).map(w => `"${w.title}" (${w.affectedPages.length} pages)`).join(', ') + '.';
+  }
+
+  // Journey test results
+  if (journeyResults && journeyResults.length > 0) {
+    const passed = journeyResults.filter(j => j.passed).length;
+    const total = journeyResults.length;
+    summary += `\n\n🚶 USER JOURNEY TESTS: ${passed}/${total} journeys passed. `;
+    const failedJourneys = journeyResults.filter(j => !j.passed);
+    if (failedJourneys.length > 0) {
+      summary += `Failed: ${failedJourneys.map(j => j.journeyName).join(', ')}.`;
+    }
   }
 
   summary += `\n\nCategory breakdown: `;
@@ -46,6 +110,12 @@ function generateExecutiveSummary(score: AuditScore, issues: AccessibilityIssue[
   if (score.categoryScores.pdf < 100) {
     summary += ` PDF: ${score.categoryScores.pdf}/100.`;
   }
+
+  // Confidence breakdown
+  const highConf = issues.filter(i => i.confidence === 'high').length;
+  const medConf = issues.filter(i => i.confidence === 'medium').length;
+  const lowConf = issues.filter(i => i.confidence === 'low').length;
+  summary += `\n\n🎯 CONFIDENCE: ${highConf} high, ${medConf} medium, ${lowConf} low confidence issues.`;
 
   return summary;
 }
@@ -72,31 +142,23 @@ function generateWcagMapping(issues: AccessibilityIssue[]): WcagMappingEntry[] {
   return entries.sort((a, b) => b.issueCount - a.issueCount);
 }
 
-function generateRemediationPlan(issues: AccessibilityIssue[]): RemediationStep[] {
-  const grouped = new Map<string, AccessibilityIssue[]>();
-  for (const issue of issues) {
-    const key = `${issue.testId}-${issue.title}`;
-    if (!grouped.has(key)) grouped.set(key, []);
-    grouped.get(key)!.push(issue);
-  }
-
+/**
+ * Smart remediation plan based on grouped issues
+ */
+function generateRemediationPlan(grouped: GroupedIssue[], pageCount: number): RemediationStep[] {
   const steps: RemediationStep[] = [];
   let priority = 1;
-  const severityOrder: ('critical' | 'high' | 'medium' | 'low')[] = ['critical', 'high', 'medium', 'low'];
 
-  for (const severity of severityOrder) {
-    for (const [, group] of grouped.entries()) {
-      if (group[0].severity !== severity) continue;
-      const pages = [...new Set(group.map(i => i.pageUrl))];
-      steps.push({
-        priority: priority++,
-        severity,
-        title: group[0].title,
-        description: `${group[0].recommendation} (${group.length} instance${group.length > 1 ? 's' : ''})`,
-        affectedPages: pages,
-        estimatedEffort: group.length > 5 ? 'high' : group.length > 2 ? 'medium' : 'low'
-      });
-    }
+  for (const group of grouped) {
+    steps.push({
+      priority: priority++,
+      severity: group.severity,
+      title: group.title,
+      description: `${group.recommendation} (${group.occurrenceCount} instance${group.occurrenceCount > 1 ? 's' : ''} across ${group.affectedPages.length} page${group.affectedPages.length > 1 ? 's' : ''})`,
+      affectedPages: group.affectedPages,
+      estimatedEffort: group.occurrenceCount > 10 ? 'high' : group.occurrenceCount > 3 ? 'medium' : 'low',
+      frequency: group.frequency,
+    });
   }
 
   return steps;

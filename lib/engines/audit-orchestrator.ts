@@ -1,11 +1,13 @@
-import { AuditConfig, AuditResult, AccessibilityIssue, PageData } from '../types/audit';
+import { AuditConfig, AuditResult, AccessibilityIssue, PageData, CrawlCoverage, TestLogEntry } from '../types/audit';
 import { crawlWebsite, closeCrawler } from './crawler';
 import { scanWithAxe } from './axe-scanner';
 import { runCustomRules } from './custom-rules';
 import { analyzePdf } from './pdf-analyzer';
-import { analyzeWithAI } from './ai-analyzer';
+import { analyzeWithAI, assignConfidence } from './ai-analyzer';
 import { calculateScore } from './scoring';
 import { generateReport } from './report-generator';
+import { runJourneyTests } from './journey-tester';
+import { runTestSuite, TEST_CASES } from './test-runner';
 import { v4 as uuidv4 } from 'uuid';
 
 // In-memory audit store (would be database in production)
@@ -21,13 +23,24 @@ export function getAllAudits(): AuditResult[] {
   );
 }
 
+function createEmptyScore() {
+  return {
+    overall: 0, categoryScores: { perceivable: 0, operable: 0, understandable: 0, robust: 0, pdf: 0 },
+    complianceLevel: 'non-compliant' as const, totalIssues: 0, uniqueIssues: 0,
+    issueBySeverity: { critical: 0, high: 0, medium: 0, low: 0 },
+    issueByLevel: { A: 0, AA: 0, AAA: 0 },
+    testsRun: 0, testsPassed: 0, testsFailed: 0
+  };
+}
+
 export async function runWebsiteAudit(config: AuditConfig): Promise<string> {
   const id = uuidv4();
   const audit: AuditResult = {
     id, config,
     status: 'pending', progress: 0, progressMessage: 'Initializing...',
     pages: [], issues: [],
-    score: { overall: 0, categoryScores: { perceivable: 0, operable: 0, understandable: 0, robust: 0, pdf: 0 }, complianceLevel: 'non-compliant', totalIssues: 0, issueBySeverity: { critical: 0, high: 0, medium: 0, low: 0 }, issueByLevel: { A: 0, AA: 0, AAA: 0 } },
+    score: createEmptyScore(),
+    testResults: [], testLog: [],
     startedAt: new Date().toISOString()
   };
   auditStore.set(id, audit);
@@ -48,10 +61,20 @@ async function runAuditPipeline(id: string, config: AuditConfig) {
     audit.progress = pct;
   };
 
+  const addLog = (entry: TestLogEntry) => {
+    audit.testLog.push(entry);
+    // Update progress message to show current test
+    if (entry.status === 'running') {
+      audit.progressMessage = entry.message;
+    }
+  };
+
   try {
-    // Phase 1: Crawl
+    // ========================================
+    // PHASE 1: DEEP CRAWL
+    // ========================================
     audit.status = 'crawling';
-    updateProgress('Starting website crawl...', 5);
+    updateProgress('Starting deep website crawl...', 5);
 
     const crawlResult = await crawlWebsite({
       url: config.url!,
@@ -63,36 +86,111 @@ async function runAuditPipeline(id: string, config: AuditConfig) {
 
     audit.pages = crawlResult.pages;
 
-    // Phase 2: Scan with axe-core
+    const crawlCoverage: CrawlCoverage = {
+      totalPagesFound: crawlResult.totalFound,
+      pagesAudited: crawlResult.pages.length,
+      pagesSkipped: crawlResult.skippedPages.length,
+      coveragePercent: crawlResult.totalFound > 0
+        ? Math.round((crawlResult.pages.length / crawlResult.totalFound) * 100)
+        : 100,
+      skippedPages: crawlResult.skippedPages.slice(0, 50),
+      discoveryMethods: crawlResult.discoveryMethods,
+    };
+    audit.crawlCoverage = crawlCoverage;
+
+    updateProgress(`Crawl complete: ${crawlResult.pages.length} pages. Starting tests...`, 50);
+
+    // ========================================
+    // PHASE 2: TEST-DRIVEN EXECUTION (10 Tests per page)
+    // ========================================
     audit.status = 'scanning';
-    updateProgress('Running accessibility scans...', 50);
     const allIssues: AccessibilityIssue[] = [];
 
     for (let i = 0; i < crawlResult.pages.length; i++) {
-      const page = crawlResult.pages[i];
-      const pct = 50 + Math.round((i / crawlResult.pages.length) * 20);
-      updateProgress(`Scanning page ${i + 1}/${crawlResult.pages.length}: ${page.title}`, pct);
+      const pg = crawlResult.pages[i];
+      const basePct = 50 + Math.round(((i) / crawlResult.pages.length) * 30);
 
-      // axe-core scan
-      const axeIssues = await scanWithAxe(crawlResult.context, page);
-      allIssues.push(...axeIssues);
+      addLog({
+        timestamp: new Date().toISOString(),
+        testId: 'SUITE', testName: 'Test Suite',
+        wcag: '', status: 'running',
+        message: `━━━ Page ${i + 1}/${crawlResult.pages.length}: ${pg.title} ━━━`,
+        pageUrl: pg.url
+      });
 
-      // Custom rules scan
-      const customIssues = await runCustomRules(page);
-      allIssues.push(...customIssues);
+      // Run the structured test suite (10 tests with browser interaction)
+      const pageResults = await runTestSuite(
+        crawlResult.context, pg,
+        (entry) => {
+          addLog(entry);
+          // Update progress within this page's portion
+          const testIdx = audit.testLog.filter(l => l.pageUrl === pg.url && l.status !== 'running').length;
+          const pct = basePct + Math.round((testIdx / TEST_CASES.length) * (30 / crawlResult.pages.length));
+          audit.progress = Math.min(pct, 82);
+        }
+      );
+
+      audit.testResults.push(...pageResults);
+
+      // Collect issues from test results
+      for (const tr of pageResults) {
+        allIssues.push(...tr.issues);
+      }
+
+      // Also run axe-core + custom rules for deeper coverage
+      try {
+        const axeIssues = await scanWithAxe(crawlResult.context, pg);
+        allIssues.push(...axeIssues);
+        const customIssues = await runCustomRules(pg);
+        allIssues.push(...customIssues);
+      } catch (err) {
+        console.error(`Scanner error for ${pg.url}:`, err);
+      }
     }
 
-    // Phase 3: AI analysis
-    audit.status = 'analyzing';
-    updateProgress('Running AI analysis...', 75);
+    // ========================================
+    // PHASE 3: USER JOURNEY TESTING
+    // ========================================
+    updateProgress('Running user journey tests...', 83);
+    addLog({
+      timestamp: new Date().toISOString(),
+      testId: 'JOURNEY', testName: 'User Journey Suite',
+      wcag: '', status: 'running',
+      message: '━━━ Running User Journey Tests ━━━'
+    });
 
+    const journeyResult = await runJourneyTests(
+      crawlResult.context,
+      crawlResult.pages,
+      (msg) => updateProgress(msg, audit.progress)
+    );
+    allIssues.push(...journeyResult.issues);
+
+    addLog({
+      timestamp: new Date().toISOString(),
+      testId: 'JOURNEY', testName: 'User Journey Suite',
+      wcag: '', status: journeyResult.journeyResults.every(j => j.passed) ? 'pass' : 'fail',
+      message: `Journey tests: ${journeyResult.journeyResults.filter(j => j.passed).length}/${journeyResult.journeyResults.length} passed`
+    });
+
+    // ========================================
+    // PHASE 4: AI ANALYSIS (if enabled)
+    // ========================================
     if (config.includeAI) {
-      for (const page of crawlResult.pages.slice(0, 3)) {
+      audit.status = 'analyzing';
+      updateProgress('Running AI-powered UX & cognitive analysis...', 86);
+
+      const pagesToAnalyze = crawlResult.pages.slice(0, Math.min(5, crawlResult.pages.length));
+      for (let i = 0; i < pagesToAnalyze.length; i++) {
+        const page = pagesToAnalyze[i];
+        const pct = 86 + Math.round(((i + 1) / pagesToAnalyze.length) * 6);
+        updateProgress(`AI analyzing page ${i + 1}/${pagesToAnalyze.length}: ${page.title}`, pct);
+
         const aiIssues = await analyzeWithAI({
           pageUrl: page.url,
           pageTitle: page.title,
           htmlSnippet: page.html,
-          existingIssues: allIssues.filter(i => i.pageUrl === page.url)
+          existingIssues: allIssues.filter(issue => issue.pageUrl === page.url)
         });
         allIssues.push(...aiIssues);
       }
@@ -101,15 +199,55 @@ async function runAuditPipeline(id: string, config: AuditConfig) {
     // Close browser
     await closeCrawler(crawlResult.browser);
 
-    // Phase 4: Scoring
-    audit.status = 'scoring';
-    updateProgress('Calculating scores...', 90);
-    audit.issues = allIssues;
-    audit.score = calculateScore(allIssues);
+    // ========================================
+    // PHASE 5: VALIDATION & DEDUPLICATION
+    // ========================================
+    updateProgress('Validating results and cross-checking...', 92);
 
-    // Phase 5: Report generation
-    updateProgress('Generating report...', 95);
-    audit.report = generateReport(id, allIssues, audit.score, audit.pages.map(p => ({ url: p.url, title: p.title })));
+    // Assign confidence
+    for (const issue of allIssues) {
+      if (!issue.confidence) {
+        issue.confidence = assignConfidence(issue);
+      }
+    }
+
+    // Deduplicate
+    const deduped = deduplicateIssues(allIssues);
+
+    // ========================================
+    // PHASE 6: SCORING (with test stats)
+    // ========================================
+    audit.status = 'scoring';
+    updateProgress('Calculating scores...', 94);
+    audit.issues = deduped;
+    audit.score = calculateScore(deduped, crawlResult.pages.length);
+
+    // Add test execution stats
+    const passed = audit.testResults.filter(r => r.status === 'pass').length;
+    const failed = audit.testResults.filter(r => r.status === 'fail').length;
+    audit.score.testsRun = audit.testResults.length;
+    audit.score.testsPassed = passed;
+    audit.score.testsFailed = failed;
+
+    // ========================================
+    // PHASE 7: REPORT GENERATION
+    // ========================================
+    updateProgress('Generating report...', 96);
+    audit.report = generateReport(
+      id, deduped, audit.score,
+      audit.pages.map(p => ({ url: p.url, title: p.title })),
+      crawlCoverage,
+      journeyResult.journeyResults
+    );
+    audit.report.testResults = audit.testResults;
+
+    // Final log
+    addLog({
+      timestamp: new Date().toISOString(),
+      testId: 'COMPLETE', testName: 'Audit Complete',
+      wcag: '', status: 'pass',
+      message: `✅ Audit complete: ${audit.score.overall}/100 | ${deduped.length} issues | ${passed}/${passed + failed} tests passed`
+    });
 
     audit.status = 'complete';
     audit.progress = 100;
@@ -122,6 +260,19 @@ async function runAuditPipeline(id: string, config: AuditConfig) {
   }
 }
 
+function deduplicateIssues(issues: AccessibilityIssue[]): AccessibilityIssue[] {
+  const seen = new Set<string>();
+  const deduped: AccessibilityIssue[] = [];
+  for (const issue of issues) {
+    const key = `${issue.testId}::${issue.title}::${issue.element}::${issue.pageUrl}`;
+    if (!seen.has(key)) {
+      seen.add(key);
+      deduped.push(issue);
+    }
+  }
+  return deduped;
+}
+
 export async function runPdfAudit(fileBuffer: Buffer, fileName: string): Promise<string> {
   const id = uuidv4();
   const config: AuditConfig = { type: 'pdf', crawlDepth: 0, maxPages: 1, includeAI: false, wcagLevels: ['A', 'AA'] };
@@ -130,15 +281,20 @@ export async function runPdfAudit(fileBuffer: Buffer, fileName: string): Promise
     status: 'scanning', progress: 10, progressMessage: 'Analyzing PDF...',
     pages: [{ url: fileName, title: fileName, html: '', timestamp: new Date().toISOString() }],
     issues: [],
-    score: { overall: 0, categoryScores: { perceivable: 0, operable: 0, understandable: 0, robust: 0, pdf: 0 }, complianceLevel: 'non-compliant', totalIssues: 0, issueBySeverity: { critical: 0, high: 0, medium: 0, low: 0 }, issueByLevel: { A: 0, AA: 0, AAA: 0 } },
+    score: createEmptyScore(),
+    testResults: [], testLog: [],
     startedAt: new Date().toISOString()
   };
   auditStore.set(id, audit);
 
   try {
     const result = await analyzePdf(fileBuffer, fileName, (msg) => { audit.progressMessage = msg; });
+    for (const issue of result.issues) {
+      if (!issue.confidence) issue.confidence = assignConfidence(issue);
+    }
     audit.issues = result.issues;
-    audit.score = calculateScore(result.issues);
+    audit.score = calculateScore(result.issues, 1);
+    audit.score.testsRun = 0; audit.score.testsPassed = 0; audit.score.testsFailed = 0;
     audit.report = generateReport(id, result.issues, audit.score, [{ url: fileName, title: result.metadata.title || fileName }]);
     audit.status = 'complete';
     audit.progress = 100;

@@ -93,7 +93,7 @@ export default function AuditPage() {
             <div className="input-group">
               <label className="input-label">Max Pages</label>
               <select className="input-field" value={maxPages} onChange={e => setMaxPages(+e.target.value)}>
-                {[1,3,5,10,15,20].map(v => <option key={v} value={v}>{v} pages</option>)}
+                {[1,3,5,10,20,30,50,100,200].map(v => <option key={v} value={v}>{v} pages</option>)}
               </select>
             </div>
             <div className="input-group">

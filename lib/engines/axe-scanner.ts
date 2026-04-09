@@ -139,7 +139,8 @@ export async function scanWithAxe(
           recommendation: generateAxeRecommendation(violation.id, violation.help),
           codeFix: generateAxeCodeFix(violation.id, node.html),
           category: getCategoryFromCriterion(wcagMapping.criterion),
-          source: 'axe-core'
+          source: 'axe-core',
+          confidence: 'high' as const
         });
       }
     }

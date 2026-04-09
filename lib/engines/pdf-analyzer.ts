@@ -17,7 +17,7 @@ export async function analyzePdf(fileBuffer: Buffer, fileName: string, onProgres
     pdfData = await pdfParse(fileBuffer);
   } catch (error) {
     return {
-      issues: [{ id: uuidv4(), testId: 'PDF-ERR', title: 'PDF parsing error', description: `Failed to parse PDF: ${error instanceof Error ? error.message : 'Unknown'}`, element: 'document', pageUrl: fileName, wcagCriterion: '1.3.1', wcagName: 'Info and Relationships', wcagLevel: 'A', severity: 'critical', impact: 'Document cannot be analyzed', recommendation: 'Ensure the PDF is not corrupted or password-protected.', category: 'pdf', source: 'pdf-analyzer' }],
+      issues: [{ id: uuidv4(), testId: 'PDF-ERR', title: 'PDF parsing error', description: `Failed to parse PDF: ${error instanceof Error ? error.message : 'Unknown'}`, element: 'document', pageUrl: fileName, wcagCriterion: '1.3.1', wcagName: 'Info and Relationships', wcagLevel: 'A', severity: 'critical', impact: 'Document cannot be analyzed', recommendation: 'Ensure the PDF is not corrupted or password-protected.', category: 'pdf', source: 'pdf-analyzer', confidence: 'high' }],
       metadata: { pageCount: 0, isTagged: false, hasLanguage: false }
     };
   }
@@ -32,7 +32,7 @@ export async function analyzePdf(fileBuffer: Buffer, fileName: string, onProgres
   // PDF-01: Tagged structure
   const isTagged = !!(info.Tagged === 'yes' || metaStr.includes('tagged'));
   if (!isTagged) {
-    issues.push({ id: uuidv4(), testId: 'PDF-01', title: 'Missing tagged PDF structure', description: 'PDF is not tagged. Tags are essential for screen readers to understand structure.', element: 'document structure', pageUrl: fileName, wcagCriterion: '1.3.1', wcagName: 'Info and Relationships', wcagLevel: 'A', severity: 'critical', impact: 'Screen reader users cannot navigate document structure', recommendation: 'Re-create with proper tagging. In Word, enable "Document structure tags for accessibility" when saving as PDF.', category: 'pdf', source: 'pdf-analyzer' });
+    issues.push({ id: uuidv4(), testId: 'PDF-01', title: 'Missing tagged PDF structure', description: 'PDF is not tagged. Tags are essential for screen readers to understand structure.', element: 'document structure', pageUrl: fileName, wcagCriterion: '1.3.1', wcagName: 'Info and Relationships', wcagLevel: 'A', severity: 'critical', impact: 'Screen reader users cannot navigate document structure', recommendation: 'Re-create with proper tagging. In Word, enable "Document structure tags for accessibility" when saving as PDF.', category: 'pdf', source: 'pdf-analyzer', confidence: 'high' });
   }
 
   // PDF-02: Reading order
@@ -45,36 +45,36 @@ export async function analyzePdf(fileBuffer: Buffer, fileName: string, onProgres
       }
     }
     if (hasOrderIssues) {
-      issues.push({ id: uuidv4(), testId: 'PDF-02', title: 'Incorrect reading order', description: 'Content may be read in wrong order by screen readers due to missing tags.', element: 'reading order', pageUrl: fileName, wcagCriterion: '1.3.2', wcagName: 'Meaningful Sequence', wcagLevel: 'A', severity: 'high', impact: 'Screen reader users receive content in wrong order', recommendation: 'Use Adobe Acrobat Reading Order tool to fix tag order.', category: 'pdf', source: 'pdf-analyzer' });
+      issues.push({ id: uuidv4(), testId: 'PDF-02', title: 'Incorrect reading order', description: 'Content may be read in wrong order by screen readers due to missing tags.', element: 'reading order', pageUrl: fileName, wcagCriterion: '1.3.2', wcagName: 'Meaningful Sequence', wcagLevel: 'A', severity: 'high', impact: 'Screen reader users receive content in wrong order', recommendation: 'Use Adobe Acrobat Reading Order tool to fix tag order.', category: 'pdf', source: 'pdf-analyzer', confidence: 'medium' });
     }
   }
 
   // PDF-03: Images without alt text (heuristic)
   const avgChars = text.length / Math.max(pageCount, 1);
   if (avgChars < 100 && pageCount > 0) {
-    issues.push({ id: uuidv4(), testId: 'PDF-03', title: 'Possible missing alt text on images', description: `Very little text (${Math.round(avgChars)} chars/page) suggests image-heavy content lacking alt text.`, element: 'images', pageUrl: fileName, wcagCriterion: '1.1.1', wcagName: 'Non-text Content', wcagLevel: 'A', severity: 'critical', impact: 'Screen reader users cannot access image content', recommendation: 'Add alt text to all images using Adobe Acrobat Set Alternate Text feature.', category: 'pdf', source: 'pdf-analyzer' });
+    issues.push({ id: uuidv4(), testId: 'PDF-03', title: 'Possible missing alt text on images', description: `Very little text (${Math.round(avgChars)} chars/page) suggests image-heavy content lacking alt text.`, element: 'images', pageUrl: fileName, wcagCriterion: '1.1.1', wcagName: 'Non-text Content', wcagLevel: 'A', severity: 'critical', impact: 'Screen reader users cannot access image content', recommendation: 'Add alt text to all images using Adobe Acrobat Set Alternate Text feature.', category: 'pdf', source: 'pdf-analyzer', confidence: 'medium' });
   }
 
   // PDF-04: Font embedding
   const hasEncoding = text.includes('�') || /[\x00-\x08\x0E-\x1F]/.test(text.substring(0, 1000));
   if (hasEncoding) {
-    issues.push({ id: uuidv4(), testId: 'PDF-04', title: 'Font embedding issues', description: 'Text extraction reveals encoding issues - fonts may not be properly embedded.', element: 'fonts', pageUrl: fileName, wcagCriterion: '1.3.1', wcagName: 'Info and Relationships', wcagLevel: 'A', severity: 'high', impact: 'Screen readers may mispronounce or skip text', recommendation: 'Embed all fonts. In Acrobat: File > Properties > Fonts, verify all fonts are embedded.', category: 'pdf', source: 'pdf-analyzer' });
+    issues.push({ id: uuidv4(), testId: 'PDF-04', title: 'Font embedding issues', description: 'Text extraction reveals encoding issues - fonts may not be properly embedded.', element: 'fonts', pageUrl: fileName, wcagCriterion: '1.3.1', wcagName: 'Info and Relationships', wcagLevel: 'A', severity: 'high', impact: 'Screen readers may mispronounce or skip text', recommendation: 'Embed all fonts. In Acrobat: File > Properties > Fonts, verify all fonts are embedded.', category: 'pdf', source: 'pdf-analyzer', confidence: 'high' });
   }
 
   // PDF-05: Table structure
   if (text.match(/(\t.*){3,}/g) && !isTagged) {
-    issues.push({ id: uuidv4(), testId: 'PDF-05', title: 'Table structure issues', description: 'Tabular data detected but lacks proper table tags.', element: 'tables', pageUrl: fileName, wcagCriterion: '1.3.1', wcagName: 'Info and Relationships', wcagLevel: 'A', severity: 'high', impact: 'Screen reader users cannot navigate table content', recommendation: 'Tag tables with Table, TR, TH, TD elements using Acrobat Table Editor.', category: 'pdf', source: 'pdf-analyzer' });
+    issues.push({ id: uuidv4(), testId: 'PDF-05', title: 'Table structure issues', description: 'Tabular data detected but lacks proper table tags.', element: 'tables', pageUrl: fileName, wcagCriterion: '1.3.1', wcagName: 'Info and Relationships', wcagLevel: 'A', severity: 'high', impact: 'Screen reader users cannot navigate table content', recommendation: 'Tag tables with Table, TR, TH, TD elements using Acrobat Table Editor.', category: 'pdf', source: 'pdf-analyzer', confidence: 'medium' });
   }
 
   // PDF-06: Document title
   if (!info.Title?.trim()) {
-    issues.push({ id: uuidv4(), testId: 'PDF-06', title: 'Missing document title', description: 'PDF metadata has no title. Browsers show filename instead.', element: 'metadata', pageUrl: fileName, wcagCriterion: '2.4.2', wcagName: 'Page Titled', wcagLevel: 'A', severity: 'medium', impact: 'Users cannot identify document purpose', recommendation: 'Add title in File > Properties > Description. Set Initial View to show Document Title.', category: 'pdf', source: 'pdf-analyzer' });
+    issues.push({ id: uuidv4(), testId: 'PDF-06', title: 'Missing document title', description: 'PDF metadata has no title. Browsers show filename instead.', element: 'metadata', pageUrl: fileName, wcagCriterion: '2.4.2', wcagName: 'Page Titled', wcagLevel: 'A', severity: 'medium', impact: 'Users cannot identify document purpose', recommendation: 'Add title in File > Properties > Description. Set Initial View to show Document Title.', category: 'pdf', source: 'pdf-analyzer', confidence: 'high' });
   }
 
   // PDF-07: Language
   const hasLang = !!(info.Language || metaStr.includes('lang'));
   if (!hasLang) {
-    issues.push({ id: uuidv4(), testId: 'PDF-07', title: 'Missing language specification', description: 'PDF does not specify a language for screen reader pronunciation.', element: 'language', pageUrl: fileName, wcagCriterion: '3.1.1', wcagName: 'Language of Page', wcagLevel: 'A', severity: 'high', impact: 'Screen readers use incorrect language pronunciation', recommendation: 'Set language in File > Properties > Advanced > Language.', category: 'pdf', source: 'pdf-analyzer' });
+    issues.push({ id: uuidv4(), testId: 'PDF-07', title: 'Missing language specification', description: 'PDF does not specify a language for screen reader pronunciation.', element: 'language', pageUrl: fileName, wcagCriterion: '3.1.1', wcagName: 'Language of Page', wcagLevel: 'A', severity: 'high', impact: 'Screen readers use incorrect language pronunciation', recommendation: 'Set language in File > Properties > Advanced > Language.', category: 'pdf', source: 'pdf-analyzer', confidence: 'high' });
   }
 
   onProgress?.(`PDF analysis complete: ${issues.length} issues found.`);

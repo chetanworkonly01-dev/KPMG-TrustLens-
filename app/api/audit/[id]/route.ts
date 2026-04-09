@@ -21,6 +21,9 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
     issues: audit.issues,
     score: audit.score,
     report: audit.report,
+    crawlCoverage: audit.crawlCoverage,
+    testResults: audit.testResults || [],
+    testLog: audit.testLog || [],
     startedAt: audit.startedAt,
     completedAt: audit.completedAt,
     error: audit.error

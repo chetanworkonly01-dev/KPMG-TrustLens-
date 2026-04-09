@@ -41,9 +41,64 @@ export interface AuditResult {
   issues: AccessibilityIssue[];
   score: AuditScore;
   report?: AuditReport;
+  crawlCoverage?: CrawlCoverage;
+  testResults: TestResult[];
+  testLog: TestLogEntry[];
   startedAt: string;
   completedAt?: string;
   error?: string;
+}
+
+export type ConfidenceLevel = 'high' | 'medium' | 'low';
+
+// ===== TEST-DRIVEN EXECUTION MODEL =====
+
+export type TestStatus = 'pending' | 'running' | 'pass' | 'fail' | 'error' | 'needs-review';
+
+export interface TestCase {
+  testId: string;
+  testName: string;
+  wcagCriterion: string;
+  wcagName: string;
+  wcagLevel: 'A' | 'AA' | 'AAA';
+  category: 'perceivable' | 'operable' | 'understandable' | 'robust';
+  severity: 'critical' | 'high' | 'medium' | 'low';
+  description: string;
+  browserInteraction: boolean; // requires real browser actions
+}
+
+export interface TestResult {
+  testId: string;
+  testName: string;
+  pageUrl: string;
+  status: TestStatus;
+  wcagCriterion: string;
+  wcagName: string;
+  wcagLevel: 'A' | 'AA' | 'AAA';
+  severity: 'critical' | 'high' | 'medium' | 'low';
+  confidence: ConfidenceLevel;
+  evidence: TestEvidence;
+  issues: AccessibilityIssue[];
+  executionTime: number; // ms
+  error?: string;
+}
+
+export interface TestEvidence {
+  summary: string;
+  elementsChecked: number;
+  elementsFailed: number;
+  details: string[];
+  domSnapshots?: string[];
+}
+
+export interface TestLogEntry {
+  timestamp: string;
+  testId: string;
+  testName: string;
+  wcag: string;
+  status: TestStatus;
+  message: string;
+  pageUrl?: string;
 }
 
 export interface AccessibilityIssue {
@@ -62,7 +117,10 @@ export interface AccessibilityIssue {
   recommendation: string;
   codeFix?: string;
   category: 'perceivable' | 'operable' | 'understandable' | 'robust' | 'pdf';
-  source: 'axe-core' | 'custom-rule' | 'pdf-analyzer' | 'ai-analysis';
+  source: 'axe-core' | 'custom-rule' | 'pdf-analyzer' | 'ai-analysis' | 'journey-test' | 'test-runner';
+  confidence: ConfidenceLevel;
+  occurrenceCount?: number; // how many pages this issue appears on
+  affectedPages?: string[]; // pages where this issue occurs
 }
 
 export interface AuditScore {
@@ -76,6 +134,7 @@ export interface AuditScore {
   };
   complianceLevel: 'non-compliant' | 'partially-compliant' | 'aa-compliant' | 'aaa-compliant';
   totalIssues: number;
+  uniqueIssues: number;
   issueBySeverity: {
     critical: number;
     high: number;
@@ -87,7 +146,67 @@ export interface AuditScore {
     AA: number;
     AAA: number;
   };
+  journeyScore?: number; // score for user journey accessibility
+  testsRun: number;
+  testsPassed: number;
+  testsFailed: number;
 }
+
+// ===== CRAWL COVERAGE =====
+
+export interface CrawlCoverage {
+  totalPagesFound: number;
+  pagesAudited: number;
+  pagesSkipped: number;
+  coveragePercent: number;
+  skippedPages: SkippedPage[];
+  discoveryMethods: Record<string, number>; // how links were discovered
+}
+
+export interface SkippedPage {
+  url: string;
+  reason: string;
+}
+
+// ===== GROUPED ISSUES =====
+
+export interface GroupedIssue {
+  issueKey: string; // unique key for this group
+  title: string;
+  testId: string;
+  wcagCriterion: string;
+  wcagName: string;
+  wcagLevel: 'A' | 'AA' | 'AAA';
+  severity: 'critical' | 'high' | 'medium' | 'low';
+  category: AccessibilityIssue['category'];
+  description: string;
+  recommendation: string;
+  codeFix?: string;
+  confidence: ConfidenceLevel;
+  occurrenceCount: number;
+  affectedPages: string[];
+  frequency: number; // percentage of pages affected
+  instances: AccessibilityIssue[];
+}
+
+// ===== USER JOURNEY =====
+
+export interface JourneyTestResult {
+  journeyName: string;
+  description: string;
+  steps: JourneyStep[];
+  passed: boolean;
+  issues: AccessibilityIssue[];
+}
+
+export interface JourneyStep {
+  name: string;
+  action: string;
+  passed: boolean;
+  issue?: string;
+}
+
+// ===== REPORT =====
 
 export interface AuditReport {
   id: string;
@@ -95,9 +214,14 @@ export interface AuditReport {
   executiveSummary: string;
   score: AuditScore;
   issues: AccessibilityIssue[];
+  groupedIssues: GroupedIssue[];
+  topCritical: GroupedIssue[];
   wcagMapping: WcagMappingEntry[];
   remediationPlan: RemediationStep[];
   pageBreakdown: PageBreakdownEntry[];
+  crawlCoverage?: CrawlCoverage;
+  journeyResults?: JourneyTestResult[];
+  testResults?: TestResult[];
   generatedAt: string;
 }
 
@@ -116,6 +240,7 @@ export interface RemediationStep {
   description: string;
   affectedPages: string[];
   estimatedEffort: 'low' | 'medium' | 'high';
+  frequency: number; // percentage of pages
 }
 
 export interface PageBreakdownEntry {
@@ -128,3 +253,4 @@ export interface PageBreakdownEntry {
   mediumCount: number;
   lowCount: number;
 }
+
