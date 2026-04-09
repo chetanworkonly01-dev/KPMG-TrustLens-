@@ -34,25 +34,34 @@ RUN apt-get update && apt-get install -y \
 
 WORKDIR /app
 
-# Copy package files first (for Docker layer caching)
+# Copy package files first (Docker layer caching)
 COPY package.json package-lock.json ./
 
-# Install all NPM dependencies
+# Install NPM dependencies
 RUN npm ci
 
-# Install Playwright Chromium browser + its system dependencies
+# Install Playwright Chromium + system deps
 RUN npx playwright install --with-deps chromium
 
-# Copy the rest of the source code
+# Copy source code
 COPY . .
 
-# Build the Next.js production bundle
+# Build Next.js (standalone mode)
 RUN npm run build
 
-# Expose port
+# --- Production setup ---
+# The standalone build outputs to .next/standalone
+# We need to copy the public and static files into it
+
+RUN cp -r public .next/standalone/public 2>/dev/null || true
+RUN cp -r .next/static .next/standalone/.next/static
+
+# Railway sets PORT dynamically, Next.js standalone server reads it
 ENV NODE_ENV=production
 ENV PORT=3000
+ENV HOSTNAME="0.0.0.0"
+
 EXPOSE 3000
 
-# Start the production server
-CMD ["npm", "start"]
+# Run the standalone server (much lighter than `next start`)
+CMD ["node", ".next/standalone/server.js"]
