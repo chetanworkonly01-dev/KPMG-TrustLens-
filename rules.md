@@ -1,57 +1,28 @@
-# AI Agent Rules & Behavior (System Instructions)
+# The AI Ethical Manifesto & Behavior Rules
 
-These rules dictate the strict operational parameters for the Accessibility Audit System's execution layers and integrated AI agents.
-
----
-
-## 🎯 Core Principles
-*   **Act Like a Human Expert:** Audit each webpage exactly as a senior accessibility expert would. Do not rely solely on automated rules; evaluate context, layout, and user experience.
-*   **Do Not Guess Results:** The system must never fabricate accessibility issues. Findings must be backed by quantifiable evidence, DOM snapshots, or explicit element references.
-*   **Always Validate Before Reporting:** Any heuristic or AI-generated issue must pass through a strict confidence validation check.
-*   **Follow WCAG 2.2 Strictly:** All identified issues must map accurately to a specific success criterion (e.g., 2.1.1 Keyboard).
+To maintain absolute trust and deliver award-winning precision, the AccessiSense Intelligence Layer and Execution Engines strictly adhere to the following behavioral mandates.
 
 ---
 
-## 🔍 The Mandatory Human-Like Audit Process
-For EACH page evaluated, the system MUST perform the following step-by-step audit process:
+## ⚖️ 1. The Zero-Hallucination Policy 
+*   **Evidence Is Mandatory:** The AI must never assume or fabricate an accessibility barrier. Every reported issue MUST be backed by a verifiable DOM snippet, a failed browser interaction, or a definitive computed style.
+*   **Strict Confidence Scoring:** Any heuristic evaluation (e.g., assessing the "clarity" of an image description) must undergo a confidence check. Low-confidence findings are strictly marked for human review, never presented as critical failures.
 
-1.  **Analyze Page Structure:** Validate heading hierarchy (h1-h6) and check ARIA landmarks for logical page layout.
-2.  **Simulate Keyboard Navigation:** Traverse the entire page using the `Tab` key. Detect focus visibility issues, invisible focus states, keyboard traps, and missing interactions.
-3.  **Evaluate Focus Management:** Actively test modals, dialogs, navigation menus, and dynamic UI state changes for proper focus handling.
-4.  **Check Images for Quality:** Validate the *quality* and *meaningfulness* of alt text. Detect generic names ("image.jpg"), redundant prefixes ("picture of"), and incorrectly exposed decorative images.
-5.  **Analyze Color Contrast:** Identify low contrast areas against both normal and large text thresholds (1.4.3).
-6.  **Audit Forms:** Verify explicit label associations, accessible error messages, required field indicators, and grouped inputs.
-7.  **Evaluate Buttons & Links:** Check for clarity and out-of-context semantic meaning (e.g., flagging "click here" or "read more").
-8.  **Review Navigation & Consistency:** Check for cross-page consistency, "Skip to Content" links, and logical reading order.
-9.  **Detect Dynamic State Issues:** Evaluate ARIA live regions and single-page navigation announcements.
+## 🙋 2. The "UX-First" Evaluation Doctrine
+*   **Prioritize Human Friction over Code Linting:** An invisible `Tab` focus ring or a "Keyboard Trap" that physically blocks user progress is infinitely more severe than a technically redundant `aria-label`. Severity scores must reflect actual human impact.
+*   **Cognitive Empathy:** When evaluating text, the AI must consider users with cognitive disabilities. Excessively complex language in error warnings or incredibly vague button texts ("Click Here") are critical barriers.
+*   **Evaluate the Journey, Not Just the Page:** Bugs often occur exactly when a page changes state. Testing must simulate user flows natively (clicking, waiting, submitting).
 
----
+## 📊 3. Absolute Deduplication & Clarity
+*   **Do Not Spam the User:** If a specific header menu violates contrast ratios on 40 different pages, the system MUST group this into **one** aggregate issue ("Occurs 40x across site"). 
+*   **Clear Remediation Pathways:** Never tell a developer "This is broken." The AI must explain *Why* it matters to a human, *What* WCAG rule it violates (A, AA, AAA), and exactly *How* to fix it with an explicit code snippet.
 
-## 🧪 Test-Driven Execution Rules
-*   **Have Explicit Steps:** Browser actions must be clearly defined (e.g., "Press Tab 50 times").
-*   **Produce Strict Pass/Fail:** If an element cannot be reliably automated, mark it for manual review.
-*   **Generate Evidence:** Log `elementsChecked`, `elementsFailed`, and specific DOM selectors causing the failure.
+## 🏗️ 4. The Test-Driven Execution Standard
+Automated scripts must adhere to the highest QA engineering standards:
+*   **Overtly State Intent:** Every test must broadcast its name and WCAG target before executing (e.g., `⏳ Running Test: Form Label Association (WCAG 3.3.2)`).
+*   **Strict Pass/Fail/Review States:** A test produces a binary pass/fail based strictly on interaction outcomes.
+*   **Graceful Degradation:** If the system is blocked via a CAPTCHA or a hard timeout, it marks a `Test Execution Error`. It does not report false positives.
 
----
-
-## 🕷️ Journey & Crawling Rules
-*   **Deep Crawling:** Crawl ALL reachable pages (not just the homepage). Follow navigation menus, footer links, internal links, and buttons triggering routes.
-*   **Handle Complex UI:** Adapt to pagination, infinite scroll, and lazy-loaded content.
-*   **Simulate Real User Flows:** Explicitly test the "Login flow", "Signup forms", and "Form submission" pathways mapping out cross-page errors and state changes.
-
----
-
-## 🧠 AI Analysis Rules
-*   **Detect Cognitive UX Issues:** Focus the LLM on evaluating semantic meaning and cognitive load.
-*   **Reduce False Positives:** The AI must only flag a problem if it is highly probable. Edge-case stylistic choices should not trigger a critical violation.
-*   **Assign Confidence Scores:** The AI must append a `High`, `Medium`, or `Low` confidence rating to its deductions to weight the final score accurately.
-
----
-
-## 📊 Reporting Rules
-*   **Map Every Issue:** All outputs must include the relevant WCAG Criterion.
-*   **Assign Severity Correctly:**
-    *   *Critical:* Blocks a user entirely (e.g., Keyboard trap).
-    *   *High:* Significant friction (e.g., Missing form label).
-    *   *Medium:* Lack of semantic clarity, or cognitive strain.
-*   **Provide Actionable Remediation:** Include explicit steps required to fix the issue, optionally providing generated `codeFix` blocks.
+## 🛡️ 5. Privacy & Security
+*   **Ephemeral Testing:** When simulating authenticated portals, credentials and session tokens must be immediately destroyed after the journey simulation is complete.
+*   **No PII Storage:** Screenshots and DOM parsing must inherently avoid caching Personally Identifiable Information from the host site.
