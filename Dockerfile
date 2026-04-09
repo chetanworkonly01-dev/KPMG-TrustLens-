@@ -1,7 +1,6 @@
-# ---- Base Stage ----
-FROM node:20-slim AS base
+FROM node:20-slim
 
-# Install Playwright system dependencies (Chromium)
+# Install system dependencies required by Playwright Chromium
 RUN apt-get update && apt-get install -y \
     wget \
     gnupg \
@@ -10,61 +9,50 @@ RUN apt-get update && apt-get install -y \
     libasound2 \
     libatk-bridge2.0-0 \
     libatk1.0-0 \
+    libcairo2 \
     libcups2 \
     libdbus-1-3 \
     libdrm2 \
     libgbm1 \
+    libglib2.0-0 \
     libgtk-3-0 \
     libnspr4 \
     libnss3 \
+    libpango-1.0-0 \
+    libx11-6 \
+    libx11-xcb1 \
+    libxcb1 \
     libxcomposite1 \
     libxdamage1 \
+    libxext6 \
+    libxfixes3 \
     libxrandr2 \
+    libxshmfence1 \
     xdg-utils \
     --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
-# ---- Dependencies Stage ----
-FROM base AS deps
-
+# Copy package files first (for Docker layer caching)
 COPY package.json package-lock.json ./
+
+# Install all NPM dependencies
 RUN npm ci
 
-# Install only Chromium browser for Playwright
-RUN npx playwright install chromium
+# Install Playwright Chromium browser + its system dependencies
+RUN npx playwright install --with-deps chromium
 
-# ---- Build Stage ----
-FROM base AS builder
-
-WORKDIR /app
-COPY --from=deps /app/node_modules ./node_modules
-COPY --from=deps /root/.cache /root/.cache
+# Copy the rest of the source code
 COPY . .
 
-# Build Next.js production bundle
+# Build the Next.js production bundle
 RUN npm run build
 
-# ---- Production Stage ----
-FROM base AS runner
-
-WORKDIR /app
-
+# Expose port
 ENV NODE_ENV=production
 ENV PORT=3000
-
-# Copy built assets and dependencies
-COPY --from=builder /app/.next ./.next
-COPY --from=builder /app/node_modules ./node_modules
-COPY --from=builder /app/package.json ./package.json
-COPY --from=builder /app/public ./public
-COPY --from=builder /app/next.config.ts ./next.config.ts
-COPY --from=builder /app/tsconfig.json ./tsconfig.json
-
-# Copy Playwright browser binaries
-COPY --from=deps /root/.cache /root/.cache
-
 EXPOSE 3000
 
+# Start the production server
 CMD ["npm", "start"]
