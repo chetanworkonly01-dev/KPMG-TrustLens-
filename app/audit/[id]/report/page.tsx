@@ -321,7 +321,7 @@ export default function FinalReportPage() {
   const issues = data.issues || [];
   const score = data.score;
   const testedLevel = data.report?.testedLevel || 'AA';
-  const standard = data.config.standard || 'WCAG 2.2';
+  const standard = data.config?.standard || 'WCAG 2.2';
   const reportDate = data.completedAt ? new Date(data.completedAt).toLocaleDateString('en-GB', { day: '2-digit', month: 'long', year: 'numeric' }) : 'N/A';
 
   // Derived issue augmentation
@@ -442,7 +442,7 @@ export default function FinalReportPage() {
                 Accessibility Audit Report
               </h1>
               <p style={{ fontSize: 14, color: 'rgba(255,255,255,0.7)', margin: 0 }}>
-                {data.config.url || 'PDF Document'} &nbsp;·&nbsp; {standard} Level {testedLevel} &nbsp;·&nbsp; {reportDate}
+                {data.config?.url || 'PDF Document'} &nbsp;·&nbsp; {standard} Level {testedLevel} &nbsp;·&nbsp; {reportDate}
               </p>
             </div>
             {/* Score circle */}

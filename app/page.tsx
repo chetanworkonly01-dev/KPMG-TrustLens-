@@ -160,7 +160,7 @@ export default function HomePage() {
                     <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 9 }}>
                       <div className="animate-spin" style={{ width: 18, height: 18, borderRadius: '50%', border: '2px solid rgba(0,145,218,0.2)', borderTopColor: 'var(--accent-blue)' }} />
                       <div style={{ flex: 1 }}>
-                        <div style={{ fontWeight: 600, fontSize: 13 }}>{a.config.url || 'PDF Audit'}</div>
+                        <div style={{ fontWeight: 600, fontSize: 13 }}>{a.config?.url || 'PDF Audit'}</div>
                         <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{a.status} · {a.progress}%</div>
                       </div>
                       <div style={{ fontSize: 18, fontWeight: 300, color: 'var(--accent-blue)' }}>{a.progress}%</div>
@@ -200,7 +200,7 @@ export default function HomePage() {
 
           <div style={{ display: 'grid', gap: 12 }}>
             {completed.map(a => {
-              const level = a.config.wcagLevels?.includes('AAA') ? 'AAA' : a.config.wcagLevels?.includes('AA') ? 'AA' : 'A';
+              const level = a.config?.wcagLevels?.includes('AAA') ? 'AAA' : a.config?.wcagLevels?.includes('AA') ? 'AA' : 'A';
               const scoreColor = a.score.overall >= 75 ? '#00BA8C' : a.score.overall >= 50 ? '#F0AB00' : '#FF3356';
               return (
                 <Link key={a.id} href={`/audit/${a.id}`} style={{ textDecoration: 'none' }}>
@@ -214,10 +214,10 @@ export default function HomePage() {
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 3, flexWrap: 'wrap' }}>
                         <span style={{ fontWeight: 700, fontSize: 14, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 300 }}>
-                          {a.config.url || 'PDF Document'}
+                          {a.config?.url || 'PDF Document'}
                         </span>
                         <span className={`audit-level-chip ${level.toLowerCase()}`} style={{ fontSize: 10, padding: '3px 8px' }}>
-                          {a.config.standard || 'WCAG 2.2'} {level}
+                          {a.config?.standard || 'WCAG 2.2'} {level}
                         </span>
                       </div>
                       <div style={{ display: 'flex', gap: 10, fontSize: 11, color: 'var(--text-muted)', flexWrap: 'wrap' }}>

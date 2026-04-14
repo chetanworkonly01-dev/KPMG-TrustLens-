@@ -155,7 +155,7 @@ export default function AuditResultPage() {
 
   // ===== IN-PROGRESS VIEW =====
   if (data.status !== 'complete' && data.status !== 'error') {
-    const testedLevels = data.config.wcagLevels || ['A', 'AA'];
+    const testedLevels = data.config?.wcagLevels || ['A', 'AA'];
     const levelLabel = testedLevels.includes('AAA') ? 'AAA' : testedLevels.includes('AA') ? 'AA' : 'A';
     return (
       <div className="container" style={{ paddingTop: 44, maxWidth: 820, margin: '0 auto' }}>
@@ -166,10 +166,10 @@ export default function AuditResultPage() {
               <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 3 }}>
                 <h2 style={{ fontSize: 18, fontWeight: 600, margin: 0 }}>Audit in Progress</h2>
                 <span className={`audit-level-chip ${levelLabel.toLowerCase()}`}>
-                  {data.config.standard || 'WCAG 2.2'} — Level {levelLabel}
+                  {data.config?.standard || 'WCAG 2.2'} — Level {levelLabel}
                 </span>
               </div>
-              <p style={{ color: 'var(--text-secondary)', margin: 0, fontSize: 13 }}>{data.config.url}</p>
+              <p style={{ color: 'var(--text-secondary)', margin: 0, fontSize: 13 }}>{data.config?.url}</p>
             </div>
             <div style={{ fontSize: 22, fontWeight: 300, color: 'var(--accent-blue)', letterSpacing: '-0.02em' }}>{data.progress}%</div>
           </div>
@@ -232,8 +232,8 @@ export default function AuditResultPage() {
   }
 
   // ===== COMPLETE RESULTS =====
-  const testedLevel = data.report?.testedLevel || (data.config.wcagLevels?.includes('AAA') ? 'AAA' : data.config.wcagLevels?.includes('AA') ? 'AA' : 'A') || 'AA';
-  const standard = data.config.standard || 'WCAG 2.2';
+  const testedLevel = data.report?.testedLevel || (data.config?.wcagLevels?.includes('AAA') ? 'AAA' : data.config?.wcagLevels?.includes('AA') ? 'AA' : 'A') || 'AA';
+  const standard = data.config?.standard || 'WCAG 2.2';
 
   const filteredIssues = data.issues.filter(i =>
     (severityFilter === 'all' || i.severity === severityFilter) &&
@@ -267,7 +267,7 @@ export default function AuditResultPage() {
               {standard} · Level {testedLevel}
             </span>
           </div>
-          <p className="page-subtitle">{data.config.url || 'PDF Upload'}</p>
+          <p className="page-subtitle">{data.config?.url || 'PDF Upload'}</p>
         </div>
         <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
           {/* Export dropdown */}
