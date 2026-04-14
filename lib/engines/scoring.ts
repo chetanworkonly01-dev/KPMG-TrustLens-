@@ -14,18 +14,23 @@ export function calculateScore(issues: AccessibilityIssue[], pageCount?: number)
     categoryIssues[issue.category]?.push(issue);
   }
 
-  // Group issues to count unique problems
-  const grouped = groupIssues(issues, pageCount || 1);
+  // === DETERMINISTIC GROUPING ===
+  // Sort issues before grouping so the same set of issues always produces the same groups.
+  const sortedIssues = [...issues].sort((a, b) => {
+    const k1 = `${a.testId}::${a.title}::${normalizeSelector(a.element)}::${a.pageUrl}`;
+    const k2 = `${b.testId}::${b.title}::${normalizeSelector(b.element)}::${b.pageUrl}`;
+    return k1.localeCompare(k2);
+  });
+
+  const grouped = groupIssues(sortedIssues, pageCount || 1);
 
   // === ADVANCED SCORING ===
-
   let totalDeduction = 0;
 
-  // 1. Base deduction per issue
-  for (const issue of issues) {
+  // 1. Base deduction per issue (sorted for determinism)
+  for (const issue of sortedIssues) {
     const sevWeight = SEVERITY_WEIGHTS[issue.severity];
     const levelMult = LEVEL_MULTIPLIERS[issue.wcagLevel] || 1;
-    // Reduce weight for low-confidence issues
     const confMult = issue.confidence === 'high' ? 1.0 : issue.confidence === 'medium' ? 0.7 : 0.4;
     totalDeduction += sevWeight * levelMult * confMult;
   }
@@ -34,19 +39,18 @@ export function calculateScore(issues: AccessibilityIssue[], pageCount?: number)
   if (pageCount && pageCount > 1) {
     for (const group of grouped) {
       if (group.frequency > 50) {
-        // Issue appears on >50% of pages — add extra penalty
         const extraPenalty = SEVERITY_WEIGHTS[group.severity] * (group.frequency / 100) * 2;
         totalDeduction += extraPenalty;
       }
     }
   }
 
-  // 3. Critical issue heavy penalty: each critical issue beyond 3 has accelerating impact
+  // 3. Critical issue heavy penalty
   if (issueBySeverity.critical > 3) {
     totalDeduction += (issueBySeverity.critical - 3) * 5;
   }
 
-  // 4. Journey test bonus: if journey tests passed, reduce deduction
+  // 4. Journey test bonus
   const journeyIssues = issues.filter(i => i.source === 'journey-test');
   const journeyTestCount = new Set(journeyIssues.map(i => i.testId)).size;
   const journeyScore = journeyTestCount > 0 ? Math.max(0, 100 - journeyTestCount * 15) : undefined;
@@ -60,14 +64,14 @@ export function calculateScore(issues: AccessibilityIssue[], pageCount?: number)
 
   // Category scores
   const categoryScores = {
-    perceivable: calcCategoryScore(categoryIssues.perceivable),
-    operable: calcCategoryScore(categoryIssues.operable),
-    understandable: calcCategoryScore(categoryIssues.understandable),
-    robust: calcCategoryScore(categoryIssues.robust),
-    pdf: categoryIssues.pdf.length > 0 ? calcCategoryScore(categoryIssues.pdf) : 100
+    perceivable:     calcCategoryScore(categoryIssues.perceivable),
+    operable:        calcCategoryScore(categoryIssues.operable),
+    understandable:  calcCategoryScore(categoryIssues.understandable),
+    robust:          calcCategoryScore(categoryIssues.robust),
+    pdf:             categoryIssues.pdf.length > 0 ? calcCategoryScore(categoryIssues.pdf) : 100
   };
 
-  // Compliance level
+  // Compliance level — based on what was tested
   let complianceLevel: AuditScore['complianceLevel'];
   if (overall >= 90 && issueBySeverity.critical === 0) {
     complianceLevel = 'aaa-compliant';
@@ -106,13 +110,20 @@ function calcCategoryScore(issues: AccessibilityIssue[]): number {
 }
 
 /**
- * Group identical issues across pages for cleaner reporting
+ * Normalise a CSS selector so whitespace/case differences don't break deduplication.
+ */
+export function normalizeSelector(selector: string): string {
+  return selector.trim().toLowerCase().replace(/\s+/g, ' ');
+}
+
+/**
+ * Group identical issues across pages for cleaner reporting.
+ * Input MUST be pre-sorted for deterministic output.
  */
 export function groupIssues(issues: AccessibilityIssue[], pageCount: number): GroupedIssue[] {
   const groups = new Map<string, GroupedIssue>();
 
   for (const issue of issues) {
-    // Group by testId + title (same type of issue)
     const key = `${issue.testId}::${issue.title}`;
 
     if (groups.has(key)) {
@@ -145,7 +156,6 @@ export function groupIssues(issues: AccessibilityIssue[], pageCount: number): Gr
     }
   }
 
-  // Sort by severity then frequency
   const severityOrder: Record<string, number> = { critical: 0, high: 1, medium: 2, low: 3 };
   return Array.from(groups.values()).sort((a, b) => {
     const sevDiff = severityOrder[a.severity] - severityOrder[b.severity];
@@ -156,17 +166,17 @@ export function groupIssues(issues: AccessibilityIssue[], pageCount: number): Gr
 
 export function getComplianceLabel(level: AuditScore['complianceLevel']): string {
   const labels: Record<string, string> = {
-    'non-compliant': 'Non-Compliant',
+    'non-compliant':       'Non-Compliant',
     'partially-compliant': 'Partially Compliant',
-    'aa-compliant': 'WCAG AA Compliant',
-    'aaa-compliant': 'WCAG AAA Compliant'
+    'aa-compliant':        'WCAG 2.2 AA Compliant',
+    'aaa-compliant':       'WCAG 2.2 AAA Compliant'
   };
   return labels[level] || level;
 }
 
 export function getScoreColor(score: number): string {
-  if (score >= 90) return '#10B981';
-  if (score >= 75) return '#3B82F6';
-  if (score >= 50) return '#EAB308';
-  return '#EF4444';
+  if (score >= 90) return '#00BA8C';
+  if (score >= 75) return '#0091DA';
+  if (score >= 50) return '#F0AB00';
+  return '#E8002D';
 }

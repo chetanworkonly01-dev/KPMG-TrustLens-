@@ -1,177 +1,244 @@
 'use client';
 import { useState, useEffect } from 'react';
+import Link from 'next/link';
 
-interface AuditSummary {
-  id: string;
-  type: string;
-  url: string;
-  status: string;
-  score: number;
-  complianceLevel: string;
-  totalIssues: number;
-  startedAt: string;
-  completedAt?: string;
+interface Audit {
+  id: string; status: string; config: { url?: string; type: string; wcagLevels?: string[]; standard?: string };
+  score: { overall: number; complianceLevel: string; totalIssues: number; testsRun?: number };
+  progress: number; startedAt: string; completedAt?: string;
+  crawlCoverage?: { totalPagesFound: number; pagesAudited: number; coveragePercent: number };
 }
 
-const complianceLabels: Record<string, string> = {
-  'non-compliant': 'Non-Compliant',
-  'partially-compliant': 'Partially Compliant',
-  'aa-compliant': 'WCAG AA',
-  'aaa-compliant': 'WCAG AAA'
+const compColors: Record<string, string> = {
+  'non-compliant': '#FF3356', 'partially-compliant': '#F0AB00',
+  'aa-compliant': '#0091DA', 'aaa-compliant': '#00B2A9'
 };
-
-const complianceBadge: Record<string, string> = {
-  'non-compliant': 'badge-critical',
-  'partially-compliant': 'badge-medium',
-  'aa-compliant': 'badge-pass',
-  'aaa-compliant': 'badge-pass'
+const compLabels: Record<string, string> = {
+  'non-compliant': 'Non-Compliant', 'partially-compliant': 'Partially Compliant',
+  'aa-compliant': 'AA Compliant', 'aaa-compliant': 'AAA Compliant'
 };
-
-function getScoreColor(score: number) {
-  if (score >= 90) return '#10B981';
-  if (score >= 75) return '#3B82F6';
-  if (score >= 50) return '#EAB308';
-  return '#EF4444';
-}
 
 export default function HomePage() {
-  const [audits, setAudits] = useState<AuditSummary[]>([]);
+  const [audits, setAudits] = useState<Audit[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    fetch('/api/audit/list')
-      .then(r => r.json())
-      .then(data => { setAudits(Array.isArray(data) ? data : []); setLoading(false); })
-      .catch(() => setLoading(false));
+    const fetchAudits = async () => {
+      try {
+        const res = await fetch('/api/audit/list');
+        if (res.ok) setAudits(await res.json());
+      } catch { /* ignore */ }
+      setLoading(false);
+    };
+    fetchAudits();
+    const i = setInterval(fetchAudits, 4000);
+    return () => clearInterval(i);
   }, []);
+
+  const running = audits.filter(a => a.status !== 'complete' && a.status !== 'error');
+  const completed = audits.filter(a => a.status === 'complete');
+
+  const avgScore = completed.length
+    ? Math.round(completed.reduce((s, a) => s + a.score.overall, 0) / completed.length)
+    : 0;
 
   return (
     <div>
-      {/* Hero */}
-      <section className="hero">
-        <h1 className="hero-title animate-fade-in">
-          AI-Powered <span>Accessibility</span><br />Audit Platform
+      {/* ── KPMG Hero ── */}
+      <div className="hero">
+        <div style={{ marginBottom: 20 }}>
+          <span className="kpmg-ai-badge" style={{ fontSize: 12 }}>
+            <span className="kpmg-ai-dot" />
+            KPMG AI — Powered by GPT-4o
+          </span>
+        </div>
+
+        <h1 className="hero-title">
+          KPMG <span>Accessibility</span><br />Audit Platform
         </h1>
-        <p className="hero-subtitle animate-fade-in stagger-1">
-          Comprehensive WCAG 2.2 analysis for websites, authenticated portals, and PDF documents.
-          57 automated tests powered by AI intelligence.
+
+        <p className="hero-subtitle">
+          Enterprise-grade WCAG 2.2 A/AA/AAA accessibility auditing powered by AI.
+          Automated scanning, AI-powered analysis, and actionable remediation guidance for websites, portals, and PDFs.
         </p>
-        <div style={{ display: 'flex', gap: '12px', justifyContent: 'center' }} className="animate-fade-in stagger-2">
-          <a href="/audit" className="btn btn-primary btn-lg">Start New Audit</a>
-          <a href="#features" className="btn btn-secondary btn-lg">Learn More</a>
-        </div>
-      </section>
 
-      {/* Stats */}
-      <div className="container" style={{ marginTop: '-20px' }}>
-        <div className="grid-4 animate-fade-in stagger-3">
-          <div className="stat-card">
-            <div className="stat-value" style={{ color: 'var(--accent-blue)' }}>57</div>
-            <div className="stat-label">Accessibility Tests</div>
-          </div>
-          <div className="stat-card">
-            <div className="stat-value" style={{ color: 'var(--accent-emerald)' }}>WCAG 2.2</div>
-            <div className="stat-label">Standard Compliance</div>
-          </div>
-          <div className="stat-card">
-            <div className="stat-value" style={{ color: 'var(--accent-purple)' }}>AI</div>
-            <div className="stat-label">Enhanced Analysis</div>
-          </div>
-          <div className="stat-card">
-            <div className="stat-value" style={{ color: 'var(--accent-cyan)' }}>3-in-1</div>
-            <div className="stat-label">Web + Portal + PDF</div>
-          </div>
+        <div style={{ display: 'flex', gap: 12, justifyContent: 'center', flexWrap: 'wrap', marginBottom: 56 }}>
+          <Link href="/audit" className="btn btn-primary btn-lg">
+            🚀 Start New Audit
+          </Link>
+          <a href="#audits" className="btn btn-secondary btn-lg">
+            📊 View History
+          </a>
         </div>
-      </div>
 
-      {/* Features */}
-      <div className="container" id="features" style={{ marginTop: 60 }}>
-        <h2 style={{ fontSize: 24, fontWeight: 700, marginBottom: 24 }}>How It Works</h2>
-        <div className="grid-3">
+        {/* Stats row */}
+        <div style={{ display: 'flex', justifyContent: 'center', gap: 36, flexWrap: 'wrap' }}>
           {[
-            { icon: '🌐', title: 'Website Audit', desc: 'Enter any URL — we crawl multiple pages, handle SPAs, and run 50+ tests against every element.' },
-            { icon: '🔐', title: 'Portal Audit', desc: 'Provide login credentials — we authenticate, navigate post-login pages, and audit protected content.' },
-            { icon: '📄', title: 'PDF Audit', desc: 'Upload any PDF — we check tagged structure, reading order, alt text, fonts, and language settings.' }
-          ].map((f, i) => (
-            <div key={i} className="glass-card" style={{ textAlign: 'center', padding: 32 }}>
-              <div style={{ fontSize: 40, marginBottom: 16 }}>{f.icon}</div>
-              <h3 style={{ fontSize: 18, fontWeight: 700, marginBottom: 8 }}>{f.title}</h3>
-              <p style={{ fontSize: 14, color: 'var(--text-secondary)', lineHeight: 1.6 }}>{f.desc}</p>
+            { val: '57+', label: 'Automated Tests', color: 'var(--accent-blue)' },
+            { val: 'WCAG 2.2', label: 'Standard Coverage', color: 'var(--kpmg-teal)' },
+            { val: 'GPT-4o', label: 'AI Engine', color: '#A78BFA' },
+            { val: 'PPTX · DOCX · PDF', label: 'Export Formats', color: 'var(--accent-yellow)' },
+          ].map(s => (
+            <div key={s.label} style={{ textAlign: 'center' }}>
+              <div style={{ fontSize: 20, fontWeight: 700, color: s.color, marginBottom: 3 }}>{s.val}</div>
+              <div style={{ fontSize: 11, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.07em', fontWeight: 600 }}>{s.label}</div>
             </div>
           ))}
         </div>
       </div>
 
-      {/* Test Categories */}
-      <div className="container" style={{ marginTop: 60 }}>
-        <h2 style={{ fontSize: 24, fontWeight: 700, marginBottom: 24 }}>57 Tests Across 5 Categories</h2>
-        <div className="grid-3" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))' }}>
+      <div className="container">
+        {/* Feature Cards */}
+        <div className="grid-3 animate-slide-up stagger-1" style={{ marginBottom: 44 }}>
           {[
-            { name: 'Perceivable', count: 14, color: '#3B82F6', items: 'Alt text, contrast, captions, headings, reflow' },
-            { name: 'Operable', count: 15, color: '#8B5CF6', items: 'Keyboard, focus, skip nav, target size, timeouts' },
-            { name: 'Understandable', count: 13, color: '#06B6D4', items: 'Labels, errors, language, consistency, auth' },
-            { name: 'Robust', count: 8, color: '#F97316', items: 'ARIA roles, HTML validity, SVGs, live regions' },
-            { name: 'PDF', count: 7, color: '#10B981', items: 'Tags, reading order, fonts, tables, metadata' }
-          ].map((c, i) => (
-            <div key={i} className="glass-card" style={{ borderLeft: `3px solid ${c.color}` }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
-                <span style={{ fontWeight: 700, fontSize: 16 }}>{c.name}</span>
-                <span style={{ color: c.color, fontWeight: 800, fontSize: 18 }}>{c.count}</span>
+            {
+              icon: '🌐', title: 'Website Auditing', color: 'var(--kpmg-light-blue)',
+              desc: 'Deep multi-page crawl with Playwright, axe-core engine, custom WCAG rule tests, and journey simulation.'
+            },
+            {
+              icon: '🔐', title: 'Portal Access', color: 'var(--accent-teal)',
+              desc: 'Authenticated portal auditing with login flow automation — test behind sign-in pages.'
+            },
+            {
+              icon: '📄', title: 'PDF Accessibility', color: '#A78BFA',
+              desc: 'PDF/UA and WCAG PDF technique compliance checking including tagged structure, reading order, and alt text.'
+            },
+          ].map(f => (
+            <div key={f.title} className="glass-card" style={{ borderTop: `3px solid ${f.color}` }}>
+              <div style={{ fontSize: 36, marginBottom: 12 }}>{f.icon}</div>
+              <h3 style={{ fontWeight: 700, marginBottom: 8, fontSize: 15 }}>{f.title}</h3>
+              <p style={{ fontSize: 13, color: 'var(--text-secondary)', lineHeight: 1.65 }}>{f.desc}</p>
+            </div>
+          ))}
+        </div>
+
+        {/* WCAG levels info strip */}
+        <div className="glass-card animate-slide-up stagger-2" style={{ marginBottom: 44, padding: '18px 24px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap' }}>
+            <div style={{ flex: 1 }}>
+              <h3 style={{ fontWeight: 700, fontSize: 14, marginBottom: 5 }}>Standards Covered</h3>
+              <p style={{ fontSize: 12, color: 'var(--text-secondary)', margin: 0 }}>Select your required conformance level before starting an audit</p>
+            </div>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <div className="audit-level-chip a">Level A — Minimum</div>
+              <div className="audit-level-chip aa">Level AA — Standard</div>
+              <div className="audit-level-chip aaa">Level AAA — Enhanced</div>
+            </div>
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+              <span className="badge badge-info">WCAG 2.2</span>
+              <span className="badge badge-na">EN 301 549</span>
+              <span className="badge badge-na">Section 508</span>
+            </div>
+          </div>
+        </div>
+
+        {/* ── Summary Stats (if audits exist) ── */}
+        {completed.length > 0 && (
+          <div className="grid-4 animate-slide-up stagger-3" style={{ marginBottom: 28 }}>
+            {[
+              { val: completed.length, label: 'Audits Completed', color: 'var(--accent-blue)' },
+              { val: avgScore, label: 'Average Score', color: avgScore >= 75 ? '#00BA8C' : avgScore >= 50 ? '#F0AB00' : '#FF3356' },
+              { val: completed.reduce((s, a) => s + a.score.totalIssues, 0), label: 'Total Issues Found', color: '#FF8533' },
+              { val: completed.reduce((s, a) => s + (a.score.testsRun || 0), 0), label: 'Tests Executed', color: 'var(--kpmg-teal)' },
+            ].map(s => (
+              <div key={s.label} className="stat-card">
+                <div className="stat-value" style={{ color: s.color }}>{s.val}</div>
+                <div className="stat-label">{s.label}</div>
               </div>
-              <p style={{ fontSize: 12, color: 'var(--text-muted)', lineHeight: 1.5 }}>{c.items}</p>
-            </div>
-          ))}
-        </div>
-      </div>
-
-      {/* Recent Audits */}
-      <div className="container" style={{ marginTop: 60, paddingBottom: 80 }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
-          <h2 style={{ fontSize: 24, fontWeight: 700 }}>Recent Audits</h2>
-          <a href="/audit" className="btn btn-primary btn-sm">+ New Audit</a>
-        </div>
-
-        {loading ? (
-          <div style={{ textAlign: 'center', padding: 60 }}><div className="spinner" style={{ margin: '0 auto' }} /></div>
-        ) : audits.length === 0 ? (
-          <div className="glass-card" style={{ textAlign: 'center', padding: 60 }}>
-            <div style={{ fontSize: 48, marginBottom: 16 }}>🔍</div>
-            <h3 style={{ fontSize: 18, fontWeight: 600, marginBottom: 8 }}>No audits yet</h3>
-            <p style={{ color: 'var(--text-secondary)', marginBottom: 20 }}>Start your first accessibility audit to see results here.</p>
-            <a href="/audit" className="btn btn-primary">Start First Audit</a>
-          </div>
-        ) : (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-            {audits.map(audit => (
-              <a key={audit.id} href={`/audit/${audit.id}`} className="glass-card" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', textDecoration: 'none', color: 'inherit', padding: '16px 24px' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
-                  <div style={{ fontSize: 24 }}>{audit.type === 'pdf' ? '📄' : audit.type === 'portal' ? '🔐' : '🌐'}</div>
-                  <div>
-                    <div style={{ fontWeight: 600, fontSize: 15 }}>{audit.url}</div>
-                    <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2 }}>
-                      {new Date(audit.startedAt).toLocaleDateString()} · {audit.totalIssues} issues
-                    </div>
-                  </div>
-                </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
-                  {audit.status === 'complete' && (
-                    <>
-                      <span className={`badge ${complianceBadge[audit.complianceLevel] || 'badge-medium'}`}>
-                        {complianceLabels[audit.complianceLevel] || audit.complianceLevel}
-                      </span>
-                      <div style={{ width: 48, height: 48, borderRadius: '50%', border: `3px solid ${getScoreColor(audit.score)}`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, fontSize: 16, color: getScoreColor(audit.score) }}>
-                        {audit.score}
-                      </div>
-                    </>
-                  )}
-                  {audit.status !== 'complete' && (
-                    <span className="badge badge-medium">{audit.status}</span>
-                  )}
-                </div>
-              </a>
             ))}
           </div>
         )}
+
+        {/* ── Running Audits ── */}
+        {running.length > 0 && (
+          <div style={{ marginBottom: 28 }}>
+            <h2 style={{ fontSize: 16, fontWeight: 700, marginBottom: 12 }}>⏳ Running Audits</h2>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 9 }}>
+              {running.map(a => (
+                <Link key={a.id} href={`/audit/${a.id}`} style={{ textDecoration: 'none' }}>
+                  <div className="glass-card animate-glow" style={{ cursor: 'pointer' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 9 }}>
+                      <div className="animate-spin" style={{ width: 18, height: 18, borderRadius: '50%', border: '2px solid rgba(0,145,218,0.2)', borderTopColor: 'var(--accent-blue)' }} />
+                      <div style={{ flex: 1 }}>
+                        <div style={{ fontWeight: 600, fontSize: 13 }}>{a.config.url || 'PDF Audit'}</div>
+                        <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{a.status} · {a.progress}%</div>
+                      </div>
+                      <div style={{ fontSize: 18, fontWeight: 300, color: 'var(--accent-blue)' }}>{a.progress}%</div>
+                    </div>
+                    <div className="progress-bar"><div className="progress-fill" style={{ width: `${a.progress}%` }} /></div>
+                  </div>
+                </Link>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* ── Audit History ── */}
+        <div id="audits">
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
+            <h2 style={{ fontSize: 16, fontWeight: 700 }}>📋 Audit History</h2>
+            <Link href="/audit" className="btn btn-primary btn-sm">+ New Audit</Link>
+          </div>
+
+          {loading && (
+            <div style={{ textAlign: 'center', padding: 44 }}>
+              <div className="spinner" style={{ margin: '0 auto', marginBottom: 12 }} />
+              <p style={{ color: 'var(--text-muted)', fontSize: 13 }}>Loading audits...</p>
+            </div>
+          )}
+
+          {!loading && completed.length === 0 && (
+            <div className="glass-card" style={{ textAlign: 'center', padding: 56 }}>
+              <div style={{ fontSize: 52, marginBottom: 16 }}>♿</div>
+              <h3 style={{ fontWeight: 700, marginBottom: 8, fontSize: 18 }}>No Audits Yet</h3>
+              <p style={{ color: 'var(--text-secondary)', marginBottom: 22, fontSize: 14 }}>
+                Start your first KPMG accessibility audit to see results here.
+              </p>
+              <Link href="/audit" className="btn btn-primary btn-lg">🚀 Start First Audit</Link>
+            </div>
+          )}
+
+          <div style={{ display: 'grid', gap: 12 }}>
+            {completed.map(a => {
+              const level = a.config.wcagLevels?.includes('AAA') ? 'AAA' : a.config.wcagLevels?.includes('AA') ? 'AA' : 'A';
+              const scoreColor = a.score.overall >= 75 ? '#00BA8C' : a.score.overall >= 50 ? '#F0AB00' : '#FF3356';
+              return (
+                <Link key={a.id} href={`/audit/${a.id}`} style={{ textDecoration: 'none' }}>
+                  <div className="glass-card" style={{ cursor: 'pointer', display: 'flex', gap: 16, alignItems: 'center' }}>
+                    {/* Score circle */}
+                    <div style={{ width: 58, height: 58, borderRadius: '50%', border: `2.5px solid ${scoreColor}`, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                      <div style={{ fontSize: 18, fontWeight: 300, color: scoreColor, letterSpacing: '-0.02em', lineHeight: 1 }}>{a.score.overall}</div>
+                      <div style={{ fontSize: 9, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Score</div>
+                    </div>
+
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 3, flexWrap: 'wrap' }}>
+                        <span style={{ fontWeight: 700, fontSize: 14, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 300 }}>
+                          {a.config.url || 'PDF Document'}
+                        </span>
+                        <span className={`audit-level-chip ${level.toLowerCase()}`} style={{ fontSize: 10, padding: '3px 8px' }}>
+                          {a.config.standard || 'WCAG 2.2'} {level}
+                        </span>
+                      </div>
+                      <div style={{ display: 'flex', gap: 10, fontSize: 11, color: 'var(--text-muted)', flexWrap: 'wrap' }}>
+                        <span>📄 {a.crawlCoverage?.pagesAudited ?? '—'} pages</span>
+                        <span>🔍 {a.score.totalIssues} issues</span>
+                        {a.crawlCoverage && <span>📊 {a.crawlCoverage.coveragePercent}% coverage</span>}
+                        <span>📅 {new Date(a.startedAt).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}</span>
+                      </div>
+                    </div>
+
+                    <div style={{ flexShrink: 0 }}>
+                      <span style={{ fontSize: 11, padding: '4px 10px', borderRadius: 99, fontWeight: 700, background: `${compColors[a.score.complianceLevel]}18`, color: compColors[a.score.complianceLevel], border: `1px solid ${compColors[a.score.complianceLevel]}40` }}>
+                        {compLabels[a.score.complianceLevel] || a.score.complianceLevel}
+                      </span>
+                    </div>
+                  </div>
+                </Link>
+              );
+            })}
+          </div>
+        </div>
       </div>
     </div>
   );

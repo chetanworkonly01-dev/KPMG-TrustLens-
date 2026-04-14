@@ -24,6 +24,7 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
     crawlCoverage: audit.crawlCoverage,
     testResults: audit.testResults || [],
     testLog: audit.testLog || [],
+    inapplicableCriteria: audit.inapplicableCriteria || [],
     startedAt: audit.startedAt,
     completedAt: audit.completedAt,
     error: audit.error

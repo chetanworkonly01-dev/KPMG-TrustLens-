@@ -29,13 +29,18 @@ const AXE_WCAG_TAG_MAP: Record<string, { criterion: string; name: string; level:
   'wcag131': { criterion: '1.3.1', name: 'Info and Relationships', level: 'A' },
   'wcag132': { criterion: '1.3.2', name: 'Meaningful Sequence', level: 'A' },
   'wcag133': { criterion: '1.3.3', name: 'Sensory Characteristics', level: 'A' },
+  'wcag134': { criterion: '1.3.4', name: 'Orientation', level: 'AA' },
+  'wcag135': { criterion: '1.3.5', name: 'Identify Input Purpose', level: 'AA' },
   'wcag141': { criterion: '1.4.1', name: 'Use of Color', level: 'A' },
   'wcag143': { criterion: '1.4.3', name: 'Contrast (Minimum)', level: 'AA' },
   'wcag145': { criterion: '1.4.5', name: 'Images of Text', level: 'AA' },
   'wcag1410': { criterion: '1.4.10', name: 'Reflow', level: 'AA' },
   'wcag1411': { criterion: '1.4.11', name: 'Non-text Contrast', level: 'AA' },
+  'wcag1412': { criterion: '1.4.12', name: 'Text Spacing', level: 'AA' },
+  'wcag1413': { criterion: '1.4.13', name: 'Content on Hover or Focus', level: 'AA' },
   'wcag211': { criterion: '2.1.1', name: 'Keyboard', level: 'A' },
   'wcag212': { criterion: '2.1.2', name: 'No Keyboard Trap', level: 'A' },
+  'wcag214': { criterion: '2.1.4', name: 'Character Key Shortcuts', level: 'A' },
   'wcag221': { criterion: '2.2.1', name: 'Timing Adjustable', level: 'A' },
   'wcag222': { criterion: '2.2.2', name: 'Pause, Stop, Hide', level: 'A' },
   'wcag241': { criterion: '2.4.1', name: 'Bypass Blocks', level: 'A' },
@@ -43,6 +48,7 @@ const AXE_WCAG_TAG_MAP: Record<string, { criterion: string; name: string; level:
   'wcag243': { criterion: '2.4.3', name: 'Focus Order', level: 'A' },
   'wcag244': { criterion: '2.4.4', name: 'Link Purpose (In Context)', level: 'A' },
   'wcag245': { criterion: '2.4.5', name: 'Multiple Ways', level: 'AA' },
+  'wcag246': { criterion: '2.4.6', name: 'Headings and Labels', level: 'AA' },
   'wcag247': { criterion: '2.4.7', name: 'Focus Visible', level: 'AA' },
   'wcag2411': { criterion: '2.4.11', name: 'Focus Not Obscured', level: 'AA' },
   'wcag253': { criterion: '2.5.3', name: 'Label in Name', level: 'A' },
@@ -70,7 +76,6 @@ function mapAxeTagsToWcag(tags: string[]): { criterion: string; name: string; le
     const mapped = AXE_WCAG_TAG_MAP[tag];
     if (mapped) return mapped;
   }
-  // Try matching wcag2a, wcag2aa patterns
   if (tags.some(t => t === 'wcag2aaa' || t === 'wcag21aaa' || t === 'wcag22aaa')) {
     return { criterion: 'general', name: 'WCAG AAA Best Practice', level: 'AAA' };
   }
@@ -98,24 +103,84 @@ function getTestIdForAxeRule(ruleId: string, criterion: string): string {
   return `${prefix}-AXE-${ruleId}`;
 }
 
+/**
+ * Determines if a WCAG criterion is applicable based on page content.
+ * Returns true if the criterion SHOULD be tested for this page.
+ */
+function isCriterionApplicable(criterion: string, pageHints: PageApplicabilityHints): boolean {
+  const mediaRelated = ['1.2.1', '1.2.2', '1.2.3', '1.2.4', '1.2.5', '1.2.6', '1.2.7', '1.2.8', '1.2.9'];
+  const formRelated  = ['3.3.1', '3.3.2', '3.3.3', '3.3.4', '3.3.7', '3.3.8'];
+  const timedContent = ['2.2.1', '2.2.2'];
+  const motionContent= ['2.2.2', '2.3.1', '2.3.2', '2.3.3'];
+  const multiPage    = ['2.4.5', '3.2.3', '3.2.4'];
+
+  if (mediaRelated.includes(criterion) && !pageHints.hasMedia) return false;
+  if (formRelated.includes(criterion) && !pageHints.hasForms) return false;
+  if (timedContent.includes(criterion) && !pageHints.hasTimedContent) return false;
+  if (motionContent.includes(criterion) && !pageHints.hasAnimation) return false;
+  if (multiPage.includes(criterion) && pageHints.isSinglePage) return false;
+
+  return true;
+}
+
+export interface PageApplicabilityHints {
+  hasMedia: boolean;       // has video/audio elements
+  hasForms: boolean;       // has form inputs
+  hasTimedContent: boolean; // has countdown/auto-refresh
+  hasAnimation: boolean;   // has auto-playing animations
+  isSinglePage: boolean;   // only one page in the audit
+}
+
+export interface AxeScanResult {
+  issues: AccessibilityIssue[];
+  inapplicableCriteria: string[];   // WCAG criterion IDs that axe said are N/A
+  passedCriteria: string[];          // criteria explicitly passed
+  applicabilityHints: PageApplicabilityHints;
+}
+
 export async function scanWithAxe(
   context: BrowserContext,
   pageData: PageData,
   onProgress?: (message: string) => void
-): Promise<AccessibilityIssue[]> {
+): Promise<AxeScanResult> {
   const issues: AccessibilityIssue[] = [];
+  const inapplicableCriteria: string[] = [];
+  const passedCriteria: string[] = [];
   const page = await context.newPage();
 
+  let applicabilityHints: PageApplicabilityHints = {
+    hasMedia: false, hasForms: false,
+    hasTimedContent: false, hasAnimation: false, isSinglePage: false
+  };
+
   try {
-    await page.goto(pageData.url, { waitUntil: 'networkidle', timeout: 30000 });
-    await page.waitForTimeout(1500);
+    await page.goto(pageData.url, { waitUntil: 'domcontentloaded', timeout: 30000 });
+    // Use networkidle with fallback for better rendering consistency
+    await page.waitForLoadState('networkidle', { timeout: 12000 }).catch(() => {});
+    // Extra buffer for JS-rendered content
+    await page.waitForTimeout(800);
 
     onProgress?.(`Scanning ${pageData.title} with axe-core...`);
+
+    // Detect page content hints for applicability
+    applicabilityHints = await page.evaluate(() => {
+      return {
+        hasMedia: document.querySelectorAll('video, audio, iframe[src*="youtube"], iframe[src*="vimeo"]').length > 0,
+        hasForms: document.querySelectorAll('input:not([type="hidden"]), select, textarea').length > 0,
+        hasTimedContent: !!(
+          document.querySelector('[data-countdown], [class*="countdown"], [class*="timer"]') ||
+          document.querySelector('meta[http-equiv="refresh"]')
+        ),
+        hasAnimation: document.querySelectorAll('[class*="animate"], [class*="carousel"], [class*="slider"], [class*="marquee"]').length > 0,
+        isSinglePage: false,
+      };
+    });
 
     const results = await new AxeBuilder({ page })
       .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa', 'best-practice'])
       .analyze();
 
+    // ── VIOLATIONS → Issues
     for (const violation of results.violations as AxeViolation[]) {
       const wcagMapping = mapAxeTagsToWcag(violation.tags);
       if (!wcagMapping) continue;
@@ -144,13 +209,34 @@ export async function scanWithAxe(
         });
       }
     }
+
+    // ── INAPPLICABLE → N/A criteria (axe explicitly says "not applicable")
+    for (const rule of results.inapplicable || []) {
+      const wcagMapping = mapAxeTagsToWcag(rule.tags || []);
+      if (wcagMapping && wcagMapping.criterion !== 'general') {
+        if (!inapplicableCriteria.includes(wcagMapping.criterion)) {
+          inapplicableCriteria.push(wcagMapping.criterion);
+        }
+      }
+    }
+
+    // ── PASSES → criteria with explicit pass evidence
+    for (const rule of results.passes || []) {
+      const wcagMapping = mapAxeTagsToWcag(rule.tags || []);
+      if (wcagMapping && wcagMapping.criterion !== 'general') {
+        if (!passedCriteria.includes(wcagMapping.criterion)) {
+          passedCriteria.push(wcagMapping.criterion);
+        }
+      }
+    }
+
   } catch (error) {
     console.error(`axe-core scan failed for ${pageData.url}:`, error);
   } finally {
     await page.close();
   }
 
-  return issues;
+  return { issues, inapplicableCriteria, passedCriteria, applicabilityHints };
 }
 
 function generateAxeRecommendation(ruleId: string, help: string): string {

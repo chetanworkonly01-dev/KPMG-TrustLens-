@@ -2,498 +2,550 @@ import {
   Document, Packer, Paragraph, TextRun, Table, TableRow, TableCell,
   WidthType, BorderStyle, AlignmentType, HeadingLevel,
   ShadingType, Header, Footer, PageNumber, NumberFormat,
-  TableOfContents, SectionType, convertInchesToTwip,
-  LevelFormat, INumberingOptions
+  convertInchesToTwip, LevelFormat, INumberingOptions
 } from 'docx';
-import { AuditResult, AccessibilityIssue, AuditScore } from '../types/audit';
+import { AuditResult, AccessibilityIssue } from '../types/audit';
 
-// Color palette
-const COLORS = {
-  primary: '2563EB',
-  primaryLight: 'DBEAFE',
-  dark: '1E293B',
-  gray: '64748B',
-  lightGray: 'F1F5F9',
-  white: 'FFFFFF',
-  critical: 'DC2626',
-  criticalBg: 'FEE2E2',
-  high: 'EA580C',
-  highBg: 'FFEDD5',
-  medium: 'CA8A04',
-  mediumBg: 'FEF9C3',
-  low: '16A34A',
-  lowBg: 'DCFCE7',
-  border: 'E2E8F0',
+// ── KPMG Brand Palette ────────────────────────────────────────
+const K = {
+  navy:         '00338D',  // KPMG Navy
+  blue:         '005EB8',  // KPMG Blue
+  lightBlue:    '0091DA',  // KPMG Light Blue
+  teal:         '00B2A9',  // KPMG Teal
+  white:        'FFFFFF',
+  offWhite:     'F5F7FA',
+  lightGrey:    'EEF2F7',
+  midGrey:      'B0BDC8',
+  darkGrey:     '4A5568',
+  nearBlack:    '1A2638',
+  critical:     'E8002D',
+  criticalBg:   'FFF0F3',
+  high:         'FF6B00',
+  highBg:       'FFF3E8',
+  medium:       'F0AB00',
+  mediumBg:     'FFFBE8',
+  low:          '0091DA',
+  lowBg:        'E8F6FF',
+  pass:         '00B2A9',
+  passBg:       'E8FAF9',
 };
 
-function severityColor(sev: string): string {
-  switch (sev) {
-    case 'critical': return COLORS.critical;
-    case 'high': return COLORS.high;
-    case 'medium': return COLORS.medium;
-    case 'low': return COLORS.low;
-    default: return COLORS.gray;
-  }
+// ── Team colour map ───────────────────────────────────────────
+const TEAM_COLOR: Record<string, string> = {
+  'Frontend Dev':  K.lightBlue,
+  'Designer':      'A78BFA',
+  'Content':       K.teal,
+  'QA':            '00BA8C',
+  'PDF Team':      K.medium,
+  'Design System': K.high,
+};
+
+function sevColor(s: string)   { return { critical: K.critical, high: K.high, medium: K.medium, low: K.low }[s] || K.darkGrey; }
+function sevBg(s: string)      { return { critical: K.criticalBg, high: K.highBg, medium: K.mediumBg, low: K.lowBg }[s] || K.lightGrey; }
+function compLabel(l: string)  { return { 'non-compliant':'Non-Compliant','partially-compliant':'Partially Compliant','aa-compliant':'WCAG AA Compliant','aaa-compliant':'WCAG AAA Compliant' }[l] || l; }
+
+// Derive team from issue (mirrors report page logic)
+function deriveTeam(issue: AccessibilityIssue): string {
+  const c = issue.wcagCriterion;
+  if (['1.1.1','1.2.1','1.2.2','1.2.5'].includes(c)) return 'Content';
+  if (['1.4.3','1.4.11','1.3.3'].includes(c)) return 'Designer';
+  if (issue.source === 'pdf-analyzer' || issue.category === 'pdf') return 'PDF Team';
+  if (['1.3.1','4.1.2','4.1.3'].includes(c)) return 'Design System';
+  if (['3.3.1','3.3.2','3.3.3'].includes(c)) return 'Frontend Dev';
+  if (issue.source === 'journey-test') return 'QA';
+  return 'Frontend Dev';
 }
 
-function severityBgColor(sev: string): string {
-  switch (sev) {
-    case 'critical': return COLORS.criticalBg;
-    case 'high': return COLORS.highBg;
-    case 'medium': return COLORS.mediumBg;
-    case 'low': return COLORS.lowBg;
-    default: return COLORS.lightGray;
-  }
+function deriveEffort(issue: AccessibilityIssue): string {
+  return { critical: '1 Sprint', high: 'Half-day', medium: '1 hour', low: 'Quick Win' }[issue.severity] || '1 hour';
 }
 
-function complianceLabel(level: string): string {
-  const labels: Record<string, string> = {
-    'non-compliant': 'Non-Compliant',
-    'partially-compliant': 'Partially Compliant',
-    'aa-compliant': 'WCAG AA Compliant',
-    'aaa-compliant': 'WCAG AAA Compliant',
-  };
-  return labels[level] || level;
+function deriveAcceptance(issue: AccessibilityIssue): string[] {
+  const c = issue.wcagCriterion;
+  if (c === '2.1.1' || c === '2.1.2') return ['Keyboard navigation works fully without a mouse', 'No keyboard trap detected'];
+  if (c === '2.4.7' || c === '1.4.11') return ['Focus indicator is clearly visible on all interactive elements', 'Focus contrast ratio ≥ 3:1'];
+  if (c === '1.4.3') return ['Text contrast ratio ≥ 4.5:1 (normal) or 3:1 (large text)', 'Verified with contrast analyser tool'];
+  if (c === '1.1.1') return ['All meaningful images have descriptive alt text', 'Decorative images use alt="" or aria-hidden="true"'];
+  if (c === '4.1.2') return ['Screen reader announces name, role, and state correctly', 'ARIA attributes are valid and reference existing IDs'];
+  return ['Issue is no longer reproducible', 'Screen reader announces the element correctly', `WCAG ${c} criterion is met`];
 }
 
-function makeCell(text: string, opts?: {
+// ── Cell helpers ──────────────────────────────────────────────
+function cell(text: string, opts?: {
   bold?: boolean; color?: string; bg?: string; width?: number;
-  alignment?: (typeof AlignmentType)[keyof typeof AlignmentType];
-  fontSize?: number;
+  align?: typeof AlignmentType[keyof typeof AlignmentType]; size?: number; italic?: boolean;
 }): TableCell {
   return new TableCell({
-    children: [
-      new Paragraph({
-        alignment: opts?.alignment || AlignmentType.LEFT,
-        spacing: { before: 60, after: 60 },
-        children: [
-          new TextRun({
-            text,
-            bold: opts?.bold,
-            color: opts?.color || COLORS.dark,
-            size: opts?.fontSize || 20,
-            font: 'Calibri',
-          }),
-        ],
-      }),
-    ],
+    children: [new Paragraph({
+      alignment: opts?.align || AlignmentType.LEFT,
+      spacing: { before: 50, after: 50 },
+      children: [new TextRun({ text, bold: opts?.bold, color: opts?.color || K.nearBlack, size: opts?.size || 19, font: 'Calibri', italics: opts?.italic })],
+    })],
     width: opts?.width ? { size: opts.width, type: WidthType.PERCENTAGE } : undefined,
     shading: opts?.bg ? { type: ShadingType.SOLID, color: opts.bg, fill: opts.bg } : undefined,
-    margins: { top: 40, bottom: 40, left: 80, right: 80 },
+    margins: { top: 50, bottom: 50, left: 100, right: 100 },
   });
 }
 
-function sectionDivider(): Paragraph {
-  return new Paragraph({ spacing: { before: 200, after: 200 } });
+const BORDER = { style: BorderStyle.SINGLE, size: 1, color: 'D1DCE8' };
+const TABLE_BORDERS = { top: BORDER, bottom: BORDER, left: BORDER, right: BORDER, insideHorizontal: BORDER, insideVertical: BORDER };
+
+function sp(before = 0, after = 160): Paragraph { return new Paragraph({ spacing: { before, after } }); }
+
+function h1(text: string): Paragraph {
+  return new Paragraph({
+    heading: HeadingLevel.HEADING_1,
+    spacing: { before: 480, after: 200 },
+    children: [new TextRun({ text, font: 'Calibri', bold: true, size: 36, color: K.navy })],
+  });
 }
 
+function h2(text: string): Paragraph {
+  return new Paragraph({
+    heading: HeadingLevel.HEADING_2,
+    spacing: { before: 320, after: 140 },
+    children: [new TextRun({ text, font: 'Calibri', bold: true, size: 28, color: K.blue })],
+  });
+}
+
+function h3(text: string): Paragraph {
+  return new Paragraph({
+    heading: HeadingLevel.HEADING_3,
+    spacing: { before: 220, after: 100 },
+    children: [new TextRun({ text, font: 'Calibri', bold: true, size: 24, color: K.lightBlue })],
+  });
+}
+
+function body(text: string, color = K.darkGrey): Paragraph {
+  return new Paragraph({
+    spacing: { after: 100 },
+    children: [new TextRun({ text, font: 'Calibri', size: 20, color })],
+  });
+}
+
+function labelValue(label: string, value: string, valueColor?: string): Paragraph {
+  return new Paragraph({
+    spacing: { after: 80 },
+    children: [
+      new TextRun({ text: label + ': ', font: 'Calibri', bold: true, size: 20, color: K.navy }),
+      new TextRun({ text: value, font: 'Calibri', size: 20, color: valueColor || K.darkGrey }),
+    ],
+  });
+}
+
+function divider(): Paragraph {
+  return new Paragraph({
+    spacing: { before: 120, after: 120 },
+    children: [new TextRun({ text: '─'.repeat(90), font: 'Calibri', size: 14, color: 'D1DCE8' })],
+  });
+}
+
+function bullet(text: string): Paragraph {
+  return new Paragraph({
+    spacing: { after: 60 },
+    numbering: { reference: 'bullet-list', level: 0 },
+    children: [new TextRun({ text, font: 'Calibri', size: 19, color: K.darkGrey })],
+  });
+}
+
+// ── Main export ───────────────────────────────────────────────
 export async function generateDocx(audit: AuditResult): Promise<Buffer> {
   const report = audit.report!;
-  const score = audit.score;
+  const score  = audit.score;
   const issues = audit.issues;
   const config = audit.config;
-  const auditDate = new Date(audit.startedAt).toLocaleDateString('en-US', {
-    year: 'numeric', month: 'long', day: 'numeric'
-  });
+  const testedLevel = report.testedLevel || 'AA';
+  const standard    = config.standard || 'WCAG 2.2';
+  const auditDate   = new Date(audit.startedAt).toLocaleDateString('en-GB', { year: 'numeric', month: 'long', day: 'numeric' });
   const projectName = config.url || 'PDF Document';
+
+  // Group by team for Section 4
+  const byTeam: Record<string, AccessibilityIssue[]> = {};
+  for (const iss of issues) {
+    const t = deriveTeam(iss);
+    if (!byTeam[t]) byTeam[t] = [];
+    byTeam[t].push(iss);
+  }
+
+  // Group by component for Section 3
+  const compFn = (i: AccessibilityIssue) => {
+    const t = (i.title + ' ' + i.element).toLowerCase();
+    if (t.includes('button') || t.includes('btn'))           return 'Buttons';
+    if (t.includes('form') || t.includes('input') || t.includes('label') || t.includes('select')) return 'Forms';
+    if (t.includes('modal') || t.includes('dialog'))         return 'Modals';
+    if (t.includes('nav')  || t.includes('menu') || t.includes('link')) return 'Navigation';
+    if (t.includes('img')  || t.includes('alt'))             return 'Images';
+    if (t.includes('heading'))                                return 'Headings';
+    if (t.includes('color') || t.includes('contrast'))       return 'Colour & Contrast';
+    if (t.includes('focus') || t.includes('keyboard'))       return 'Keyboard & Focus';
+    return 'General';
+  };
+  const byComp: Record<string, AccessibilityIssue[]> = {};
+  for (const iss of issues) {
+    const c = compFn(iss);
+    if (!byComp[c]) byComp[c] = [];
+    byComp[c].push(iss);
+  }
+
+  const quickWins  = issues.filter(i => i.severity === 'low');
+  const critical   = issues.filter(i => i.severity === 'critical');
+  const high       = issues.filter(i => i.severity === 'high');
+  const medium     = issues.filter(i => i.severity === 'medium');
 
   const numbering: INumberingOptions = {
     config: [{
       reference: 'bullet-list',
       levels: [{
-        level: 0,
-        format: LevelFormat.BULLET,
-        text: '\u2022',
+        level: 0, format: LevelFormat.BULLET, text: '\u2022',
         alignment: AlignmentType.LEFT,
-        style: { paragraph: { indent: { left: convertInchesToTwip(0.5), hanging: convertInchesToTwip(0.25) } } }
+        style: { paragraph: { indent: { left: convertInchesToTwip(0.4), hanging: convertInchesToTwip(0.2) } } }
       }]
     }]
   };
+
+  const HEADER_CHILDREN = [
+    new Paragraph({
+      alignment: AlignmentType.RIGHT,
+      border: { bottom: { style: BorderStyle.SINGLE, size: 1, color: 'D1DCE8' } },
+      spacing: { after: 80 },
+      children: [
+        new TextRun({ text: 'KPMG ', font: 'Calibri', size: 16, bold: true, color: K.navy }),
+        new TextRun({ text: 'Accessibility Audit Report', font: 'Calibri', size: 16, color: K.darkGrey, italics: true }),
+        new TextRun({ text: '  |  ' + auditDate, font: 'Calibri', size: 16, color: K.midGrey }),
+      ],
+    }),
+  ];
+
+  const FOOTER_CHILDREN = [
+    new Paragraph({
+      alignment: AlignmentType.CENTER,
+      border: { top: { style: BorderStyle.SINGLE, size: 1, color: 'D1DCE8' } },
+      spacing: { before: 80 },
+      children: [
+        new TextRun({ text: 'Confidential  |  KPMG Accessibility Audit  |  Page ', font: 'Calibri', size: 14, color: K.midGrey }),
+        new TextRun({ children: [PageNumber.CURRENT], font: 'Calibri', size: 14, color: K.midGrey }),
+        new TextRun({ text: ' of ', font: 'Calibri', size: 14, color: K.midGrey }),
+        new TextRun({ children: [PageNumber.TOTAL_PAGES], font: 'Calibri', size: 14, color: K.midGrey }),
+      ],
+    }),
+  ];
 
   const doc = new Document({
     numbering,
     styles: {
       default: {
-        document: {
-          run: { font: 'Calibri', size: 22, color: COLORS.dark },
-        },
-        heading1: {
-          run: { font: 'Calibri', size: 36, bold: true, color: COLORS.primary },
-          paragraph: { spacing: { before: 360, after: 200 } },
-        },
-        heading2: {
-          run: { font: 'Calibri', size: 28, bold: true, color: COLORS.dark },
-          paragraph: { spacing: { before: 300, after: 160 } },
-        },
-        heading3: {
-          run: { font: 'Calibri', size: 24, bold: true, color: COLORS.primary },
-          paragraph: { spacing: { before: 240, after: 120 } },
-        },
+        document: { run: { font: 'Calibri', size: 20, color: K.nearBlack } },
       },
     },
     sections: [
-      // SECTION 1: COVER PAGE
       {
         properties: {
           page: {
-            margin: { top: convertInchesToTwip(1), bottom: convertInchesToTwip(1), left: convertInchesToTwip(1.2), right: convertInchesToTwip(1.2) },
+            margin: { top: convertInchesToTwip(0.9), bottom: convertInchesToTwip(0.9), left: convertInchesToTwip(1.1), right: convertInchesToTwip(1.1) },
             pageNumbers: { start: 1, formatType: NumberFormat.DECIMAL },
           },
         },
-        headers: {
-          default: new Header({
-            children: [
-              new Paragraph({
-                alignment: AlignmentType.RIGHT,
-                children: [
-                  new TextRun({ text: 'Accessibility Audit Report', color: COLORS.gray, size: 16, font: 'Calibri', italics: true }),
-                ],
-              }),
-            ],
-          }),
-        },
-        footers: {
-          default: new Footer({
-            children: [
-              new Paragraph({
-                alignment: AlignmentType.CENTER,
-                children: [
-                  new TextRun({ text: 'Page ', color: COLORS.gray, size: 16, font: 'Calibri' }),
-                  new TextRun({ children: [PageNumber.CURRENT], color: COLORS.gray, size: 16, font: 'Calibri' }),
-                  new TextRun({ text: ' of ', color: COLORS.gray, size: 16, font: 'Calibri' }),
-                  new TextRun({ children: [PageNumber.TOTAL_PAGES], color: COLORS.gray, size: 16, font: 'Calibri' }),
-                ],
-              }),
-            ],
-          }),
-        },
+        headers: { default: new Header({ children: HEADER_CHILDREN }) },
+        footers: { default: new Footer({ children: FOOTER_CHILDREN }) },
         children: [
-          // Spacer
-          new Paragraph({ spacing: { before: 1200 } }),
-          // Title
+
+          // ─────────────────────────────────────────────────────
+          // COVER PAGE
+          // ─────────────────────────────────────────────────────
+          sp(1440),
           new Paragraph({
             alignment: AlignmentType.CENTER,
-            spacing: { after: 100 },
-            children: [
-              new TextRun({ text: 'ACCESSIBILITY', font: 'Calibri', size: 56, bold: true, color: COLORS.primary }),
-            ],
+            spacing: { after: 60 },
+            children: [new TextRun({ text: 'KPMG', font: 'Calibri', size: 72, bold: true, color: K.navy })],
           }),
           new Paragraph({
             alignment: AlignmentType.CENTER,
-            spacing: { after: 100 },
-            children: [
-              new TextRun({ text: 'AUDIT REPORT', font: 'Calibri', size: 56, bold: true, color: COLORS.dark }),
-            ],
+            spacing: { after: 300 },
+            children: [new TextRun({ text: 'Accessibility Audit — Final Delivery Report', font: 'Calibri', size: 32, color: K.lightBlue })],
           }),
-          // Decorative line
           new Paragraph({
             alignment: AlignmentType.CENTER,
-            spacing: { before: 200, after: 200 },
-            children: [
-              new TextRun({ text: '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━', font: 'Calibri', size: 24, color: COLORS.primary }),
-            ],
+            spacing: { after: 80 },
+            children: [new TextRun({ text: '━'.repeat(60), font: 'Calibri', size: 22, color: K.navy })],
           }),
-          // Subtitle / project
           new Paragraph({
             alignment: AlignmentType.CENTER,
             spacing: { after: 600 },
-            children: [
-              new TextRun({ text: projectName, font: 'Calibri', size: 28, color: COLORS.gray, italics: true }),
-            ],
+            children: [new TextRun({ text: projectName, font: 'Calibri', size: 26, color: K.darkGrey, italics: true })],
           }),
-          // Cover metadata table
+          // Metadata table
           new Table({
-            width: { size: 60, type: WidthType.PERCENTAGE },
+            width: { size: 55, type: WidthType.PERCENTAGE },
             alignment: AlignmentType.CENTER,
+            borders: TABLE_BORDERS,
             rows: [
-              new TableRow({
-                children: [
-                  makeCell('Audit Date', { bold: true, color: COLORS.primary, width: 40, fontSize: 22 }),
-                  makeCell(auditDate, { width: 60, fontSize: 22 }),
-                ],
-              }),
-              new TableRow({
-                children: [
-                  makeCell('Pages Audited', { bold: true, color: COLORS.primary, width: 40, fontSize: 22 }),
-                  makeCell(String(audit.pages.length), { width: 60, fontSize: 22 }),
-                ],
-              }),
-              new TableRow({
-                children: [
-                  makeCell('Accessibility Score', { bold: true, color: COLORS.primary, width: 40, fontSize: 22 }),
-                  makeCell(`${score.overall}/100`, { width: 60, fontSize: 22, color: score.overall >= 75 ? COLORS.low : score.overall >= 50 ? COLORS.medium : COLORS.critical }),
-                ],
-              }),
-              new TableRow({
-                children: [
-                  makeCell('Compliance Level', { bold: true, color: COLORS.primary, width: 40, fontSize: 22 }),
-                  makeCell(complianceLabel(score.complianceLevel), { width: 60, fontSize: 22 }),
-                ],
-              }),
-              new TableRow({
-                children: [
-                  makeCell('Total Issues', { bold: true, color: COLORS.primary, width: 40, fontSize: 22 }),
-                  makeCell(String(score.totalIssues), { width: 60, fontSize: 22 }),
-                ],
-              }),
-              new TableRow({
-                children: [
-                  makeCell('Audit Type', { bold: true, color: COLORS.primary, width: 40, fontSize: 22 }),
-                  makeCell(config.type.toUpperCase(), { width: 60, fontSize: 22 }),
-                ],
-              }),
+              new TableRow({ children: [cell('Standard', { bold: true, color: K.navy, width: 40, bg: K.offWhite }), cell(`${standard} Level ${testedLevel}`, { width: 60 })] }),
+              new TableRow({ children: [cell('Audit Date', { bold: true, color: K.navy, width: 40, bg: K.offWhite }), cell(auditDate, { width: 60 })] }),
+              new TableRow({ children: [cell('Pages Audited', { bold: true, color: K.navy, width: 40, bg: K.offWhite }), cell(String(audit.pages.length), { width: 60 })] }),
+              new TableRow({ children: [cell('Score', { bold: true, color: K.navy, width: 40, bg: K.offWhite }), cell(`${score.overall}/100`, { width: 60, color: score.overall >= 75 ? K.teal : score.overall >= 50 ? K.medium : K.critical, bold: true })] }),
+              new TableRow({ children: [cell('Compliance', { bold: true, color: K.navy, width: 40, bg: K.offWhite }), cell(compLabel(score.complianceLevel), { width: 60 })] }),
+              new TableRow({ children: [cell('Total Issues', { bold: true, color: K.navy, width: 40, bg: K.offWhite }), cell(String(score.totalIssues), { width: 60 })] }),
+              new TableRow({ children: [cell('Classified Confidential', { bold: true, color: K.navy, width: 40, bg: K.offWhite }), cell('KPMG Internal Use Only', { width: 60, italic: true, color: K.midGrey })] }),
             ],
-            borders: {
-              top: { style: BorderStyle.SINGLE, size: 1, color: COLORS.border },
-              bottom: { style: BorderStyle.SINGLE, size: 1, color: COLORS.border },
-              left: { style: BorderStyle.SINGLE, size: 1, color: COLORS.border },
-              right: { style: BorderStyle.SINGLE, size: 1, color: COLORS.border },
-              insideHorizontal: { style: BorderStyle.SINGLE, size: 1, color: COLORS.border },
-              insideVertical: { style: BorderStyle.SINGLE, size: 1, color: COLORS.border },
-            },
           }),
 
-          // ==================
-          // SECTION 2: EXECUTIVE SUMMARY
-          // ==================
-          sectionDivider(),
-          new Paragraph({
-            heading: HeadingLevel.HEADING_1,
-            children: [new TextRun({ text: '1. Executive Summary', font: 'Calibri' })],
-          }),
-          new Paragraph({
-            spacing: { after: 200 },
-            children: [
-              new TextRun({
-                text: report.executiveSummary || `This accessibility audit evaluated ${projectName} against WCAG 2.2 Level A and AA standards. The audit identified ${score.totalIssues} accessibility issues across ${audit.pages.length} page(s).`,
-                font: 'Calibri', size: 22, color: COLORS.dark,
-              }),
-            ],
-          }),
-          // Severity summary
-          new Paragraph({
-            heading: HeadingLevel.HEADING_2,
-            children: [new TextRun({ text: 'Issue Breakdown by Severity', font: 'Calibri' })],
-          }),
+          // ─────────────────────────────────────────────────────
+          // SECTION 1: EXECUTIVE SUMMARY
+          // ─────────────────────────────────────────────────────
+          h1('1. Executive Summary'),
+          body(report.executiveSummary || `This KPMG accessibility audit evaluated ${projectName} against ${standard} Level ${testedLevel} guidelines. The overall score is ${score.overall}/100 (${compLabel(score.complianceLevel)}).`, K.darkGrey),
+          sp(),
+          h2('1.1 Issue Breakdown'),
           new Table({
             width: { size: 100, type: WidthType.PERCENTAGE },
+            borders: TABLE_BORDERS,
             rows: [
-              new TableRow({
-                children: [
-                  makeCell('Severity', { bold: true, bg: COLORS.primary, color: COLORS.white, width: 25 }),
-                  makeCell('Count', { bold: true, bg: COLORS.primary, color: COLORS.white, width: 25, alignment: AlignmentType.CENTER }),
-                  makeCell('Percentage', { bold: true, bg: COLORS.primary, color: COLORS.white, width: 25, alignment: AlignmentType.CENTER }),
-                  makeCell('Priority', { bold: true, bg: COLORS.primary, color: COLORS.white, width: 25, alignment: AlignmentType.CENTER }),
-                ],
-              }),
-              ...(['critical', 'high', 'medium', 'low'] as const).map((sev, idx) =>
-                new TableRow({
-                  children: [
-                    makeCell(sev.charAt(0).toUpperCase() + sev.slice(1), {
-                      bold: true, color: severityColor(sev),
-                      bg: idx % 2 === 0 ? COLORS.lightGray : COLORS.white,
-                    }),
-                    makeCell(String(score.issueBySeverity[sev]), {
-                      alignment: AlignmentType.CENTER,
-                      bg: idx % 2 === 0 ? COLORS.lightGray : COLORS.white,
-                    }),
-                    makeCell(
-                      score.totalIssues > 0
-                        ? `${Math.round((score.issueBySeverity[sev] / score.totalIssues) * 100)}%`
-                        : '0%',
-                      {
-                        alignment: AlignmentType.CENTER,
-                        bg: idx % 2 === 0 ? COLORS.lightGray : COLORS.white,
-                      }
-                    ),
-                    makeCell(
-                      sev === 'critical' ? 'Immediate' : sev === 'high' ? 'High' : sev === 'medium' ? 'Moderate' : 'Low',
-                      {
-                        alignment: AlignmentType.CENTER,
-                        bg: idx % 2 === 0 ? COLORS.lightGray : COLORS.white,
-                        color: severityColor(sev),
-                        bold: true,
-                      }
-                    ),
-                  ],
-                })
-              ),
+              new TableRow({ children: [cell('Severity', { bold: true, bg: K.navy, color: K.white, width: 20 }), cell('Count', { bold: true, bg: K.navy, color: K.white, width: 20, align: AlignmentType.CENTER }), cell('% of Total', { bold: true, bg: K.navy, color: K.white, width: 20, align: AlignmentType.CENTER }), cell('Priority', { bold: true, bg: K.navy, color: K.white, width: 20, align: AlignmentType.CENTER }), cell('Target Sprint', { bold: true, bg: K.navy, color: K.white, width: 20, align: AlignmentType.CENTER })] }),
+              ...(['critical','high','medium','low'] as const).map((sev, i) => new TableRow({ children: [
+                cell(sev.charAt(0).toUpperCase() + sev.slice(1), { bold: true, color: sevColor(sev), bg: i % 2 === 0 ? K.offWhite : K.white }),
+                cell(String(score.issueBySeverity[sev]), { align: AlignmentType.CENTER, bg: i % 2 === 0 ? K.offWhite : K.white }),
+                cell(score.totalIssues > 0 ? `${Math.round((score.issueBySeverity[sev] / score.totalIssues) * 100)}%` : '0%', { align: AlignmentType.CENTER, bg: i % 2 === 0 ? K.offWhite : K.white }),
+                cell({ critical:'Immediate', high:'High', medium:'Moderate', low:'Low' }[sev], { align: AlignmentType.CENTER, bold: true, color: sevColor(sev), bg: sevBg(sev) }),
+                cell({ critical:'Sprint 1', high:'Sprint 2', medium:'Q2', low:'Today' }[sev], { align: AlignmentType.CENTER, bg: i % 2 === 0 ? K.offWhite : K.white }),
+              ]})),
             ],
-            borders: {
-              top: { style: BorderStyle.SINGLE, size: 1, color: COLORS.border },
-              bottom: { style: BorderStyle.SINGLE, size: 1, color: COLORS.border },
-              left: { style: BorderStyle.SINGLE, size: 1, color: COLORS.border },
-              right: { style: BorderStyle.SINGLE, size: 1, color: COLORS.border },
-              insideHorizontal: { style: BorderStyle.SINGLE, size: 1, color: COLORS.border },
-              insideVertical: { style: BorderStyle.SINGLE, size: 1, color: COLORS.border },
-            },
           }),
-
-          // ==================
-          // SECTION 3: SUMMARY TABLE
-          // ==================
-          sectionDivider(),
-          new Paragraph({
-            heading: HeadingLevel.HEADING_1,
-            children: [new TextRun({ text: '2. Summary of Findings', font: 'Calibri' })],
-          }),
+          sp(),
+          h2('1.2 Category Scores'),
           new Table({
             width: { size: 100, type: WidthType.PERCENTAGE },
+            borders: TABLE_BORDERS,
             rows: [
-              // Header
-              new TableRow({
-                children: [
-                  makeCell('Issue ID', { bold: true, bg: COLORS.primary, color: COLORS.white, width: 15 }),
-                  makeCell('Issue Title', { bold: true, bg: COLORS.primary, color: COLORS.white, width: 40 }),
-                  makeCell('WCAG SC', { bold: true, bg: COLORS.primary, color: COLORS.white, width: 25 }),
-                  makeCell('Severity', { bold: true, bg: COLORS.primary, color: COLORS.white, width: 20, alignment: AlignmentType.CENTER }),
-                ],
-              }),
-              // Data rows
-              ...issues.map((issue, idx) =>
-                new TableRow({
-                  children: [
-                    makeCell(`A11Y-${String(idx + 1).padStart(3, '0')}`, {
-                      bold: true,
-                      bg: idx % 2 === 0 ? COLORS.lightGray : COLORS.white,
-                      fontSize: 18,
-                    }),
-                    makeCell(issue.title, {
-                      bg: idx % 2 === 0 ? COLORS.lightGray : COLORS.white,
-                      fontSize: 18,
-                    }),
-                    makeCell(`${issue.wcagCriterion} ${issue.wcagName}`, {
-                      bg: idx % 2 === 0 ? COLORS.lightGray : COLORS.white,
-                      fontSize: 18,
-                    }),
-                    makeCell(issue.severity.toUpperCase(), {
-                      bold: true,
-                      color: severityColor(issue.severity),
-                      bg: severityBgColor(issue.severity),
-                      alignment: AlignmentType.CENTER,
-                      fontSize: 18,
-                    }),
-                  ],
-                })
-              ),
+              new TableRow({ children: ['Perceivable','Operable','Understandable','Robust','PDF'].map(c => cell(c, { bold: true, bg: K.navy, color: K.white, align: AlignmentType.CENTER })) }),
+              new TableRow({ children: ['perceivable','operable','understandable','robust','pdf'].map(k => {
+                const v = score.categoryScores[k as keyof typeof score.categoryScores] || 0;
+                const col = v >= 75 ? K.teal : v >= 50 ? K.medium : K.critical;
+                return cell(String(v) + '/100', { align: AlignmentType.CENTER, bold: true, color: col });
+              }) }),
             ],
-            borders: {
-              top: { style: BorderStyle.SINGLE, size: 1, color: COLORS.border },
-              bottom: { style: BorderStyle.SINGLE, size: 1, color: COLORS.border },
-              left: { style: BorderStyle.SINGLE, size: 1, color: COLORS.border },
-              right: { style: BorderStyle.SINGLE, size: 1, color: COLORS.border },
-              insideHorizontal: { style: BorderStyle.SINGLE, size: 1, color: COLORS.border },
-              insideVertical: { style: BorderStyle.SINGLE, size: 1, color: COLORS.border },
-            },
           }),
 
-          // ==================
-          // SECTION 4: DETAILED ISSUES
-          // ==================
-          sectionDivider(),
-          new Paragraph({
-            heading: HeadingLevel.HEADING_1,
-            children: [new TextRun({ text: '3. Detailed Issue Analysis', font: 'Calibri' })],
+          // ─────────────────────────────────────────────────────
+          // SECTION 2: ISSUE BACKLOG (DEVELOPER FORMAT)
+          // ─────────────────────────────────────────────────────
+          h1('2. Issue Backlog — Developer Format'),
+          body('Each issue below includes all information needed to assign, estimate, implement, and verify the fix. Issues are sorted by severity.', K.darkGrey),
+          sp(),
+
+          // Summary table
+          new Table({
+            width: { size: 100, type: WidthType.PERCENTAGE },
+            borders: TABLE_BORDERS,
+            rows: [
+              new TableRow({ children: [
+                cell('#', { bold: true, bg: K.navy, color: K.white, width: 8, align: AlignmentType.CENTER }),
+                cell('Issue Title', { bold: true, bg: K.navy, color: K.white, width: 30 }),
+                cell('WCAG SC', { bold: true, bg: K.navy, color: K.white, width: 12 }),
+                cell('Level', { bold: true, bg: K.navy, color: K.white, width: 8, align: AlignmentType.CENTER }),
+                cell('Severity', { bold: true, bg: K.navy, color: K.white, width: 12, align: AlignmentType.CENTER }),
+                cell('Team Owner', { bold: true, bg: K.navy, color: K.white, width: 15 }),
+                cell('Effort', { bold: true, bg: K.navy, color: K.white, width: 15, align: AlignmentType.CENTER }),
+              ]}),
+              ...issues.map((iss, idx) => new TableRow({ children: [
+                cell(`#${String(idx+1).padStart(3,'0')}`, { align: AlignmentType.CENTER, bold: true, bg: idx % 2 === 0 ? K.offWhite : K.white, size: 17 }),
+                cell(iss.title, { bg: idx % 2 === 0 ? K.offWhite : K.white, size: 17 }),
+                cell(iss.wcagCriterion, { bg: idx % 2 === 0 ? K.offWhite : K.white, size: 17 }),
+                cell(iss.wcagLevel, { align: AlignmentType.CENTER, bg: idx % 2 === 0 ? K.offWhite : K.white, size: 17, color: K.lightBlue, bold: true }),
+                cell(iss.severity.toUpperCase(), { align: AlignmentType.CENTER, bold: true, color: sevColor(iss.severity), bg: sevBg(iss.severity), size: 17 }),
+                cell(deriveTeam(iss), { bg: idx % 2 === 0 ? K.offWhite : K.white, size: 17 }),
+                cell(deriveEffort(iss), { align: AlignmentType.CENTER, bg: idx % 2 === 0 ? K.offWhite : K.white, size: 17 }),
+              ]})),
+            ],
           }),
-          ...issues.flatMap((issue, idx) => {
-            const issueId = `A11Y-${String(idx + 1).padStart(3, '0')}`;
+
+          // Detail blocks
+          sp(200),
+          ...issues.flatMap((iss, idx) => {
+            const acceptance = deriveAcceptance(iss);
+            const team = deriveTeam(iss);
             const parts: (Paragraph | Table)[] = [
-              // Issue heading
-              new Paragraph({
-                heading: HeadingLevel.HEADING_3,
-                spacing: { before: 300 },
-                children: [
-                  new TextRun({ text: `${issueId}: ${issue.title}`, font: 'Calibri' }),
-                ],
-              }),
-              // Severity + WCAG tag line
+              divider(),
+              h3(`#${String(idx+1).padStart(3,'0')} — ${iss.title}`),
               new Paragraph({
                 spacing: { after: 120 },
                 children: [
-                  new TextRun({ text: '⚠ Severity: ', font: 'Calibri', bold: true, size: 20 }),
-                  new TextRun({ text: issue.severity.toUpperCase(), font: 'Calibri', bold: true, size: 20, color: severityColor(issue.severity) }),
-                  new TextRun({ text: '    |    ', font: 'Calibri', size: 20, color: COLORS.gray }),
-                  new TextRun({ text: '📋 WCAG SC: ', font: 'Calibri', bold: true, size: 20 }),
-                  new TextRun({ text: `${issue.wcagCriterion} ${issue.wcagName} (Level ${issue.wcagLevel})`, font: 'Calibri', size: 20, color: COLORS.primary }),
+                  new TextRun({ text: 'Severity: ', bold: true, font: 'Calibri', size: 20, color: K.navy }),
+                  new TextRun({ text: iss.severity.toUpperCase(), bold: true, font: 'Calibri', size: 20, color: sevColor(iss.severity) }),
+                  new TextRun({ text: '   |   WCAG: ', bold: true, font: 'Calibri', size: 20, color: K.navy }),
+                  new TextRun({ text: `${iss.wcagCriterion} — ${iss.wcagName} (Level ${iss.wcagLevel})`, font: 'Calibri', size: 20, color: K.lightBlue }),
+                  new TextRun({ text: '   |   Owner: ', bold: true, font: 'Calibri', size: 20, color: K.navy }),
+                  new TextRun({ text: team, bold: true, font: 'Calibri', size: 20, color: `${TEAM_COLOR[team] || K.lightBlue}` }),
+                  new TextRun({ text: '   |   Effort: ', bold: true, font: 'Calibri', size: 20, color: K.navy }),
+                  new TextRun({ text: deriveEffort(iss), font: 'Calibri', size: 20, color: K.darkGrey }),
                 ],
               }),
-              // Description
-              new Paragraph({
-                spacing: { before: 120 },
-                children: [
-                  new TextRun({ text: 'Description', font: 'Calibri', bold: true, size: 22, color: COLORS.dark }),
-                ],
-              }),
-              new Paragraph({
+              sp(40),
+              new Paragraph({ spacing: { after: 60 }, children: [new TextRun({ text: 'Page / Screen: ', bold: true, font: 'Calibri', size: 19, color: K.navy }), new TextRun({ text: iss.pageUrl.replace(/^https?:\/\/[^/]+/, '') || '/', font: 'Calibri', size: 19, color: K.darkGrey })] }),
+              new Paragraph({ spacing: { after: 60 }, children: [new TextRun({ text: 'Element Selector: ', bold: true, font: 'Calibri', size: 19, color: K.navy }), new TextRun({ text: iss.element.substring(0, 120), font: 'Consolas', size: 17, color: K.blue })] }),
+              sp(60),
+              new Paragraph({ spacing: { after: 50 }, children: [new TextRun({ text: 'Description', bold: true, font: 'Calibri', size: 21, color: K.nearBlack })] }),
+              body(iss.description),
+              sp(60),
+              new Paragraph({ spacing: { after: 50 }, children: [new TextRun({ text: 'Steps to Reproduce', bold: true, font: 'Calibri', size: 21, color: K.nearBlack })] }),
+              new Paragraph({ spacing: { after: 60 }, numbering: { reference: 'bullet-list', level: 0 }, children: [new TextRun({ text: `Navigate to: ${iss.pageUrl}`, font: 'Calibri', size: 19, color: K.darkGrey })] }),
+              new Paragraph({ spacing: { after: 60 }, numbering: { reference: 'bullet-list', level: 0 }, children: [new TextRun({ text: `Locate element: ${iss.element.substring(0, 80)}`, font: 'Calibri', size: 19, color: K.darkGrey })] }),
+              new Paragraph({ spacing: { after: 60 }, numbering: { reference: 'bullet-list', level: 0 }, children: [new TextRun({ text: 'Interact using keyboard only (Tab, Enter, Space) or screen reader (NVDA/JAWS/VoiceOver)', font: 'Calibri', size: 19, color: K.darkGrey })] }),
+              sp(60),
+              new Paragraph({ spacing: { after: 50 }, children: [new TextRun({ text: 'Current Behaviour', bold: true, font: 'Calibri', size: 21, color: K.critical })] }),
+              body(iss.description, K.critical),
+              new Paragraph({ spacing: { after: 50 }, children: [new TextRun({ text: 'Expected Behaviour', bold: true, font: 'Calibri', size: 21, color: '047856' })] }),
+              body(iss.recommendation, '047856'),
+              sp(60),
+              iss.codeFix ? new Paragraph({ spacing: { after: 50 }, children: [new TextRun({ text: 'Recommended Code Fix', bold: true, font: 'Calibri', size: 21, color: K.nearBlack })] }) : sp(0),
+              iss.codeFix ? new Paragraph({
                 spacing: { after: 120 },
-                children: [
-                  new TextRun({ text: issue.description, font: 'Calibri', size: 20, color: COLORS.gray }),
-                ],
-              }),
-              // Impact
-              new Paragraph({
-                spacing: { before: 120 },
-                children: [
-                  new TextRun({ text: 'Impact', font: 'Calibri', bold: true, size: 22, color: COLORS.dark }),
-                ],
-              }),
-              new Paragraph({
-                spacing: { after: 120 },
-                children: [
-                  new TextRun({ text: issue.impact, font: 'Calibri', size: 20, color: COLORS.gray }),
-                ],
-              }),
-              // Remediation
-              new Paragraph({
-                spacing: { before: 120 },
-                children: [
-                  new TextRun({ text: 'Remediation Guidance', font: 'Calibri', bold: true, size: 22, color: COLORS.dark }),
-                ],
-              }),
-              new Paragraph({
-                spacing: { after: 120 },
-                children: [
-                  new TextRun({ text: issue.recommendation, font: 'Calibri', size: 20, color: '047857' }),
-                ],
-              }),
+                shading: { type: ShadingType.SOLID, color: '010B1A', fill: '010B1A' },
+                border: { left: { style: BorderStyle.THICK, size: 6, color: K.teal } },
+                children: [new TextRun({ text: iss.codeFix.substring(0, 600), font: 'Consolas', size: 17, color: '86EFAC' })],
+              }) : sp(0),
+              new Paragraph({ spacing: { after: 50 }, children: [new TextRun({ text: 'Done When (Acceptance Criteria)', bold: true, font: 'Calibri', size: 21, color: K.nearBlack })] }),
+              ...acceptance.map(a => bullet(`✓  ${a}`)),
             ];
-
-            // Code fix if available
-            if (issue.codeFix) {
-              parts.push(
-                new Paragraph({
-                  spacing: { before: 120 },
-                  children: [
-                    new TextRun({ text: 'Code Example', font: 'Calibri', bold: true, size: 22, color: COLORS.dark }),
-                  ],
-                }),
-                new Paragraph({
-                  spacing: { after: 200 },
-                  shading: { type: ShadingType.SOLID, color: 'F8FAFC', fill: 'F8FAFC' },
-                  border: {
-                    top: { style: BorderStyle.SINGLE, size: 1, color: COLORS.border },
-                    bottom: { style: BorderStyle.SINGLE, size: 1, color: COLORS.border },
-                    left: { style: BorderStyle.THICK, size: 3, color: COLORS.primary },
-                    right: { style: BorderStyle.SINGLE, size: 1, color: COLORS.border },
-                  },
-                  children: [
-                    new TextRun({ text: issue.codeFix, font: 'Consolas', size: 18, color: COLORS.dark }),
-                  ],
-                })
-              );
-            }
-
-            // Separator
-            parts.push(
-              new Paragraph({
-                spacing: { before: 160, after: 160 },
-                children: [
-                  new TextRun({ text: '─────────────────────────────────────────────────────────', font: 'Calibri', size: 16, color: COLORS.border }),
-                ],
-              })
-            );
-
             return parts;
+          }),
+
+          // ─────────────────────────────────────────────────────
+          // SECTION 3: COMPONENT-LEVEL FINDINGS
+          // ─────────────────────────────────────────────────────
+          h1('3. Component-Level Findings'),
+          body('Issues grouped by UI component. Fixing the root cause at the component/design-system level resolves all instances at once.', K.darkGrey),
+          sp(),
+          new Table({
+            width: { size: 100, type: WidthType.PERCENTAGE },
+            borders: TABLE_BORDERS,
+            rows: [
+              new TableRow({ children: [
+                cell('Component', { bold: true, bg: K.navy, color: K.white, width: 22 }),
+                cell('Issues', { bold: true, bg: K.navy, color: K.white, width: 10, align: AlignmentType.CENTER }),
+                cell('Critical', { bold: true, bg: K.navy, color: K.white, width: 10, align: AlignmentType.CENTER }),
+                cell('High', { bold: true, bg: K.navy, color: K.white, width: 10, align: AlignmentType.CENTER }),
+                cell('DS Impact', { bold: true, bg: K.navy, color: K.white, width: 14, align: AlignmentType.CENTER }),
+                cell('Affected Teams', { bold: true, bg: K.navy, color: K.white, width: 34 }),
+              ]}),
+              ...Object.entries(byComp).sort((a,b) => b[1].length - a[1].length).map(([comp, cIssues], i) => {
+                const critC = cIssues.filter(x => x.severity === 'critical').length;
+                const highC = cIssues.filter(x => x.severity === 'high').length;
+                const teams = [...new Set(cIssues.map(x => deriveTeam(x)))].join(', ');
+                const dsImpact = cIssues.length >= 3 ? 'Yes ⚡' : 'No';
+                return new TableRow({ children: [
+                  cell(comp, { bold: true, bg: i % 2 === 0 ? K.offWhite : K.white }),
+                  cell(String(cIssues.length), { align: AlignmentType.CENTER, bold: true, color: cIssues.length >= 5 ? K.critical : K.darkGrey, bg: i % 2 === 0 ? K.offWhite : K.white }),
+                  cell(String(critC), { align: AlignmentType.CENTER, bold: critC > 0, color: critC > 0 ? K.critical : K.darkGrey, bg: critC > 0 ? K.criticalBg : (i % 2 === 0 ? K.offWhite : K.white) }),
+                  cell(String(highC), { align: AlignmentType.CENTER, bold: highC > 0, color: highC > 0 ? K.high : K.darkGrey, bg: i % 2 === 0 ? K.offWhite : K.white }),
+                  cell(dsImpact, { align: AlignmentType.CENTER, bold: cIssues.length >= 3, color: cIssues.length >= 3 ? K.high : K.teal, bg: i % 2 === 0 ? K.offWhite : K.white }),
+                  cell(teams, { bg: i % 2 === 0 ? K.offWhite : K.white, size: 17 }),
+                ]});
+              }),
+            ],
+          }),
+
+          // ─────────────────────────────────────────────────────
+          // SECTION 4: REMEDIATION GUIDANCE BY TEAM
+          // ─────────────────────────────────────────────────────
+          h1('4. Remediation Guidance by Team'),
+          body('Route issues to the correct team. Each team\'s issues are listed with implementation notes.', K.darkGrey),
+
+          ...Object.entries(byTeam).flatMap(([team, tIssues]) => [
+            h2(`4.x  ${team}  (${tIssues.length} issue${tIssues.length > 1 ? 's' : ''})`),
+            body(({
+              'Frontend Dev':  'Focus on semantic HTML, keyboard event handlers, ARIA attributes, focus management, and form error handling. Use native HTML elements before ARIA.',
+              'Designer':      'Review colour contrast ratios, focus indicator visibility, touch target sizing, and visual hierarchy. Update design tokens in the design system.',
+              'Content':       'Provide descriptive alt text, rewrite vague link text, confirm heading hierarchy, and update button labels to describe their action.',
+              'Design System': 'These are systemic issues. Fixing the component in the design system resolves all instances across every page automatically.',
+              'QA':            'Convert each issue into a regression test case. Add keyboard-only and screen-reader test runs to your CI/CD pipeline.',
+              'PDF Team':      'Ensure all elements are tagged, reading order is logical, images have alt text, the document language is set, and table headers are marked.',
+            }[team] || ''), K.darkGrey),
+            sp(40),
+            new Table({
+              width: { size: 100, type: WidthType.PERCENTAGE },
+              borders: TABLE_BORDERS,
+              rows: [
+                new TableRow({ children: [cell('ID', { bold: true, bg: K.lightBlue, color: K.white, width: 10, align: AlignmentType.CENTER }), cell('Title', { bold: true, bg: K.lightBlue, color: K.white, width: 45 }), cell('WCAG', { bold: true, bg: K.lightBlue, color: K.white, width: 13 }), cell('Severity', { bold: true, bg: K.lightBlue, color: K.white, width: 15, align: AlignmentType.CENTER }), cell('Effort', { bold: true, bg: K.lightBlue, color: K.white, width: 17, align: AlignmentType.CENTER })] }),
+                ...tIssues.map((iss, i) => new TableRow({ children: [
+                  cell(`#${String(issues.indexOf(iss) + 1).padStart(3,'0')}`, { bold: true, align: AlignmentType.CENTER, bg: i % 2 === 0 ? K.offWhite : K.white, size: 17 }),
+                  cell(iss.title, { bg: i % 2 === 0 ? K.offWhite : K.white, size: 17 }),
+                  cell(iss.wcagCriterion, { bg: i % 2 === 0 ? K.offWhite : K.white, size: 17 }),
+                  cell(iss.severity.toUpperCase(), { align: AlignmentType.CENTER, bold: true, color: sevColor(iss.severity), bg: sevBg(iss.severity), size: 17 }),
+                  cell(deriveEffort(iss), { align: AlignmentType.CENTER, bg: i % 2 === 0 ? K.offWhite : K.white, size: 17 }),
+                ] })),
+              ],
+            }),
+            sp(80),
+          ]),
+
+          // ─────────────────────────────────────────────────────
+          // SECTION 5: PRIORITY MATRIX
+          // ─────────────────────────────────────────────────────
+          h1('5. Priority Matrix'),
+          body('Use this matrix during sprint planning to correctly queue and assign fixes.', K.darkGrey),
+          sp(),
+
+          ...([ ['Critical Blockers — Fix This Sprint', K.critical, K.criticalBg, critical],
+                ['High Priority — Next Sprint', K.high, K.highBg, high],
+                ['Medium Priority — This Quarter', K.medium, K.mediumBg, medium],
+                ['Quick Wins — Fix Today (< 30 min each)', K.teal, K.passBg, quickWins],
+          ] as [string, string, string, AccessibilityIssue[]][]).flatMap(([title, color, bg, grp]) => [
+            new Paragraph({
+              spacing: { before: 200, after: 80 },
+              shading: { type: ShadingType.SOLID, color: bg, fill: bg },
+              border: { left: { style: BorderStyle.THICK, size: 6, color } },
+              children: [
+                new TextRun({ text: `  ${title}  (${grp.length} issue${grp.length !== 1 ? 's' : ''})`, font: 'Calibri', bold: true, size: 22, color }),
+              ],
+            }),
+            grp.length === 0
+              ? body('No issues in this category.', K.midGrey)
+              : new Table({
+                  width: { size: 100, type: WidthType.PERCENTAGE },
+                  borders: TABLE_BORDERS,
+                  rows: grp.map((iss, i) => new TableRow({ children: [
+                    cell(iss.title, { bg: i % 2 === 0 ? bg : K.white, size: 18 }),
+                    cell(iss.wcagCriterion, { bg: i % 2 === 0 ? bg : K.white, size: 18, color: K.lightBlue }),
+                    cell(deriveTeam(iss), { bg: i % 2 === 0 ? bg : K.white, size: 18, color }),
+                    cell(deriveEffort(iss), { bg: i % 2 === 0 ? bg : K.white, size: 18, align: AlignmentType.CENTER }),
+                  ] })),
+                }),
+          ]),
+
+          // ─────────────────────────────────────────────────────
+          // SECTION 6: ACCEPTANCE CRITERIA / QA CHECKLIST
+          // ─────────────────────────────────────────────────────
+          h1('6. Acceptance Criteria & QA Test Cases'),
+          body('Each issue has a "Done When" checklist. Use these as regression test cases and code-review acceptance gates.', K.darkGrey),
+          sp(),
+
+          new Table({
+            width: { size: 100, type: WidthType.PERCENTAGE },
+            borders: TABLE_BORDERS,
+            rows: [
+              new TableRow({ children: [
+                cell('#', { bold: true, bg: K.navy, color: K.white, width: 8, align: AlignmentType.CENTER }),
+                cell('Issue', { bold: true, bg: K.navy, color: K.white, width: 35 }),
+                cell('Severity', { bold: true, bg: K.navy, color: K.white, width: 12, align: AlignmentType.CENTER }),
+                cell('Done When — Acceptance Criteria', { bold: true, bg: K.navy, color: K.white, width: 45 }),
+              ]}),
+              ...issues.map((iss, idx) => new TableRow({ children: [
+                cell(`#${String(idx+1).padStart(3,'0')}`, { bold: true, align: AlignmentType.CENTER, bg: idx % 2 === 0 ? K.offWhite : K.white, size: 17 }),
+                cell(iss.title, { bg: idx % 2 === 0 ? K.offWhite : K.white, size: 17 }),
+                cell(iss.severity.toUpperCase(), { align: AlignmentType.CENTER, bold: true, color: sevColor(iss.severity), bg: sevBg(iss.severity), size: 17 }),
+                cell(deriveAcceptance(iss).map((a,i) => `${i+1}. ${a}`).join('\n'), { bg: idx % 2 === 0 ? K.offWhite : K.white, size: 16 }),
+              ] })),
+            ],
+          }),
+
+          sp(200),
+          divider(),
+          new Paragraph({
+            alignment: AlignmentType.CENTER,
+            spacing: { before: 200 },
+            children: [
+              new TextRun({ text: 'KPMG Accessibility Audit — Confidential', font: 'Calibri', size: 18, color: K.midGrey, italics: true }),
+            ],
           }),
         ],
       },
