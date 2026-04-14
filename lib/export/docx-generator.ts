@@ -293,7 +293,10 @@ export async function generateDocx(audit: AuditResult): Promise<Buffer> {
           // SECTION 1: EXECUTIVE SUMMARY
           // ─────────────────────────────────────────────────────
           h1('1. Executive Summary'),
-          body(report.executiveSummary || `This KPMG accessibility audit evaluated ${projectName} against ${standard} Level ${testedLevel} guidelines. The overall score is ${score.overall}/100 (${compLabel(score.complianceLevel)}).`, K.darkGrey),
+          ...(report.executiveSummary || `This KPMG accessibility audit evaluated ${projectName} against ${standard} Level ${testedLevel} guidelines. The overall score is ${score.overall}/100 (${compLabel(score.complianceLevel)}).`)
+            .split('\n\n')
+            .filter((s: string) => s.trim())
+            .map((para: string) => body(para.trim(), K.darkGrey)),
           sp(),
           h2('1.1 Issue Breakdown'),
           new Table({
@@ -404,7 +407,7 @@ export async function generateDocx(audit: AuditResult): Promise<Buffer> {
                 children: [new TextRun({ text: iss.codeFix.substring(0, 600), font: 'Consolas', size: 17, color: '86EFAC' })],
               }) : sp(0),
               new Paragraph({ spacing: { after: 50 }, children: [new TextRun({ text: 'Done When (Acceptance Criteria)', bold: true, font: 'Calibri', size: 21, color: K.nearBlack })] }),
-              ...acceptance.map(a => bullet(`✓  ${a}`)),
+              ...acceptance.map(a => bullet(`-  ${a}`)),
             ];
             return parts;
           }),
@@ -431,7 +434,7 @@ export async function generateDocx(audit: AuditResult): Promise<Buffer> {
                 const critC = cIssues.filter(x => x.severity === 'critical').length;
                 const highC = cIssues.filter(x => x.severity === 'high').length;
                 const teams = [...new Set(cIssues.map(x => deriveTeam(x)))].join(', ');
-                const dsImpact = cIssues.length >= 3 ? 'Yes ⚡' : 'No';
+                const dsImpact = cIssues.length >= 3 ? 'Yes' : 'No';
                 return new TableRow({ children: [
                   cell(comp, { bold: true, bg: i % 2 === 0 ? K.offWhite : K.white }),
                   cell(String(cIssues.length), { align: AlignmentType.CENTER, bold: true, color: cIssues.length >= 5 ? K.critical : K.darkGrey, bg: i % 2 === 0 ? K.offWhite : K.white }),

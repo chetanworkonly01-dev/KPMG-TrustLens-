@@ -238,12 +238,12 @@ export async function generatePptx(audit: AuditResult): Promise<Buffer> {
   addSlideTitle(impact, 'Business Impact', 'Why this matters to your users and your organisation');
 
   const impacts = [
-    { icon:'🦯', label:'Screen Reader Users', text:`${critical.length + high.length} issues directly block assistive technology users from completing tasks.` },
-    { icon:'⌨️', label:'Keyboard-Only Users', text:'Focus management failures prevent users who rely on keyboard navigation.' },
-    { icon:'👁️', label:'Low Vision Users', text: score.categoryScores.perceivable < 70 ? 'Colour contrast and visual clarity issues detected across multiple pages.' : 'Perceivable category is above threshold — colour/contrast issues are low.' },
-    { icon:'⚖️', label:'Legal Exposure', text:`${standard} Level ${testedLevel} non-compliance may violate ADA, EN 301 549, or Section 508 obligations.` },
-    { icon:'🌍', label:'Reach & Inclusivity', text:'~15% of the global population lives with a disability — these are real users today.' },
-    { icon:'🔄', label:'Regression Prevention', text:'Converting these issues into QA test cases stops the same defects returning in future releases.' },
+    { icon:'SR', label:'Screen Reader Users', text:`${critical.length + high.length} issues directly block assistive technology users from completing tasks.` },
+    { icon:'KB', label:'Keyboard-Only Users', text:'Focus management failures prevent users who rely on keyboard navigation.' },
+    { icon:'LV', label:'Low Vision Users', text: score.categoryScores.perceivable < 70 ? 'Colour contrast and visual clarity issues detected across multiple pages.' : 'Perceivable category is above threshold — colour/contrast issues are low.' },
+    { icon:'LG', label:'Legal Exposure', text:`${standard} Level ${testedLevel} non-compliance may violate ADA, EN 301 549, or Section 508 obligations.` },
+    { icon:'IN', label:'Reach & Inclusivity', text:'~15% of the global population lives with a disability — these are real users today.' },
+    { icon:'QA', label:'Regression Prevention', text:'Converting these issues into QA test cases stops the same defects returning in future releases.' },
   ];
 
   impacts.forEach(({ icon, label, text }, i) => {
@@ -267,10 +267,10 @@ export async function generatePptx(audit: AuditResult): Promise<Buffer> {
   addSlideTitle(pri, 'Priority Matrix', 'Sprint planning guide — assign the right issues to the right sprint');
 
   const quadrants = [
-    { label:'🔴 Critical Blockers', sub:'Fix This Sprint', issues: critical, color: K.critical, bg: K.criticalBg, x:0.3, y:1.15, w:4.65, h:2.9 },
-    { label:'🟠 High Priority',     sub:'Next Sprint',    issues: high,     color: K.high,     bg: K.highBg,     x:5.1,  y:1.15, w:4.65, h:2.9 },
-    { label:'🟡 Medium Priority',   sub:'This Quarter',   issues: medium,   color: K.medium,   bg: K.mediumBg,   x:0.3,  y:4.2,  w:4.65, h:2.9 },
-    { label:'🟢 Quick Wins',        sub:'Fix Today < 30min', issues: quickWins, color: K.teal, bg: K.passBg,   x:5.1,  y:4.2,  w:4.65, h:2.9 },
+    { label:'Critical Blockers',  sub:'Fix This Sprint',    issues: critical,  color: K.critical, bg: K.criticalBg, x:0.3, y:1.15, w:4.65, h:2.9 },
+    { label:'High Priority',      sub:'Next Sprint',        issues: high,      color: K.high,     bg: K.highBg,     x:5.1,  y:1.15, w:4.65, h:2.9 },
+    { label:'Medium Priority',    sub:'This Quarter',       issues: medium,    color: K.medium,   bg: K.mediumBg,   x:0.3,  y:4.2,  w:4.65, h:2.9 },
+    { label:'Quick Wins',         sub:'Fix Today < 30min',  issues: quickWins, color: K.teal,     bg: K.passBg,     x:5.1,  y:4.2,  w:4.65, h:2.9 },
   ];
 
   quadrants.forEach(({ label, sub, issues: qIssues, color, bg, x, y, w, h }) => {
@@ -322,7 +322,7 @@ export async function generatePptx(audit: AuditResult): Promise<Buffer> {
     comp.addShape('rect' as unknown as PptxGenJS.ShapeType, { x, y, w:3.0, h:0.06, fill:{ color: topColor } });
     comp.addText(name, { x: x+0.12, y: y+0.12, w:2.2, h:0.35, fontSize:13, fontFace:'Calibri', bold:true, color: K.nearBlack });
     comp.addText(String(cIssues.length), { x: x+2.3, y: y+0.1, w:0.6, h:0.4, fontSize:24, fontFace:'Calibri', bold:true, color:topColor, align:'center' });
-    if (dsImpact) comp.addText('⚡ DS Impact', { x: x+0.12, y: y+0.48, w:2.7, h:0.22, fontSize:8.5, fontFace:'Calibri', bold:true, color: K.high });
+    if (dsImpact) comp.addText('DS Impact', { x: x+0.12, y: y+0.48, w:2.7, h:0.22, fontSize:8.5, fontFace:'Calibri', bold:true, color: K.high });
     const sevText = (['critical','high','medium','low'] as const).filter(s => cIssues.some(i => i.severity === s)).map(s => `${cIssues.filter(i=>i.severity===s).length} ${s}`).join('  ');
     comp.addText(sevText, { x: x+0.12, y: y+0.72, w:2.7, h:0.22, fontSize:8, fontFace:'Calibri', color: K.darkGrey });
     comp.addShape('rect' as unknown as PptxGenJS.ShapeType, { x: x+0.1, y: y+0.97, w:2.8, h:0.01, fill:{ color:'D1DCE8' } });

@@ -61,20 +61,20 @@ function generateExecutiveSummary(
   const pageCount = [...new Set(issues.map(i => i.pageUrl))].length || 1;
   const level = testedLevel || 'AA';
 
-  let summary = `This KPMG AI-powered accessibility audit evaluated the target against WCAG 2.2 Level ${level} guidelines. `;
+  let summary = `This KPMG accessibility audit evaluated the target against WCAG 2.2 Level ${level} guidelines. `;
   summary += `The overall accessibility score is ${score.overall}/100, classified as "${compliance}". `;
   summary += `A total of ${score.totalIssues} issues were identified (${score.uniqueIssues} unique issue types) across ${pageCount} page(s). `;
 
   if (crawlCoverage) {
     const coveragePct = crawlCoverage.coveragePercent;
-    summary += `\n\n📊 CRAWL COVERAGE: ${crawlCoverage.pagesAudited} of ${crawlCoverage.totalPagesFound} discovered pages were audited (${coveragePct}% coverage).`;
+    summary += `\n\nCRAWL COVERAGE: ${crawlCoverage.pagesAudited} of ${crawlCoverage.totalPagesFound} discovered pages were audited (${coveragePct}% coverage).`;
     if (coveragePct < 100 && crawlCoverage.pagesSkipped > 0) {
       summary += ` ${crawlCoverage.pagesSkipped} page(s) were not audited due to the configured page limit or skip rules.`;
     }
   }
 
   if (criticalCount > 0) {
-    summary += `\n\n⚠️ URGENT: ${criticalCount} critical issue(s) require immediate attention. These directly block access for users with disabilities.`;
+    summary += `\n\nURGENT: ${criticalCount} critical issue(s) require immediate attention. These directly block access for users with disabilities.`;
   }
   if (highCount > 0) {
     summary += ` ${highCount} high-severity issue(s) significantly impact usability.`;
@@ -82,14 +82,14 @@ function generateExecutiveSummary(
 
   const widespread = grouped.filter(g => g.frequency > 50);
   if (widespread.length > 0) {
-    summary += `\n\n🔥 WIDESPREAD: ${widespread.length} issue(s) appear on more than 50% of pages: `;
+    summary += `\n\nWIDESPREAD: ${widespread.length} issue(s) appear on more than 50% of pages: `;
     summary += widespread.slice(0, 3).map(w => `"${w.title}" (${w.affectedPages.length} pages)`).join(', ') + '.';
   }
 
   if (journeyResults && journeyResults.length > 0) {
     const passed = journeyResults.filter(j => j.passed).length;
     const total = journeyResults.length;
-    summary += `\n\n🚶 USER JOURNEY TESTS: ${passed}/${total} journeys passed.`;
+    summary += `\n\nUSER JOURNEY TESTS: ${passed}/${total} journeys passed.`;
     const failedJourneys = journeyResults.filter(j => !j.passed);
     if (failedJourneys.length > 0) {
       summary += ` Failed: ${failedJourneys.map(j => j.journeyName).join(', ')}.`;
@@ -109,7 +109,7 @@ function generateExecutiveSummary(
   const highConf = issues.filter(i => i.confidence === 'high').length;
   const medConf  = issues.filter(i => i.confidence === 'medium').length;
   const lowConf  = issues.filter(i => i.confidence === 'low').length;
-  summary += `\n\n🎯 CONFIDENCE: ${highConf} high, ${medConf} medium, ${lowConf} low confidence issues.`;
+  summary += `\n\nCONFIDENCE: ${highConf} high, ${medConf} medium, ${lowConf} low confidence issues.`;
 
   return summary;
 }
