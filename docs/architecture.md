@@ -34,7 +34,6 @@ Web accessibility auditing is legally mandated (WCAG 2.2, ADA, EN 301 549, Secti
 | **Speed** | Manual audits take 5–10 business days per site |
 | **Coverage** | Human reviewers miss ~30% of programmatic issues |
 | **Consistency** | Two auditors on the same site produce different results |
-| **Cost** | Enterprise accessibility firms charge $15,000–$50,000 per audit |
 | **Scalability** | One auditor can review ~3 pages per hour |
 
 ### Why AI instead of traditional systems?

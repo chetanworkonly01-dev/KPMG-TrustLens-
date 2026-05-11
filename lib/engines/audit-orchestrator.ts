@@ -103,11 +103,21 @@ async function runAuditPipeline(id: string, config: AuditConfig) {
       pagesSkipped: crawlResult.skippedPages.length,
       coveragePercent: crawlResult.totalFound > 0
         ? Math.round((crawlResult.pages.length / crawlResult.totalFound) * 100)
-        : 100,
+        : 0,
       skippedPages: crawlResult.skippedPages.slice(0, 50),
       discoveryMethods: crawlResult.discoveryMethods,
     };
     audit.crawlCoverage = crawlCoverage;
+
+    // Guard: if crawl returned zero pages, the site blocked us or URL is invalid
+    if (crawlResult.pages.length === 0) {
+      await closeCrawler(crawlResult.browser);
+      audit.status = 'error';
+      audit.error = `Could not crawl any pages from ${config.url}. The site may be blocking automated access (WAF/Cloudflare), redirecting to a different domain, or the URL may be unreachable.`;
+      audit.progressMessage = audit.error;
+      audit.score = calculateScore([], 0);
+      return;
+    }
 
     updateProgress(`Crawl complete: ${crawlResult.pages.length} pages. Starting tests...`, 50);
 
