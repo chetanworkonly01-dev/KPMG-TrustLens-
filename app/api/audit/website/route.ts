@@ -1,0 +1,36 @@
+import { NextRequest, NextResponse } from 'next/server';
+import { runWebsiteAudit } from '@/lib/engines/audit-orchestrator';
+
+export const dynamic = 'force-dynamic';
+
+export async function POST(request: NextRequest) {
+  try {
+    const body = await request.json();
+    const { url, loginConfig, crawlDepth = 2, maxPages = 5, includeAI = false, wcagLevels = ['A', 'AA'], standard = 'WCAG 2.2' } = body;
+
+    if (!url) {
+      return NextResponse.json({ error: 'URL is required' }, { status: 400 });
+    }
+
+    // Validate URL
+    try { new URL(url); } catch {
+      return NextResponse.json({ error: 'Invalid URL format' }, { status: 400 });
+    }
+
+    const auditId = await runWebsiteAudit({
+      url,
+      type: loginConfig ? 'portal' : 'website',
+      loginConfig,
+      crawlDepth: Math.min(crawlDepth, 5),
+      maxPages: Math.min(maxPages, 200),
+      includeAI,
+      wcagLevels,
+      standard,
+    });
+
+    return NextResponse.json({ auditId, status: 'started' });
+  } catch (error) {
+    console.error('Website audit error:', error);
+    return NextResponse.json({ error: 'Failed to start audit' }, { status: 500 });
+  }
+}
