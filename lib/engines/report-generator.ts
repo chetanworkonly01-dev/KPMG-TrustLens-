@@ -1,5 +1,6 @@
 import { AccessibilityIssue, AuditScore, AuditReport, WcagMappingEntry, RemediationStep, PageBreakdownEntry, GroupedIssue, CrawlCoverage, JourneyTestResult } from '../types/audit';
 import { WCAG_CRITERIA } from '../wcag/criteria';
+import { SEVERITY_WEIGHTS, LEVEL_MULTIPLIERS } from '../wcag/severity';
 import { getComplianceLabel, groupIssues } from './scoring';
 
 export function generateReport(
@@ -187,8 +188,23 @@ function generatePageBreakdown(issues: AccessibilityIssue[], pages: { url: strin
     const mediumCount   = pageIssues.filter(i => i.severity === 'medium').length;
     const lowCount      = pageIssues.filter(i => i.severity === 'low').length;
 
-    const deduction = criticalCount * 15 + highCount * 7.5 + mediumCount * 3 + lowCount * 0.75;
-    const score = Math.max(0, Math.round(100 - deduction));
+    // Use the same weighted formula as the overall scoring engine
+    let totalDeduction = 0;
+    for (const issue of pageIssues) {
+      const sevWeight = SEVERITY_WEIGHTS[issue.severity];
+      const levelMult = LEVEL_MULTIPLIERS[issue.wcagLevel] || 1;
+      const confMult = issue.confidence === 'high' ? 1.0 : issue.confidence === 'medium' ? 0.7 : 0.4;
+      totalDeduction += sevWeight * levelMult * confMult;
+    }
+    // Apply same logarithmic cap as overall scoring
+    let cappedDeduction: number;
+    if (totalDeduction <= 50) {
+      cappedDeduction = totalDeduction;
+    } else {
+      const excess = totalDeduction - 50;
+      cappedDeduction = 50 + 45 * (1 - Math.exp(-excess / 200));
+    }
+    const score = Math.max(0, Math.round(100 - cappedDeduction));
 
     return { url: page.url, title: page.title, score, issueCount: pageIssues.length, criticalCount, highCount, mediumCount, lowCount };
   });

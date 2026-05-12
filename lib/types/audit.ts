@@ -113,6 +113,8 @@ export interface AccessibilityIssue {
   description: string;
   element: string;
   elementHtml?: string;
+  /** Base64-encoded PNG screenshot of the violating element */
+  elementScreenshot?: string;
   pageUrl: string;
   wcagCriterion: string;
   wcagName: string;

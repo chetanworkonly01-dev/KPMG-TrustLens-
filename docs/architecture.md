@@ -34,7 +34,6 @@ Web accessibility auditing is legally mandated (WCAG 2.2, ADA, EN 301 549, Secti
 | **Speed** | Manual audits take 5–10 business days per site |
 | **Coverage** | Human reviewers miss ~30% of programmatic issues |
 | **Consistency** | Two auditors on the same site produce different results |
-| **Cost** | Enterprise accessibility firms charge $15,000–$50,000 per audit |
 | **Scalability** | One auditor can review ~3 pages per hour |
 
 ### Why AI instead of traditional systems?
@@ -214,16 +213,16 @@ Simulates real user interaction flows:
 - Activate a modal and confirm focus management
 - Check skip-link presence and function
 
-### Phase 4 — AI Analysis (Optional, GPT-4)
+### Phase 4 — AI Analysis (Optional, GPT-4o)
 
 Only runs if `config.includeAI === true`.  
-Sends up to `12,000 chars` of page HTML + a summary of already-detected issues to GPT-4.  
+Sends up to `12,000 chars` of page HTML + a summary of already-detected issues to GPT-4o.  
 Returns up to **8 new issues per page** that automated tools missed.
 
 **Decision logic:**
 ```
 If OPENAI_API_KEY is set AND includeAI flag is true:
-  → Send HTML to GPT-4 → Parse JSON response → Merge issues
+  → Send HTML to GPT-4o → Parse JSON response → Merge issues
 Else:
   → Skip AI phase, continue with rule-based results only
 ```
@@ -242,8 +241,8 @@ This prevents the same broken element detected by axe-core AND a custom rule fro
 Base Score: 100
 Deducted per issue: severity_weight × level_multiplier × confidence_multiplier
 
-Severity weights:   Critical=25, High=15, Medium=8, Low=3
-Level multipliers:  A=1.5, AA=1.2, AAA=1.0
+Severity weights:   Critical=10, High=5, Medium=2, Low=0.5
+Level multipliers:  A=1.5, AA=1.0, AAA=0.5
 Confidence:         High=1.0, Medium=0.7, Low=0.4
 
 Additional penalties:
@@ -256,7 +255,7 @@ Additional penalties:
 
 Produces the structured report object with:
 - Executive summary (narrative text)
-- WCAG criterion mapping (pass/fail/N/A for each of the 55 criteria)
+- WCAG criterion mapping (pass/fail/N/A for each mapped criterion)
 - Grouped issues with frequency tracking
 - Remediation plan sorted by priority
 - Page-by-page breakdown
@@ -318,7 +317,7 @@ EXPORT              │  → PDF / DOCX / PPTX │
 
 | API | Purpose | Keys Required |
 |---|---|---|
-| **OpenAI GPT-4** | Contextual accessibility analysis | `OPENAI_API_KEY` |
+| **OpenAI GPT-4o** | Contextual accessibility analysis | `OPENAI_API_KEY` |
 | **Playwright/Chromium** | Browser automation for crawling and scanning | None (bundled) |
 | **axe-core** | Automated WCAG rule engine | None (open source) |
 
@@ -344,7 +343,7 @@ Export Layer
     └── pptx-generator.ts  → Uses `PptxGenJS`
 
 WCAG Reference Data
-    ├── lib/wcag/criteria.ts   → All 55 WCAG 2.2 criteria mapped
+    ├── lib/wcag/criteria.ts   → 36 WCAG 2.2 criteria mapped (A/AA/AAA)
     └── lib/wcag/severity.ts   → Severity weights and level multipliers
 ```
 

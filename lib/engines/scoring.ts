@@ -2,6 +2,20 @@ import { AccessibilityIssue, AuditScore, GroupedIssue } from '../types/audit';
 import { SEVERITY_WEIGHTS, LEVEL_MULTIPLIERS } from '../wcag/severity';
 
 export function calculateScore(issues: AccessibilityIssue[], pageCount?: number): AuditScore {
+  // Guard: if no issues AND no pages were actually crawled, this means
+  // the crawl failed or was blocked — NOT a perfect score.
+  if (issues.length === 0 && (!pageCount || pageCount === 0)) {
+    return {
+      overall: 0,
+      categoryScores: { perceivable: 0, operable: 0, understandable: 0, robust: 0, pdf: 0 },
+      complianceLevel: 'non-compliant',
+      totalIssues: 0, uniqueIssues: 0,
+      issueBySeverity: { critical: 0, high: 0, medium: 0, low: 0 },
+      issueByLevel: { A: 0, AA: 0, AAA: 0 },
+      testsRun: 0, testsPassed: 0, testsFailed: 0
+    };
+  }
+
   const issueBySeverity = { critical: 0, high: 0, medium: 0, low: 0 };
   const issueByLevel = { A: 0, AA: 0, AAA: 0 };
   const categoryIssues: Record<string, AccessibilityIssue[]> = {
@@ -55,10 +69,21 @@ export function calculateScore(issues: AccessibilityIssue[], pageCount?: number)
   const journeyTestCount = new Set(journeyIssues.map(i => i.testId)).size;
   const journeyScore = journeyTestCount > 0 ? Math.max(0, 100 - journeyTestCount * 15) : undefined;
 
-  // Cap deduction with diminishing returns
-  const cappedDeduction = totalDeduction > 50
-    ? 50 + (totalDeduction - 50) * 0.3
-    : totalDeduction;
+  // Cap deduction with logarithmic diminishing returns.
+  // This prevents scores from collapsing to 0 for heavy sites while still
+  // penalizing heavily. Examples:
+  //   totalDeduction  50 → capped  50 → score 50
+  //   totalDeduction 100 → capped  65 → score 35
+  //   totalDeduction 500 → capped  85 → score 15
+  //   totalDeduction 1000→ capped  91 → score  9
+  let cappedDeduction: number;
+  if (totalDeduction <= 50) {
+    cappedDeduction = totalDeduction;
+  } else {
+    // Logarithmic curve: fast climb then slows, never exceeds ~95
+    const excess = totalDeduction - 50;
+    cappedDeduction = 50 + 45 * (1 - Math.exp(-excess / 200));
+  }
 
   const overall = Math.max(0, Math.round(100 - cappedDeduction));
 
@@ -124,7 +149,7 @@ export function groupIssues(issues: AccessibilityIssue[], pageCount: number): Gr
   const groups = new Map<string, GroupedIssue>();
 
   for (const issue of issues) {
-    const key = `${issue.testId}::${issue.title}`;
+    const key = `${issue.wcagCriterion}::${issue.title}`;
 
     if (groups.has(key)) {
       const group = groups.get(key)!;

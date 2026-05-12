@@ -7,14 +7,27 @@ export async function GET() {
   const audits = getAllAudits();
   const summary = audits.map(a => ({
     id: a.id,
-    type: a.config.type,
-    url: a.config.url || 'PDF Upload',
     status: a.status,
-    score: a.score.overall,
-    complianceLevel: a.score.complianceLevel,
-    totalIssues: a.score.totalIssues,
+    config: {
+      url: a.config.url,
+      type: a.config.type,
+      wcagLevels: a.config.wcagLevels,
+      standard: a.config.standard,
+    },
+    score: {
+      overall: a.score.overall,
+      complianceLevel: a.score.complianceLevel,
+      totalIssues: a.score.totalIssues,
+      testsRun: a.score.testsRun,
+    },
+    progress: a.progress,
     startedAt: a.startedAt,
-    completedAt: a.completedAt
+    completedAt: a.completedAt,
+    crawlCoverage: a.crawlCoverage ? {
+      totalPagesFound: a.crawlCoverage.totalPagesFound,
+      pagesAudited: a.crawlCoverage.pagesAudited,
+      coveragePercent: a.crawlCoverage.coveragePercent,
+    } : undefined,
   }));
   return NextResponse.json(summary);
 }

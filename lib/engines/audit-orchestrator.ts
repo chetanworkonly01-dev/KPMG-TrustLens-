@@ -8,19 +8,15 @@ import { calculateScore, normalizeSelector } from './scoring';
 import { generateReport } from './report-generator';
 import { runJourneyTests } from './journey-tester';
 import { runTestSuite, TEST_CASES } from './test-runner';
+import { getAudit as storeGet, setAudit as storeSet, getAllAudits as storeGetAll } from '../store/audit-store';
 import { v4 as uuidv4 } from 'uuid';
 
-// In-memory audit store
-const auditStore = new Map<string, AuditResult>();
-
 export function getAudit(id: string): AuditResult | undefined {
-  return auditStore.get(id);
+  return storeGet(id);
 }
 
 export function getAllAudits(): AuditResult[] {
-  return Array.from(auditStore.values()).sort(
-    (a, b) => new Date(b.startedAt).getTime() - new Date(a.startedAt).getTime()
-  );
+  return storeGetAll();
 }
 
 function createEmptyScore() {
@@ -46,18 +42,18 @@ export async function runWebsiteAudit(config: AuditConfig): Promise<string> {
     inapplicableCriteria: [],
     startedAt: new Date().toISOString()
   };
-  auditStore.set(id, audit);
+  storeSet(id, audit);
 
   runAuditPipeline(id, config).catch(err => {
-    const a = auditStore.get(id);
-    if (a) { a.status = 'error'; a.error = err.message; }
+    const a = storeGet(id);
+    if (a) { a.status = 'error'; a.error = err.message; storeSet(id, a); }
   });
 
   return id;
 }
 
 async function runAuditPipeline(id: string, config: AuditConfig) {
-  const audit = auditStore.get(id)!;
+  const audit = storeGet(id)!;
   const wcagLevels = config.wcagLevels || ['A', 'AA'];
   const testedLevel = wcagLevels.includes('AAA') ? 'AAA' : wcagLevels.includes('AA') ? 'AA' : 'A';
 
@@ -103,11 +99,21 @@ async function runAuditPipeline(id: string, config: AuditConfig) {
       pagesSkipped: crawlResult.skippedPages.length,
       coveragePercent: crawlResult.totalFound > 0
         ? Math.round((crawlResult.pages.length / crawlResult.totalFound) * 100)
-        : 100,
+        : 0,
       skippedPages: crawlResult.skippedPages.slice(0, 50),
       discoveryMethods: crawlResult.discoveryMethods,
     };
     audit.crawlCoverage = crawlCoverage;
+
+    // Guard: if crawl returned zero pages, the site blocked us or URL is invalid
+    if (crawlResult.pages.length === 0) {
+      await closeCrawler(crawlResult.browser);
+      audit.status = 'error';
+      audit.error = `Could not crawl any pages from ${config.url}. The site may be blocking automated access (WAF/Cloudflare), redirecting to a different domain, or the URL may be unreachable.`;
+      audit.progressMessage = audit.error;
+      audit.score = calculateScore([], 0);
+      return;
+    }
 
     updateProgress(`Crawl complete: ${crawlResult.pages.length} pages. Starting tests...`, 50);
 
@@ -213,6 +219,28 @@ async function runAuditPipeline(id: string, config: AuditConfig) {
       }
     }
 
+    // ─────────────────────────────────────────
+    // PHASE 4b: ELEMENT SCREENSHOT CAPTURE
+    // ─────────────────────────────────────────
+    // Capture element-level screenshots for critical/high issues while browser is still open
+    updateProgress('Capturing visual evidence for critical issues...', 90);
+    const screenshotTargets = allIssues.filter(
+      i => (i.severity === 'critical' || i.severity === 'high') && i.element && i.element !== 'page-level' && i.element !== 'body'
+    );
+    for (const issue of screenshotTargets.slice(0, 20)) { // Cap at 20 to limit time
+      try {
+        const page = await crawlResult.context.newPage();
+        await page.goto(issue.pageUrl, { waitUntil: 'domcontentloaded', timeout: 15000 });
+        await page.waitForLoadState('networkidle', { timeout: 8000 }).catch(() => {});
+        const el = await page.$(issue.element).catch(() => null);
+        if (el) {
+          const buf = await el.screenshot({ type: 'png', timeout: 5000 }).catch(() => null);
+          if (buf) issue.elementScreenshot = buf.toString('base64');
+        }
+        await page.close();
+      } catch { /* screenshot capture is best-effort, never block the pipeline */ }
+    }
+
     await closeCrawler(crawlResult.browser);
 
     // ─────────────────────────────────────────
@@ -279,20 +307,29 @@ async function runAuditPipeline(id: string, config: AuditConfig) {
 }
 
 /**
- * Deduplicate issues using normalised selector so CSS whitespace differences
- * don't create false duplicates.
+ * Deduplicate issues across engines. Uses WCAG criterion + title + element + page
+ * as the key (not testId) so the same violation detected by different engines
+ * (e.g. custom-rule O-03 and journey-test JRN-241) is properly merged.
+ * When duplicates are found, the higher-confidence source is kept.
  */
 function deduplicateIssues(issues: AccessibilityIssue[]): AccessibilityIssue[] {
-  const seen = new Set<string>();
-  const deduped: AccessibilityIssue[] = [];
+  const confRank: Record<string, number> = { high: 3, medium: 2, low: 1 };
+  const best = new Map<string, AccessibilityIssue>();
   for (const issue of issues) {
-    const key = `${issue.testId}::${issue.title}::${normalizeSelector(issue.element)}::${issue.pageUrl}`;
-    if (!seen.has(key)) {
-      seen.add(key);
-      deduped.push(issue);
+    const key = `${issue.wcagCriterion}::${issue.title}::${normalizeSelector(issue.element)}::${issue.pageUrl}`;
+    const existing = best.get(key);
+    if (!existing) {
+      best.set(key, issue);
+    } else {
+      // Keep the higher-confidence version
+      const existingRank = confRank[existing.confidence] || 2;
+      const newRank = confRank[issue.confidence] || 2;
+      if (newRank > existingRank) {
+        best.set(key, issue);
+      }
     }
   }
-  return deduped;
+  return Array.from(best.values());
 }
 
 export async function runPdfAudit(fileBuffer: Buffer, fileName: string): Promise<string> {
@@ -312,7 +349,7 @@ export async function runPdfAudit(fileBuffer: Buffer, fileName: string): Promise
     inapplicableCriteria: [],
     startedAt: new Date().toISOString()
   };
-  auditStore.set(id, audit);
+  storeSet(id, audit);
 
   try {
     const result = await analyzePdf(fileBuffer, fileName, (msg) => { audit.progressMessage = msg; });

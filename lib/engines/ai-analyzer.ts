@@ -97,7 +97,7 @@ IMPORTANT: Think like a real accessibility expert doing a manual audit. Focus on
 
   try {
     const response = await openai.chat.completions.create({
-      model: 'gpt-4',
+      model: 'gpt-4o',
       messages: [{ role: 'user', content: prompt }],
       temperature: 0.3,
       max_tokens: 3000,

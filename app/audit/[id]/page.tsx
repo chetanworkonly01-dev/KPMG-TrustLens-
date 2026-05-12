@@ -359,6 +359,41 @@ export default function AuditResultPage() {
         </div>
       </div>
 
+      {/* ── Scoring Explainability ── */}
+      <details style={{ marginBottom: 20 }}>
+        <summary style={{ cursor: 'pointer', fontSize: 12, fontWeight: 600, color: 'var(--accent-blue)', padding: '8px 0' }}>
+          ℹ️ How is this score calculated?
+        </summary>
+        <div className="glass-card" style={{ marginTop: 8, padding: 16 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 14, fontSize: 12, color: 'var(--text-secondary)', marginBottom: 14 }}>
+            <div>
+              <div style={{ fontWeight: 700, color: 'var(--text-primary)', marginBottom: 6 }}>Severity Weights</div>
+              <div>🔴 Critical = 10 pts</div>
+              <div>🟠 High = 5 pts</div>
+              <div>🟡 Medium = 2 pts</div>
+              <div>🔵 Low = 0.5 pts</div>
+            </div>
+            <div>
+              <div style={{ fontWeight: 700, color: 'var(--text-primary)', marginBottom: 6 }}>Level Multipliers</div>
+              <div>Level A = ×1.5</div>
+              <div>Level AA = ×1.0</div>
+              <div>Level AAA = ×0.5</div>
+            </div>
+            <div>
+              <div style={{ fontWeight: 700, color: 'var(--text-primary)', marginBottom: 6 }}>Confidence Multipliers</div>
+              <div>🎯 High = ×1.0</div>
+              <div>🎯 Medium = ×0.7</div>
+              <div>🎯 Low = ×0.4</div>
+            </div>
+          </div>
+          <div style={{ fontSize: 11, color: 'var(--text-muted)', lineHeight: 1.6, borderTop: '1px solid var(--border)', paddingTop: 10 }}>
+            <strong>Formula:</strong> Score = 100 − Σ(severity × level × confidence) per issue.
+            Penalties added for issues spanning &gt;50% of pages and clusters of &gt;3 critical issues.
+            A logarithmic cap prevents scores from collapsing to 0 on large sites — maximum deduction approaches ~95 asymptotically.
+          </div>
+        </div>
+      </details>
+
       {/* ── Page Coverage (fixed) ── */}
       {data.crawlCoverage && (
         <div className="glass-card animate-fade-in" style={{ marginBottom: 20, padding: 16 }}>
