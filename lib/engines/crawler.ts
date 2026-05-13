@@ -88,11 +88,14 @@ export async function crawlWebsite(options: CrawlOptions): Promise<CrawlResult> 
 
       if (visitedUrls.has(normalizedUrl)) continue;
 
-      const skipReason = shouldSkipUrl(current.url, baseUrl.origin);
-      if (skipReason) {
-        skippedPages.push({ url: current.url, reason: skipReason });
-        visitedUrls.add(normalizedUrl);
-        continue;
+      // NEVER skip the seed URL (depth 0) — only skip discovered links
+      if (current.depth > 0) {
+        const skipReason = shouldSkipUrl(current.url, baseUrl.origin);
+        if (skipReason) {
+          skippedPages.push({ url: current.url, reason: skipReason });
+          visitedUrls.add(normalizedUrl);
+          continue;
+        }
       }
 
       visitedUrls.add(normalizedUrl);
