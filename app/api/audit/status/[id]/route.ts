@@ -29,5 +29,7 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
     startedAt: audit.startedAt,
     completedAt: audit.completedAt,
     error: audit.error,
+    trustScore: audit.trustScore,
+    pillarResults: audit.pillarResults,
   });
 }

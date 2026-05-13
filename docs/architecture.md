@@ -343,7 +343,7 @@ Export Layer
     └── pptx-generator.ts  → Uses `PptxGenJS`
 
 WCAG Reference Data
-    ├── lib/wcag/criteria.ts   → 36 WCAG 2.2 criteria mapped (A/AA/AAA)
+    ├── lib/wcag/criteria.ts   → 56 WCAG 2.2 criteria mapped (A/AA/AAA)
     └── lib/wcag/severity.ts   → Severity weights and level multipliers
 ```
 

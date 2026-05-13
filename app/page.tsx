@@ -54,12 +54,12 @@ export default function HomePage() {
         </div>
 
         <h1 className="hero-title">
-          KPMG <span>Accessibility</span><br />Audit Platform
+          KPMG <span>TrustLens</span><br />Digital Compliance Intelligence
         </h1>
 
         <p className="hero-subtitle">
-          Enterprise-grade WCAG 2.2 A/AA/AAA accessibility auditing powered by AI.
-          Automated scanning, AI-powered analysis, and actionable remediation guidance for websites, portals, and PDFs.
+          AI-powered 4-pillar digital trust auditing: Accessibility · Dark Patterns · Performance · Privacy.
+          Enterprise-grade compliance intelligence for websites, portals, and digital products.
         </p>
 
         <div style={{ display: 'flex', gap: 12, justifyContent: 'center', flexWrap: 'wrap', marginBottom: 56 }}>
@@ -74,10 +74,10 @@ export default function HomePage() {
         {/* Stats row */}
         <div style={{ display: 'flex', justifyContent: 'center', gap: 36, flexWrap: 'wrap' }}>
           {[
-            { val: '57+', label: 'Automated Tests', color: 'var(--accent-blue)' },
+            { val: '4 Pillars', label: 'Audit Domains', color: 'var(--accent-blue)' },
+            { val: '30+ Rules', label: 'Dark Pattern Detection', color: '#9B59B6' },
             { val: 'WCAG 2.2', label: 'Standard Coverage', color: 'var(--kpmg-teal)' },
             { val: 'GPT-4o', label: 'AI Engine', color: '#A78BFA' },
-            { val: 'PPTX · DOCX · PDF', label: 'Export Formats', color: 'var(--accent-yellow)' },
           ].map(s => (
             <div key={s.label} style={{ textAlign: 'center' }}>
               <div style={{ fontSize: 20, fontWeight: 700, color: s.color, marginBottom: 3 }}>{s.val}</div>

@@ -6,7 +6,7 @@ export const dynamic = 'force-dynamic';
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { url, loginConfig, crawlDepth = 2, maxPages = 5, includeAI = false, wcagLevels = ['A', 'AA'], standard = 'WCAG 2.2' } = body;
+    const { url, loginConfig, crawlDepth = 2, maxPages = 5, includeAI = false, wcagLevels = ['A', 'AA'], standard = 'WCAG 2.2', enabledPillars } = body;
 
     if (!url) {
       return NextResponse.json({ error: 'URL is required' }, { status: 400 });
@@ -26,6 +26,7 @@ export async function POST(request: NextRequest) {
       includeAI,
       wcagLevels,
       standard,
+      enabledPillars: enabledPillars || ['accessibility', 'darkpatterns', 'performance', 'privacy'],
     });
 
     return NextResponse.json({ auditId, status: 'started' });

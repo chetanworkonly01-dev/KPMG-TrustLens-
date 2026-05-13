@@ -1,6 +1,7 @@
 import { BrowserContext, Page } from 'playwright';
 import { TestCase, TestResult, TestEvidence, TestLogEntry, AccessibilityIssue, PageData } from '../types/audit';
-import { v4 as uuidv4 } from 'uuid';
+// uuid replaced with Node.js built-in
+const uuidv4 = (): string => crypto.randomUUID();
 
 // ===== TEST CASE DEFINITIONS =====
 export const TEST_CASES: TestCase[] = [

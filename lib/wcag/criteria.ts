@@ -351,6 +351,172 @@ export const WCAG_CRITERIA: Record<string, WcagCriterion> = {
     principle: 'robust',
     description: 'In content implemented using markup languages, status messages can be programmatically determined through role or properties.',
     url: 'https://www.w3.org/TR/WCAG22/#status-messages'
+  },
+
+  // ─── Previously missing A/AA criteria ───
+
+  '1.2.4': {
+    id: '1.2.4',
+    name: 'Captions (Live)',
+    level: 'AA',
+    principle: 'perceivable',
+    description: 'Captions are provided for all live audio content in synchronized media.',
+    url: 'https://www.w3.org/TR/WCAG22/#captions-live'
+  },
+  '1.3.4': {
+    id: '1.3.4',
+    name: 'Orientation',
+    level: 'AA',
+    principle: 'perceivable',
+    description: 'Content does not restrict its view and operation to a single display orientation, unless a specific display orientation is essential.',
+    url: 'https://www.w3.org/TR/WCAG22/#orientation'
+  },
+  '1.3.5': {
+    id: '1.3.5',
+    name: 'Identify Input Purpose',
+    level: 'AA',
+    principle: 'perceivable',
+    description: 'The purpose of each input field collecting information about the user can be programmatically determined when the input field serves a common purpose.',
+    url: 'https://www.w3.org/TR/WCAG22/#identify-input-purpose'
+  },
+  '1.4.2': {
+    id: '1.4.2',
+    name: 'Audio Control',
+    level: 'A',
+    principle: 'perceivable',
+    description: 'If any audio on a Web page plays automatically for more than 3 seconds, a mechanism is available to pause, stop, or control the volume.',
+    url: 'https://www.w3.org/TR/WCAG22/#audio-control'
+  },
+  '1.4.4': {
+    id: '1.4.4',
+    name: 'Resize Text',
+    level: 'AA',
+    principle: 'perceivable',
+    description: 'Text can be resized without assistive technology up to 200 percent without loss of content or functionality.',
+    url: 'https://www.w3.org/TR/WCAG22/#resize-text'
+  },
+  '1.4.12': {
+    id: '1.4.12',
+    name: 'Text Spacing',
+    level: 'AA',
+    principle: 'perceivable',
+    description: 'No loss of content or functionality occurs when users override text spacing properties.',
+    url: 'https://www.w3.org/TR/WCAG22/#text-spacing'
+  },
+  '1.4.13': {
+    id: '1.4.13',
+    name: 'Content on Hover or Focus',
+    level: 'AA',
+    principle: 'perceivable',
+    description: 'Where receiving and then removing pointer hover or keyboard focus triggers additional content to become visible and then hidden, the additional content is dismissible, hoverable, and persistent.',
+    url: 'https://www.w3.org/TR/WCAG22/#content-on-hover-or-focus'
+  },
+  '2.3.1': {
+    id: '2.3.1',
+    name: 'Three Flashes or Below Threshold',
+    level: 'A',
+    principle: 'operable',
+    description: 'Web pages do not contain anything that flashes more than three times in any one second period.',
+    url: 'https://www.w3.org/TR/WCAG22/#three-flashes-or-below-threshold'
+  },
+  '2.4.6': {
+    id: '2.4.6',
+    name: 'Headings and Labels',
+    level: 'AA',
+    principle: 'operable',
+    description: 'Headings and labels describe topic or purpose.',
+    url: 'https://www.w3.org/TR/WCAG22/#headings-and-labels'
+  },
+  '2.5.1': {
+    id: '2.5.1',
+    name: 'Pointer Gestures',
+    level: 'A',
+    principle: 'operable',
+    description: 'All functionality that uses multipoint or path-based gestures for operation can be operated with a single pointer without a path-based gesture.',
+    url: 'https://www.w3.org/TR/WCAG22/#pointer-gestures'
+  },
+  '2.5.2': {
+    id: '2.5.2',
+    name: 'Pointer Cancellation',
+    level: 'A',
+    principle: 'operable',
+    description: 'For functionality that can be operated using a single pointer, at least one of the following is true: the down-event is not used, abort/undo is available, up reversal, or essential.',
+    url: 'https://www.w3.org/TR/WCAG22/#pointer-cancellation'
+  },
+  '3.2.3': {
+    id: '3.2.3',
+    name: 'Consistent Navigation',
+    level: 'AA',
+    principle: 'understandable',
+    description: 'Navigational mechanisms that are repeated on multiple Web pages within a set of Web pages occur in the same relative order each time they are repeated.',
+    url: 'https://www.w3.org/TR/WCAG22/#consistent-navigation'
+  },
+
+  // ─── AAA criteria (expanded coverage) ───
+
+  '1.2.6': {
+    id: '1.2.6',
+    name: 'Sign Language (Prerecorded)',
+    level: 'AAA',
+    principle: 'perceivable',
+    description: 'Sign language interpretation is provided for all prerecorded audio content in synchronized media.',
+    url: 'https://www.w3.org/TR/WCAG22/#sign-language-prerecorded'
+  },
+  '1.2.7': {
+    id: '1.2.7',
+    name: 'Extended Audio Description (Prerecorded)',
+    level: 'AAA',
+    principle: 'perceivable',
+    description: 'Where pauses in foreground audio are insufficient for audio descriptions, extended audio description is provided.',
+    url: 'https://www.w3.org/TR/WCAG22/#extended-audio-description-prerecorded'
+  },
+  '1.4.6': {
+    id: '1.4.6',
+    name: 'Contrast (Enhanced)',
+    level: 'AAA',
+    principle: 'perceivable',
+    description: 'The visual presentation of text and images of text has a contrast ratio of at least 7:1.',
+    url: 'https://www.w3.org/TR/WCAG22/#contrast-enhanced'
+  },
+  '2.1.3': {
+    id: '2.1.3',
+    name: 'Keyboard (No Exception)',
+    level: 'AAA',
+    principle: 'operable',
+    description: 'All functionality of the content is operable through a keyboard interface without requiring specific timings.',
+    url: 'https://www.w3.org/TR/WCAG22/#keyboard-no-exception'
+  },
+  '2.4.9': {
+    id: '2.4.9',
+    name: 'Link Purpose (Link Only)',
+    level: 'AAA',
+    principle: 'operable',
+    description: 'A mechanism is available to allow the purpose of each link to be identified from link text alone.',
+    url: 'https://www.w3.org/TR/WCAG22/#link-purpose-link-only'
+  },
+  '2.4.10': {
+    id: '2.4.10',
+    name: 'Section Headings',
+    level: 'AAA',
+    principle: 'operable',
+    description: 'Section headings are used to organize the content.',
+    url: 'https://www.w3.org/TR/WCAG22/#section-headings'
+  },
+  '3.3.5': {
+    id: '3.3.5',
+    name: 'Help',
+    level: 'AAA',
+    principle: 'understandable',
+    description: 'Context-sensitive help is available.',
+    url: 'https://www.w3.org/TR/WCAG22/#help'
+  },
+  '3.3.6': {
+    id: '3.3.6',
+    name: 'Error Prevention (All)',
+    level: 'AAA',
+    principle: 'understandable',
+    description: 'For Web pages that require the user to submit information, submissions are reversible, checked, or confirmed.',
+    url: 'https://www.w3.org/TR/WCAG22/#error-prevention-all'
   }
 };
 

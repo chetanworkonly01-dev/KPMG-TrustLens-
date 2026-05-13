@@ -3,7 +3,8 @@ import AxeBuilder from '@axe-core/playwright';
 import { AccessibilityIssue, PageData } from '../types/audit';
 import { getSeverityFromAxeImpact, getImpactDescription } from '../wcag/severity';
 import { WCAG_CRITERIA } from '../wcag/criteria';
-import { v4 as uuidv4 } from 'uuid';
+// uuid replaced with Node.js built-in
+const uuidv4 = (): string => crypto.randomUUID();
 
 interface AxeViolation {
   id: string;

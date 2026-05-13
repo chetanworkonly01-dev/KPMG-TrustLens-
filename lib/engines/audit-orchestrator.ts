@@ -9,7 +9,17 @@ import { generateReport } from './report-generator';
 import { runJourneyTests } from './journey-tester';
 import { runTestSuite, TEST_CASES } from './test-runner';
 import { getAudit as storeGet, setAudit as storeSet, getAllAudits as storeGetAll } from '../store/audit-store';
-import { v4 as uuidv4 } from 'uuid';
+// Use Node.js built-in crypto instead of uuid package (uuid@13 ESM-only breaks Turbopack)
+const uuidv4 = (): string => crypto.randomUUID();
+// ── TrustLens Pillar Engines ──
+import { runDarkPatternAudit } from './darkpattern-engine';
+import { runPerformanceAudit } from './performance-engine';
+import { runPrivacyAudit } from './privacy-engine';
+import { calculateTrustScore } from './trust-scoring';
+import type { AuditPillar } from '../types/trustscore';
+import type { DarkPatternResult } from '../types/darkpattern';
+import type { PerformanceResult } from '../types/performance';
+import type { PrivacyResult } from '../types/privacy';
 
 export function getAudit(id: string): AuditResult | undefined {
   return storeGet(id);
@@ -44,9 +54,19 @@ export async function runWebsiteAudit(config: AuditConfig): Promise<string> {
   };
   storeSet(id, audit);
 
-  runAuditPipeline(id, config).catch(err => {
+  // Run pipeline with a 15-minute global timeout so audits never spin forever
+  const TIMEOUT_MS = 15 * 60 * 1000;
+  const timeoutPromise = new Promise<never>((_, reject) =>
+    setTimeout(() => reject(new Error('Audit timed out after 15 minutes')), TIMEOUT_MS)
+  );
+  Promise.race([runAuditPipeline(id, config), timeoutPromise]).catch(err => {
     const a = storeGet(id);
-    if (a) { a.status = 'error'; a.error = err.message; storeSet(id, a); }
+    if (a && a.status !== 'complete' && a.status !== 'error') {
+      a.status = 'error';
+      a.error = err.message;
+      a.progressMessage = `Error: ${err.message}`;
+      storeSet(id, a);
+    }
   });
 
   return id;
@@ -60,11 +80,13 @@ async function runAuditPipeline(id: string, config: AuditConfig) {
   const updateProgress = (msg: string, pct: number) => {
     audit.progressMessage = msg;
     audit.progress = pct;
+    storeSet(id, audit); // ensure polling always sees fresh progress
   };
 
   const addLog = (entry: TestLogEntry) => {
     audit.testLog.push(entry);
     if (entry.status === 'running') audit.progressMessage = entry.message;
+    storeSet(id, audit);
   };
 
   // Aggregate N/A and pass data across all pages
@@ -122,6 +144,16 @@ async function runAuditPipeline(id: string, config: AuditConfig) {
     // ─────────────────────────────────────────
     audit.status = 'scanning';
     const allIssues: AccessibilityIssue[] = [];
+    const enabledPillars: AuditPillar[] = config.enabledPillars || ['accessibility', 'darkpatterns', 'performance', 'privacy'];
+    const a11yEnabled = enabledPillars.includes('accessibility');
+
+    if (!a11yEnabled) {
+      updateProgress('Accessibility pillar disabled — skipping WCAG tests...', 82);
+    }
+
+    let journeyResult: { journeyResults: any[]; issues: any[] } = { journeyResults: [], issues: [] };
+
+    if (a11yEnabled) {
 
     for (let i = 0; i < crawlResult.pages.length; i++) {
       const pg = crawlResult.pages[i];
@@ -182,7 +214,7 @@ async function runAuditPipeline(id: string, config: AuditConfig) {
       message: '━━━ Running User Journey Tests ━━━'
     });
 
-    const journeyResult = await runJourneyTests(
+    journeyResult = await runJourneyTests(
       crawlResult.context,
       crawlResult.pages,
       (msg) => updateProgress(msg, audit.progress)
@@ -213,6 +245,7 @@ async function runAuditPipeline(id: string, config: AuditConfig) {
           pageUrl: page.url,
           pageTitle: page.title,
           htmlSnippet: page.html,
+          pageScreenshot: page.screenshot,
           existingIssues: allIssues.filter(issue => issue.pageUrl === page.url)
         });
         allIssues.push(...aiIssues);
@@ -238,7 +271,52 @@ async function runAuditPipeline(id: string, config: AuditConfig) {
           if (buf) issue.elementScreenshot = buf.toString('base64');
         }
         await page.close();
-      } catch { /* screenshot capture is best-effort, never block the pipeline */ }
+      } catch { /* screenshot capture is best-effort */ }
+    }
+    } // end if (a11yEnabled)
+
+    // ─────────────────────────────────────────
+    // PHASE 4c: TRUSTLENS PILLAR ENGINES
+    // ─────────────────────────────────────────
+    const pageList = crawlResult.pages.map(p => ({ url: p.url, title: p.title }));
+    let darkPatternResult: DarkPatternResult | null = null;
+    let performanceResult: PerformanceResult | null = null;
+    let privacyResult: PrivacyResult | null = null;
+
+    if (enabledPillars.includes('darkpatterns')) {
+      updateProgress('🕵️ Running Dark Pattern & Ethical UX audit...', 87);
+      addLog({ timestamp: new Date().toISOString(), testId: 'DP-ENGINE', testName: 'Dark Pattern Engine', wcag: '', status: 'running', message: '━━━ 🕵️ Dark Pattern & Ethical UX Audit ━━━' });
+      try {
+        darkPatternResult = await runDarkPatternAudit(crawlResult.context, pageList);
+        addLog({ timestamp: new Date().toISOString(), testId: 'DP-ENGINE', testName: 'Dark Pattern Engine', wcag: '', status: darkPatternResult.totalFindings > 0 ? 'fail' : 'pass', message: `🕵️ Dark patterns: ${darkPatternResult.totalFindings} findings | Ethics: ${darkPatternResult.ethicsScore}/100` });
+      } catch (err) {
+        console.error('[TrustLens] Dark pattern engine error:', err);
+        addLog({ timestamp: new Date().toISOString(), testId: 'DP-ENGINE', testName: 'Dark Pattern Engine', wcag: '', status: 'error', message: `🕵️ Dark pattern error: ${(err as Error).message}` });
+      }
+    }
+
+    if (enabledPillars.includes('performance')) {
+      updateProgress('⚡ Running Performance audit...', 89);
+      addLog({ timestamp: new Date().toISOString(), testId: 'PERF-ENGINE', testName: 'Performance Engine', wcag: '', status: 'running', message: '━━━ ⚡ Performance & Core Web Vitals Audit ━━━' });
+      try {
+        performanceResult = await runPerformanceAudit(crawlResult.context, pageList.slice(0, 5));
+        addLog({ timestamp: new Date().toISOString(), testId: 'PERF-ENGINE', testName: 'Performance Engine', wcag: '', status: performanceResult.overallScore >= 80 ? 'pass' : 'fail', message: `⚡ Performance: ${performanceResult.overallScore}/100 | ${performanceResult.totalResourceIssues} resource issues` });
+      } catch (err) {
+        console.error('[TrustLens] Performance engine error:', err);
+        addLog({ timestamp: new Date().toISOString(), testId: 'PERF-ENGINE', testName: 'Performance Engine', wcag: '', status: 'error', message: `⚡ Performance error: ${(err as Error).message}` });
+      }
+    }
+
+    if (enabledPillars.includes('privacy')) {
+      updateProgress('🔒 Running Privacy & Compliance audit...', 91);
+      addLog({ timestamp: new Date().toISOString(), testId: 'PRIV-ENGINE', testName: 'Privacy Engine', wcag: '', status: 'running', message: '━━━ 🔒 Privacy & Compliance Audit ━━━' });
+      try {
+        privacyResult = await runPrivacyAudit(crawlResult.context, pageList.slice(0, 5));
+        addLog({ timestamp: new Date().toISOString(), testId: 'PRIV-ENGINE', testName: 'Privacy Engine', wcag: '', status: privacyResult.overallScore >= 80 ? 'pass' : 'fail', message: `🔒 Privacy: ${privacyResult.overallScore}/100 | ${privacyResult.totalTrackers} trackers` });
+      } catch (err) {
+        console.error('[TrustLens] Privacy engine error:', err);
+        addLog({ timestamp: new Date().toISOString(), testId: 'PRIV-ENGINE', testName: 'Privacy Engine', wcag: '', status: 'error', message: `🔒 Privacy error: ${(err as Error).message}` });
+      }
     }
 
     await closeCrawler(crawlResult.browser);
@@ -273,6 +351,15 @@ async function runAuditPipeline(id: string, config: AuditConfig) {
     audit.score.testsPassed = passed;
     audit.score.testsFailed = failed;
 
+    // ── TrustLens Unified Trust Score ──
+    audit.pillarResults = { darkpatterns: darkPatternResult || undefined, performance: performanceResult || undefined, privacy: privacyResult || undefined };
+    audit.trustScore = calculateTrustScore(
+      { overall: audit.score.overall, totalIssues: audit.score.totalIssues, issueBySeverity: audit.score.issueBySeverity },
+      darkPatternResult, performanceResult, privacyResult,
+      enabledPillars,
+      config.pillarConfig?.weights
+    );
+
     // ─────────────────────────────────────────
     // PHASE 7: REPORT GENERATION
     // ─────────────────────────────────────────
@@ -283,26 +370,32 @@ async function runAuditPipeline(id: string, config: AuditConfig) {
       crawlCoverage,
       journeyResult.journeyResults,
       finalInapplicable,
-      testedLevel
+      testedLevel,
+      { enabledPillars, darkpatterns: darkPatternResult, performance: performanceResult, privacy: privacyResult }
     );
     audit.report.testResults = audit.testResults;
+    audit.report.trustScore = audit.trustScore;
+    audit.report.pillarResults = audit.pillarResults;
 
+    const trustLabel = audit.trustScore ? ` | Trust: ${audit.trustScore.overall}/100` : '';
     addLog({
       timestamp: new Date().toISOString(),
       testId: 'COMPLETE', testName: 'Audit Complete',
       wcag: '', status: 'pass',
-      message: `✅ Audit complete — Score: ${audit.score.overall}/100 | Level: WCAG ${testedLevel} | ${deduped.length} issues | ${passed}/${passed + failed} tests passed`
+      message: `✅ Audit complete — A11Y: ${audit.score.overall}/100${trustLabel} | WCAG ${testedLevel} | ${deduped.length} issues | ${passed}/${passed + failed} tests passed`
     });
 
     audit.status = 'complete';
     audit.progress = 100;
     audit.progressMessage = 'Audit complete!';
     audit.completedAt = new Date().toISOString();
+    storeSet(id, audit);
 
   } catch (error) {
     audit.status = 'error';
     audit.error = error instanceof Error ? error.message : 'Unknown error';
     audit.progressMessage = `Error: ${audit.error}`;
+    storeSet(id, audit);
   }
 }
 
@@ -367,9 +460,11 @@ export async function runPdfAudit(fileBuffer: Buffer, fileName: string): Promise
     audit.status = 'complete';
     audit.progress = 100;
     audit.completedAt = new Date().toISOString();
+    storeSet(id, audit);
   } catch (error) {
     audit.status = 'error';
     audit.error = error instanceof Error ? error.message : 'Unknown error';
+    storeSet(id, audit);
   }
 
   return id;

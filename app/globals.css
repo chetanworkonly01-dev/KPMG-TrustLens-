@@ -908,3 +908,149 @@ details[open] > summary {
   button { display: none !important; }
 }
 
+/* ═══════════════════════════════════════════════════════
+   TRUSTLENS — MULTI-PILLAR DESIGN SYSTEM
+   ═══════════════════════════════════════════════════════ */
+
+/* ── Pillar Color Tokens ── */
+:root {
+  --pillar-a11y:    #0091DA;
+  --pillar-dp:      #9B59B6;
+  --pillar-perf:    #00BA8C;
+  --pillar-priv:    #E67E22;
+  --pillar-a11y-bg: rgba(0, 145, 218, 0.08);
+  --pillar-dp-bg:   rgba(155, 89, 182, 0.08);
+  --pillar-perf-bg: rgba(0, 186, 140, 0.08);
+  --pillar-priv-bg: rgba(230, 126, 34, 0.08);
+}
+
+/* ── Navbar Pillar Badge ── */
+.trustlens-pillars-badge {
+  display: flex; align-items: center; gap: 4px;
+  padding: 4px 10px; border-radius: var(--radius-full);
+  background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.1);
+  font-size: 12px;
+}
+.pillar-dot { font-size: 11px; line-height: 1; }
+
+/* ── Pillar Score Cards ── */
+.pillar-scores-grid {
+  display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 20px;
+}
+.pillar-score-card {
+  background: var(--bg-glass); backdrop-filter: blur(20px);
+  border: 1px solid var(--border); border-radius: var(--radius-lg);
+  padding: 16px; text-align: center; transition: var(--transition);
+  position: relative; overflow: hidden;
+}
+.pillar-score-card::before {
+  content: ''; position: absolute; top: 0; left: 0; right: 0; height: 3px;
+}
+.pillar-score-card.pillar-accessibility::before { background: var(--pillar-a11y); }
+.pillar-score-card.pillar-darkpatterns::before { background: var(--pillar-dp); }
+.pillar-score-card.pillar-performance::before { background: var(--pillar-perf); }
+.pillar-score-card.pillar-privacy::before { background: var(--pillar-priv); }
+.pillar-score-card:hover { border-color: var(--border-hover); box-shadow: var(--shadow-glow); }
+.pillar-score-value {
+  font-size: 28px; font-weight: 300; letter-spacing: -0.03em; line-height: 1.1;
+}
+.pillar-score-label {
+  font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em;
+  color: var(--text-muted); margin-top: 6px;
+}
+.pillar-score-icon { font-size: 20px; margin-bottom: 8px; }
+.pillar-score-status {
+  display: inline-block; margin-top: 8px; padding: 2px 8px;
+  border-radius: var(--radius-full); font-size: 10px; font-weight: 700;
+  text-transform: uppercase;
+}
+.pillar-status-pass { background: rgba(0,186,140,0.12); color: #00BA8C; }
+.pillar-status-warning { background: rgba(240,171,0,0.12); color: #F0AB00; }
+.pillar-status-fail { background: rgba(255,51,86,0.12); color: #FF3356; }
+
+/* ── Trust Score Badge ── */
+.trust-score-badge {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 4px 12px; border-radius: var(--radius-full);
+  font-size: 11px; font-weight: 700; text-transform: uppercase;
+}
+.trust-level-trusted  { background: rgba(0,186,140,0.12); color: #00BA8C; border: 1px solid rgba(0,186,140,0.3); }
+.trust-level-moderate { background: rgba(240,171,0,0.12); color: #F0AB00; border: 1px solid rgba(240,171,0,0.3); }
+.trust-level-at-risk  { background: rgba(255,133,51,0.12); color: #FF8533; border: 1px solid rgba(255,133,51,0.3); }
+.trust-level-critical { background: rgba(255,51,86,0.12); color: #FF3356; border: 1px solid rgba(255,51,86,0.3); }
+
+/* ── Dark Pattern Finding Card ── */
+.dp-finding-card {
+  background: var(--bg-glass); backdrop-filter: blur(20px);
+  border: 1px solid var(--border); border-radius: var(--radius-md);
+  padding: 14px 16px; transition: var(--transition);
+  border-left: 3px solid var(--pillar-dp);
+}
+.dp-finding-card:hover { border-color: var(--border-hover); box-shadow: var(--shadow-glow); }
+.dp-category-badge {
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 2px 8px; border-radius: var(--radius-full);
+  font-size: 10px; font-weight: 700; background: rgba(155,89,182,0.12); color: #9B59B6;
+}
+.dp-principle-badge {
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 2px 8px; border-radius: var(--radius-full);
+  font-size: 10px; font-weight: 700; background: rgba(0,145,218,0.1); color: #0091DA;
+}
+.dp-regulation-badge {
+  display: inline-flex; align-items: center;
+  padding: 2px 6px; border-radius: var(--radius-full);
+  font-size: 9px; font-weight: 700; background: rgba(255,133,51,0.1); color: #FF8533;
+}
+
+/* ── Ethics Principle Bars ── */
+.ethics-bar-container { display: flex; flex-direction: column; gap: 8px; }
+.ethics-bar-row { display: flex; align-items: center; gap: 10px; }
+.ethics-bar-label { font-size: 11px; font-weight: 600; width: 140px; flex-shrink: 0; color: var(--text-secondary); }
+.ethics-bar-track {
+  flex: 1; height: 8px; border-radius: var(--radius-full);
+  background: rgba(255,255,255,0.05); overflow: hidden;
+}
+.ethics-bar-fill {
+  height: 100%; border-radius: var(--radius-full); transition: width 1.2s ease;
+}
+.ethics-bar-value { font-size: 12px; font-weight: 300; width: 36px; text-align: right; }
+
+/* ── Performance Metric Cards ── */
+.cwv-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+.cwv-card {
+  background: var(--bg-glass); border: 1px solid var(--border);
+  border-radius: var(--radius-md); padding: 12px; text-align: center;
+}
+.cwv-value { font-size: 22px; font-weight: 300; letter-spacing: -0.02em; }
+.cwv-label { font-size: 10px; font-weight: 700; text-transform: uppercase; color: var(--text-muted); margin-top: 4px; }
+.cwv-threshold { font-size: 9px; color: var(--text-muted); margin-top: 2px; }
+
+/* ── Privacy Tracker Cards ── */
+.tracker-card {
+  display: flex; align-items: center; gap: 10px;
+  padding: 10px 12px; background: var(--bg-glass);
+  border: 1px solid var(--border); border-radius: var(--radius-sm);
+}
+.tracker-company { font-weight: 700; font-size: 13px; }
+.tracker-domain { font-size: 11px; color: var(--text-muted); }
+.tracker-category-badge {
+  padding: 2px 8px; border-radius: var(--radius-full);
+  font-size: 9px; font-weight: 700; text-transform: uppercase; margin-left: auto;
+}
+.tracker-cat-analytics { background: rgba(0,145,218,0.1); color: #0091DA; }
+.tracker-cat-advertising { background: rgba(255,51,86,0.1); color: #FF3356; }
+.tracker-cat-social { background: rgba(155,89,182,0.1); color: #9B59B6; }
+
+/* ── Pillar Tab Styles ── */
+.pillar-tab { position: relative; }
+.pillar-tab.pillar-tab-accessibility .tab-indicator { background: var(--pillar-a11y); }
+.pillar-tab.pillar-tab-darkpatterns .tab-indicator { background: var(--pillar-dp); }
+.pillar-tab.pillar-tab-performance .tab-indicator { background: var(--pillar-perf); }
+.pillar-tab.pillar-tab-privacy .tab-indicator { background: var(--pillar-priv); }
+
+/* ── Responsive ── */
+@media (max-width: 768px) {
+  .pillar-scores-grid { grid-template-columns: repeat(2, 1fr); }
+  .cwv-grid { grid-template-columns: repeat(2, 1fr); }
+}

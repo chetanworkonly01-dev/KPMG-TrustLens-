@@ -2,6 +2,17 @@ import { AccessibilityIssue, AuditScore, AuditReport, WcagMappingEntry, Remediat
 import { WCAG_CRITERIA } from '../wcag/criteria';
 import { SEVERITY_WEIGHTS, LEVEL_MULTIPLIERS } from '../wcag/severity';
 import { getComplianceLabel, groupIssues } from './scoring';
+import type { AuditPillar } from '../types/trustscore';
+import type { DarkPatternResult } from '../types/darkpattern';
+import type { PerformanceResult } from '../types/performance';
+import type { PrivacyResult } from '../types/privacy';
+
+export interface PillarContext {
+  enabledPillars: AuditPillar[];
+  darkpatterns?: DarkPatternResult | null;
+  performance?: PerformanceResult | null;
+  privacy?: PrivacyResult | null;
+}
 
 export function generateReport(
   auditId: string,
@@ -11,23 +22,26 @@ export function generateReport(
   crawlCoverage?: CrawlCoverage,
   journeyResults?: JourneyTestResult[],
   inapplicableCriteria?: string[],    // ← N/A criteria from axe
-  testedLevel?: string                 // ← e.g. 'AA'
+  testedLevel?: string,                // ← e.g. 'AA'
+  pillarCtx?: PillarContext            // ← pillar-aware context
 ): AuditReport {
   const pageCount = pages.length || 1;
   const grouped = groupIssues(issues, pageCount);
   const topCritical = getTopCritical(grouped);
+  const enabledPillars = pillarCtx?.enabledPillars || ['accessibility', 'darkpatterns', 'performance', 'privacy'];
+  const a11yEnabled = enabledPillars.includes('accessibility');
 
   return {
     id: `report-${auditId}`,
     auditId,
     testedLevel: testedLevel || 'AA',
-    executiveSummary: generateExecutiveSummary(score, issues, grouped, crawlCoverage, journeyResults, testedLevel),
+    executiveSummary: generateExecutiveSummary(score, issues, grouped, crawlCoverage, journeyResults, testedLevel, pillarCtx),
     score,
     issues,
     groupedIssues: grouped,
     topCritical,
-    wcagMapping: generateWcagMapping(issues, inapplicableCriteria || []),
-    remediationPlan: generateRemediationPlan(grouped, pageCount),
+    wcagMapping: a11yEnabled ? generateWcagMapping(issues, inapplicableCriteria || []) : [],
+    remediationPlan: a11yEnabled ? generateRemediationPlan(grouped, pageCount) : [],
     pageBreakdown: generatePageBreakdown(issues, pages),
     crawlCoverage,
     journeyResults,
@@ -54,63 +68,97 @@ function generateExecutiveSummary(
   grouped: GroupedIssue[],
   crawlCoverage?: CrawlCoverage,
   journeyResults?: JourneyTestResult[],
-  testedLevel?: string
+  testedLevel?: string,
+  pillarCtx?: PillarContext
 ): string {
-  const compliance = getComplianceLabel(score.complianceLevel);
-  const criticalCount = score.issueBySeverity.critical;
-  const highCount = score.issueBySeverity.high;
-  const pageCount = [...new Set(issues.map(i => i.pageUrl))].length || 1;
-  const level = testedLevel || 'AA';
+  const enabledPillars = pillarCtx?.enabledPillars || ['accessibility'];
+  const a11yEnabled = enabledPillars.includes('accessibility');
+  const dpEnabled = enabledPillars.includes('darkpatterns');
+  const perfEnabled = enabledPillars.includes('performance');
+  const privEnabled = enabledPillars.includes('privacy');
 
-  let summary = `This KPMG accessibility audit evaluated the target against WCAG 2.2 Level ${level} guidelines. `;
-  summary += `The overall accessibility score is ${score.overall}/100, classified as "${compliance}". `;
-  summary += `A total of ${score.totalIssues} issues were identified (${score.uniqueIssues} unique issue types) across ${pageCount} page(s). `;
+  const pillarNames: string[] = [];
+  if (a11yEnabled) pillarNames.push('Accessibility (WCAG)');
+  if (dpEnabled) pillarNames.push('Dark Patterns & Ethics');
+  if (perfEnabled) pillarNames.push('Performance');
+  if (privEnabled) pillarNames.push('Privacy & Compliance');
 
+  let summary = `This KPMG TrustLens audit evaluated the target across ${enabledPillars.length} pillar(s): ${pillarNames.join(', ')}. `;
+
+  // ── Accessibility summary ──
+  if (a11yEnabled) {
+    const compliance = getComplianceLabel(score.complianceLevel);
+    const criticalCount = score.issueBySeverity.critical;
+    const highCount = score.issueBySeverity.high;
+    const pageCount = [...new Set(issues.map(i => i.pageUrl))].length || 1;
+    const level = testedLevel || 'AA';
+
+    summary += `\n\nACCESSIBILITY: Evaluated against WCAG 2.2 Level ${level}. `;
+    summary += `Score: ${score.overall}/100, classified as "${compliance}". `;
+    summary += `${score.totalIssues} issues identified (${score.uniqueIssues} unique) across ${pageCount} page(s). `;
+
+    if (criticalCount > 0) {
+      summary += `\n⚠ URGENT: ${criticalCount} critical issue(s) require immediate attention. `;
+    }
+    if (highCount > 0) {
+      summary += `${highCount} high-severity issue(s) significantly impact usability. `;
+    }
+
+    const widespread = grouped.filter(g => g.frequency > 50);
+    if (widespread.length > 0) {
+      summary += `\nWIDESPREAD: ${widespread.length} issue(s) appear on 50%+ of pages. `;
+    }
+
+    if (journeyResults && journeyResults.length > 0) {
+      const passed = journeyResults.filter(j => j.passed).length;
+      summary += `\nUSER JOURNEYS: ${passed}/${journeyResults.length} passed. `;
+    }
+
+    summary += `\nCategory breakdown: Perceivable: ${score.categoryScores.perceivable}, Operable: ${score.categoryScores.operable}, Understandable: ${score.categoryScores.understandable}, Robust: ${score.categoryScores.robust}. `;
+  }
+
+  // ── Dark Patterns summary ──
+  if (dpEnabled && pillarCtx?.darkpatterns) {
+    const dp = pillarCtx.darkpatterns;
+    summary += `\n\nDARK PATTERNS: Ethics Score: ${dp.ethicsScore}/100 | `;
+    summary += `${dp.totalFindings} pattern(s) detected | `;
+    summary += `Consent Integrity: ${dp.consentIntegrity}/100 | `;
+    summary += `Manipulation Index: ${dp.manipulationIndex}/100. `;
+    if (dp.regulatoryRisks.length > 0) {
+      summary += `Regulatory risks: ${dp.regulatoryRisks.join(', ')}. `;
+    }
+  } else if (dpEnabled) {
+    summary += `\n\nDARK PATTERNS: No dark patterns detected — the interface respects ethical design principles. `;
+  }
+
+  // ── Performance summary ──
+  if (perfEnabled && pillarCtx?.performance) {
+    const perf = pillarCtx.performance;
+    summary += `\n\nPERFORMANCE: Score: ${perf.overallScore}/100 | ${perf.totalResourceIssues} resource issues. `;
+    if (perf.recommendations.length > 0) {
+      summary += `Top recommendation: ${perf.recommendations[0]}. `;
+    }
+  }
+
+  // ── Privacy summary ──
+  if (privEnabled && pillarCtx?.privacy) {
+    const priv = pillarCtx.privacy;
+    summary += `\n\nPRIVACY: Score: ${priv.overallScore}/100 | ${priv.totalTrackers} tracker(s) detected. `;
+    summary += `Consent banner: ${priv.hasConsentBanner ? 'Present' : 'Missing'}. `;
+    summary += `Privacy policy: ${priv.hasPrivacyPolicy ? 'Present' : 'Missing'}. `;
+    if (priv.regulatoryRisks.length > 0) {
+      summary += `Regulatory risks: ${priv.regulatoryRisks.join(', ')}. `;
+    }
+  }
+
+  // ── Crawl coverage ──
   if (crawlCoverage) {
     const coveragePct = crawlCoverage.coveragePercent;
-    summary += `\n\nCRAWL COVERAGE: ${crawlCoverage.pagesAudited} of ${crawlCoverage.totalPagesFound} discovered pages were audited (${coveragePct}% coverage).`;
+    summary += `\n\nCRAWL COVERAGE: ${crawlCoverage.pagesAudited} of ${crawlCoverage.totalPagesFound} discovered pages audited (${coveragePct}%).`;
     if (coveragePct < 100 && crawlCoverage.pagesSkipped > 0) {
-      summary += ` ${crawlCoverage.pagesSkipped} page(s) were not audited due to the configured page limit or skip rules.`;
+      summary += ` ${crawlCoverage.pagesSkipped} page(s) skipped due to limits.`;
     }
   }
-
-  if (criticalCount > 0) {
-    summary += `\n\nURGENT: ${criticalCount} critical issue(s) require immediate attention. These directly block access for users with disabilities.`;
-  }
-  if (highCount > 0) {
-    summary += ` ${highCount} high-severity issue(s) significantly impact usability.`;
-  }
-
-  const widespread = grouped.filter(g => g.frequency > 50);
-  if (widespread.length > 0) {
-    summary += `\n\nWIDESPREAD: ${widespread.length} issue(s) appear on more than 50% of pages: `;
-    summary += widespread.slice(0, 3).map(w => `"${w.title}" (${w.affectedPages.length} pages)`).join(', ') + '.';
-  }
-
-  if (journeyResults && journeyResults.length > 0) {
-    const passed = journeyResults.filter(j => j.passed).length;
-    const total = journeyResults.length;
-    summary += `\n\nUSER JOURNEY TESTS: ${passed}/${total} journeys passed.`;
-    const failedJourneys = journeyResults.filter(j => !j.passed);
-    if (failedJourneys.length > 0) {
-      summary += ` Failed: ${failedJourneys.map(j => j.journeyName).join(', ')}.`;
-    }
-  }
-
-  summary += `\n\nCategory breakdown: `;
-  summary += `Perceivable: ${score.categoryScores.perceivable}/100, `;
-  summary += `Operable: ${score.categoryScores.operable}/100, `;
-  summary += `Understandable: ${score.categoryScores.understandable}/100, `;
-  summary += `Robust: ${score.categoryScores.robust}/100.`;
-
-  if (score.categoryScores.pdf < 100) {
-    summary += ` PDF: ${score.categoryScores.pdf}/100.`;
-  }
-
-  const highConf = issues.filter(i => i.confidence === 'high').length;
-  const medConf  = issues.filter(i => i.confidence === 'medium').length;
-  const lowConf  = issues.filter(i => i.confidence === 'low').length;
-  summary += `\n\nCONFIDENCE: ${highConf} high, ${medConf} medium, ${lowConf} low confidence issues.`;
 
   return summary;
 }

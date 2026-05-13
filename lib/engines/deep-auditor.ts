@@ -1,6 +1,7 @@
 import { BrowserContext, Page } from 'playwright';
 import { AccessibilityIssue, PageData } from '../types/audit';
-import { v4 as uuidv4 } from 'uuid';
+// uuid replaced with Node.js built-in
+const uuidv4 = (): string => crypto.randomUUID();
 
 /**
  * Deep Auditor — 14-Step Human-Like Accessibility Audit

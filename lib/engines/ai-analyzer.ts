@@ -1,6 +1,7 @@
 import OpenAI from 'openai';
 import { AccessibilityIssue, ConfidenceLevel } from '../types/audit';
-import { v4 as uuidv4 } from 'uuid';
+// uuid replaced with Node.js built-in
+const uuidv4 = (): string => crypto.randomUUID();
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY || '' });
 
@@ -8,6 +9,8 @@ interface AIAnalysisInput {
   pageUrl: string;
   pageTitle: string;
   htmlSnippet: string;
+  /** Base64-encoded page screenshot for GPT-4o vision analysis */
+  pageScreenshot?: string;
   existingIssues: AccessibilityIssue[];
 }
 
@@ -21,6 +24,7 @@ interface AIIssue {
   recommendation: string;
   codeFix?: string;
   confidence: 'high' | 'medium' | 'low';
+  reasoning?: string;
   uxCategory?: string;
 }
 
@@ -93,12 +97,28 @@ Return a JSON object with an "issues" array. Each issue:
 
 Return at most 8 issues. Only return issues NOT in the existing list. Return {"issues": []} if no additional issues found.
 
-IMPORTANT: Think like a real accessibility expert doing a manual audit. Focus on REAL user problems, not just code issues.`;
+IMPORTANT: Think like a real accessibility expert doing a manual audit. Focus on REAL user problems, not just code issues.${input.pageScreenshot ? '\n\nA screenshot of the rendered page is attached. Use it to detect VISUAL accessibility issues: poor contrast, overlapping elements, truncated text, invisible focus indicators, tiny touch targets, missing visual hierarchy, and layout issues that are not apparent from HTML alone.' : ''}`;
 
   try {
+    // Build messages — include vision content if screenshot available
+    const messages: OpenAI.ChatCompletionMessageParam[] = [];
+
+    if (input.pageScreenshot) {
+      // GPT-4o vision: send both text prompt and screenshot
+      messages.push({
+        role: 'user',
+        content: [
+          { type: 'text', text: prompt },
+          { type: 'image_url', image_url: { url: `data:image/png;base64,${input.pageScreenshot}`, detail: 'low' } }
+        ]
+      });
+    } else {
+      messages.push({ role: 'user', content: prompt });
+    }
+
     const response = await openai.chat.completions.create({
       model: 'gpt-4o',
-      messages: [{ role: 'user', content: prompt }],
+      messages,
       temperature: 0.3,
       max_tokens: 3000,
       response_format: { type: 'json_object' }
@@ -116,7 +136,7 @@ IMPORTANT: Think like a real accessibility expert doing a manual audit. Focus on
       id: uuidv4(),
       testId: `AI-${ai.wcagCriterion?.replace(/\./g, '') || 'GEN'}`,
       title: ai.title,
-      description: ai.description + (ai.uxCategory ? ` [UX: ${ai.uxCategory}]` : ''),
+      description: ai.description + (ai.uxCategory ? ` [UX: ${ai.uxCategory}]` : '') + (ai.reasoning ? ` [Reasoning: ${ai.reasoning}]` : ''),
       element: ai.element,
       pageUrl: input.pageUrl,
       wcagCriterion: ai.wcagCriterion || 'general',

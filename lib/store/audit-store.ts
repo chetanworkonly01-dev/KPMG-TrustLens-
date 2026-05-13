@@ -64,23 +64,43 @@ export function setAudit(id: string, audit: AuditResult): void {
   // Always keep in active cache for fast access
   activeCache.set(id, audit);
 
-  // Flush to disk when audit reaches a terminal state
+  // Always flush to disk so in-progress audits survive HMR/server restarts
+  flushToDisk(id, audit);
+
+  // Remove from active cache after terminal state to free memory
   if (audit.status === 'complete' || audit.status === 'error') {
-    flushToDisk(id, audit);
-    // Remove from active cache after flush to free memory
-    // Keep a small delay so final polls can still hit cache
     setTimeout(() => activeCache.delete(id), 10000);
   }
 }
 
 /**
  * Write audit to disk as JSON file.
+ * Uses compact JSON and debouncing to avoid excessive I/O during rapid polling.
  */
+const pendingFlush = new Map<string, NodeJS.Timeout>();
+
 function flushToDisk(id: string, audit: AuditResult): void {
+  // For terminal states, flush immediately
+  if (audit.status === 'complete' || audit.status === 'error') {
+    clearTimeout(pendingFlush.get(id));
+    pendingFlush.delete(id);
+    writeToDisk(id, audit);
+    return;
+  }
+
+  // For in-progress, debounce writes (max once per 2s)
+  if (pendingFlush.has(id)) return;
+  pendingFlush.set(id, setTimeout(() => {
+    pendingFlush.delete(id);
+    writeToDisk(id, audit);
+  }, 2000));
+}
+
+function writeToDisk(id: string, audit: AuditResult): void {
   ensureDataDir();
   const filePath = auditPath(id);
   try {
-    fs.writeFileSync(filePath, JSON.stringify(audit, null, 2), 'utf-8');
+    fs.writeFileSync(filePath, JSON.stringify(audit), 'utf-8');
   } catch (err) {
     console.error(`[AuditStore] Failed to write audit ${id}:`, err);
   }

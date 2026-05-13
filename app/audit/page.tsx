@@ -35,6 +35,21 @@ export default function AuditPage() {
   const [wcagLevelAAA, setWcagLevelAAA] = useState(false);
   const [standard, setStandard] = useState('WCAG 2.2');
 
+  // TrustLens pillar toggles
+  const [pillarA11y, setPillarA11y] = useState(true);
+  const [pillarDP, setPillarDP] = useState(true);
+  const [pillarPerf, setPillarPerf] = useState(true);
+  const [pillarPrivacy, setPillarPrivacy] = useState(true);
+
+  const getEnabledPillars = () => {
+    const p: string[] = [];
+    if (pillarA11y) p.push('accessibility');
+    if (pillarDP) p.push('darkpatterns');
+    if (pillarPerf) p.push('performance');
+    if (pillarPrivacy) p.push('privacy');
+    return p;
+  };
+
   const getSelectedLevels = () => {
     const levels: ('A' | 'AA' | 'AAA')[] = [];
     if (wcagLevelA)   levels.push('A');
@@ -59,6 +74,7 @@ export default function AuditPage() {
         url, crawlDepth, maxPages, includeAI,
         wcagLevels: levels,
         standard,
+        enabledPillars: getEnabledPillars(),
       };
       if (showLogin && username && password) {
         body.loginConfig = { loginUrl: loginUrl || url, username, password, usernameSelector, passwordSelector, submitSelector };
@@ -100,64 +116,82 @@ export default function AuditPage() {
     <div className="container" style={{ paddingTop: 36, paddingBottom: 80, maxWidth: 760, margin: '0 auto' }}>
       {/* KPMG Header */}
       <div className="page-header">
-        <h1 className="page-title">New Accessibility Audit</h1>
-        <p className="page-subtitle">Evaluate against WCAG 2.2 and international accessibility standards using AI-powered analysis</p>
+        <h1 className="page-title">New TrustLens Audit</h1>
+        <p className="page-subtitle">AI-powered 4-pillar digital trust audit: Accessibility · Dark Patterns · Performance · Privacy</p>
       </div>
 
-      {/* Standard + Conformance selector (always visible) */}
+      {/* TrustLens Pillar Selection */}
       <div className="glass-card animate-fade-in" style={{ marginBottom: 20, padding: '18px 20px' }}>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: 20, alignItems: 'start' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 14 }}>
+          <span style={{ fontSize: 14, fontWeight: 700 }}>🛡️ Audit Pillars</span>
+          <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>Select which compliance domains to audit</span>
+        </div>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10 }}>
+          {[
+            { key: 'a11y', icon: '♿', label: 'Accessibility', desc: 'WCAG 2.2 compliance', color: '#0091DA', checked: pillarA11y, set: setPillarA11y },
+            { key: 'dp', icon: '🕵️', label: 'Dark Patterns', desc: 'Ethical UX analysis', color: '#9B59B6', checked: pillarDP, set: setPillarDP },
+            { key: 'perf', icon: '⚡', label: 'Performance', desc: 'Core Web Vitals', color: '#00BA8C', checked: pillarPerf, set: setPillarPerf },
+            { key: 'priv', icon: '🔒', label: 'Privacy', desc: 'Tracker & cookie audit', color: '#E67E22', checked: pillarPrivacy, set: setPillarPrivacy },
+          ].map(p => (
+            <label key={p.key} style={{
+              display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6,
+              padding: '14px 10px', borderRadius: 'var(--radius-md)',
+              border: `2px solid ${p.checked ? p.color : 'var(--border)'}`,
+              background: p.checked ? `${p.color}10` : 'transparent',
+              cursor: 'pointer', transition: 'var(--transition)', textAlign: 'center',
+            }}>
+              <input type="checkbox" checked={p.checked} onChange={e => p.set(e.target.checked)}
+                style={{ display: 'none' }} />
+              <span style={{ fontSize: 24 }}>{p.icon}</span>
+              <span style={{ fontSize: 12, fontWeight: 700, color: p.checked ? p.color : 'var(--text-muted)' }}>{p.label}</span>
+              <span style={{ fontSize: 10, color: 'var(--text-muted)' }}>{p.desc}</span>
+              <span style={{
+                fontSize: 9, fontWeight: 700, textTransform: 'uppercase',
+                padding: '2px 8px', borderRadius: 99,
+                background: p.checked ? `${p.color}20` : 'rgba(255,255,255,0.05)',
+                color: p.checked ? p.color : 'var(--text-muted)',
+              }}>{p.checked ? '✓ Enabled' : 'Disabled'}</span>
+            </label>
+          ))}
+        </div>
+        <div style={{ marginTop: 10, fontSize: 11, color: 'var(--text-muted)' }}>
+          {getEnabledPillars().length} of 4 pillars enabled · Unified Trust Score will be calculated across all selected domains
+        </div>
+      </div>
 
-          {/* Standard selector */}
-          <div className="input-group">
-            <label className="input-label">Accessibility Standard</label>
-            <select className="input-field" value={standard} onChange={e => setStandard(e.target.value)}>
-              {STANDARDS.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
-            </select>
-          </div>
-
-          {/* WCAG Level selector */}
-          <div className="input-group">
-            <label className="input-label">Conformance Level</label>
-            <div className="wcag-level-selector" style={{ paddingTop: 2 }}>
-              <label
-                className={`wcag-level-option ${wcagLevelA ? 'selected-a' : ''}`}
-                title="WCAG Level A — Minimum accessibility requirements"
-              >
-                <input type="checkbox" checked={wcagLevelA} onChange={e => setWcagLevelA(e.target.checked)} />
-                Level A
-              </label>
-              <label
-                className={`wcag-level-option ${wcagLevelAA ? 'selected-aa' : ''}`}
-                title="WCAG Level AA — Standard compliance (recommended)"
-              >
-                <input type="checkbox" checked={wcagLevelAA} onChange={e => setWcagLevelAA(e.target.checked)} />
-                Level AA
-              </label>
-              <label
-                className={`wcag-level-option ${wcagLevelAAA ? 'selected-aaa' : ''}`}
-                title="WCAG Level AAA — Enhanced accessibility (optional)"
-              >
-                <input type="checkbox" checked={wcagLevelAAA} onChange={e => setWcagLevelAAA(e.target.checked)} />
-                Level AAA
-              </label>
+      {/* WCAG Standard + Conformance — only when Accessibility pillar is enabled */}
+      {pillarA11y && (
+        <div className="glass-card animate-fade-in" style={{ marginBottom: 20, padding: '18px 20px' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: 20, alignItems: 'start' }}>
+            <div className="input-group">
+              <label className="input-label">Accessibility Standard</label>
+              <select className="input-field" value={standard} onChange={e => setStandard(e.target.value)}>
+                {STANDARDS.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
+              </select>
+            </div>
+            <div className="input-group">
+              <label className="input-label">Conformance Level</label>
+              <div className="wcag-level-selector" style={{ paddingTop: 2 }}>
+                <label className={`wcag-level-option ${wcagLevelA ? 'selected-a' : ''}`} title="WCAG Level A">
+                  <input type="checkbox" checked={wcagLevelA} onChange={e => setWcagLevelA(e.target.checked)} /> Level A
+                </label>
+                <label className={`wcag-level-option ${wcagLevelAA ? 'selected-aa' : ''}`} title="WCAG Level AA">
+                  <input type="checkbox" checked={wcagLevelAA} onChange={e => setWcagLevelAA(e.target.checked)} /> Level AA
+                </label>
+                <label className={`wcag-level-option ${wcagLevelAAA ? 'selected-aaa' : ''}`} title="WCAG Level AAA">
+                  <input type="checkbox" checked={wcagLevelAAA} onChange={e => setWcagLevelAAA(e.target.checked)} /> Level AAA
+                </label>
+              </div>
             </div>
           </div>
-        </div>
-
-        {/* Audit scope summary chip */}
-        <div style={{ marginTop: 14, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-          <span style={{ fontSize: 12, color: 'var(--text-muted)', fontWeight: 600 }}>Audit Scope:</span>
-          <span className={`audit-level-chip ${getConformanceLabel().toLowerCase()}`}>
-            {standard} — Level {getConformanceLabel()}
-          </span>
-          {wcagLevelAAA && (
-            <span style={{ fontSize: 11, color: 'var(--accent-teal)', background: 'rgba(0,178,169,0.08)', padding: '3px 8px', borderRadius: 99, border: '1px solid rgba(0,178,169,0.2)' }}>
-              ⚡ Enhanced AAA criteria included
+          <div style={{ marginTop: 14, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+            <span style={{ fontSize: 12, color: 'var(--text-muted)', fontWeight: 600 }}>Audit Scope:</span>
+            <span className={`audit-level-chip ${getConformanceLabel().toLowerCase()}`}>
+              {standard} — Level {getConformanceLabel()}
             </span>
-          )}
+          </div>
         </div>
-      </div>
+      )}
 
       {/* Tabs */}
       <div className="tabs" style={{ marginBottom: 20 }}>
@@ -267,7 +301,7 @@ export default function AuditPage() {
           >
             {loading
               ? <><div className="spinner" style={{ width: 18, height: 18, borderWidth: 2 }} /> Running Audit...</>
-              : `🚀 Start ${standard} Level ${getConformanceLabel()} Audit`
+              : `🚀 Start TrustLens Audit (${getEnabledPillars().length} pillars)`
             }
           </button>
         </div>

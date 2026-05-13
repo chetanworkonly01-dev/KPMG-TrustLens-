@@ -1,6 +1,7 @@
 import { AccessibilityIssue, PageData } from '../types/audit';
 import { getImpactDescription } from '../wcag/severity';
-import { v4 as uuidv4 } from 'uuid';
+// uuid replaced with Node.js built-in
+const uuidv4 = (): string => crypto.randomUUID();
 
 interface CustomRule {
   testId: string;

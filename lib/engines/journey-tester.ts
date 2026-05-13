@@ -1,6 +1,7 @@
 import { BrowserContext, Page } from 'playwright';
 import { AccessibilityIssue, JourneyTestResult, JourneyStep, PageData } from '../types/audit';
-import { v4 as uuidv4 } from 'uuid';
+// uuid replaced with Node.js built-in
+const uuidv4 = (): string => crypto.randomUUID();
 
 /**
  * User Journey Accessibility Tester

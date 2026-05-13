@@ -1,3 +1,5 @@
+import type { AuditPillar, TrustScore, PillarResults, PillarConfig } from './trustscore';
+
 export type AuditType   = 'website' | 'portal' | 'pdf';
 export type AuditStatus = 'pending' | 'crawling' | 'scanning' | 'analyzing' | 'scoring' | 'complete' | 'error';
 
@@ -24,6 +26,11 @@ export interface AuditConfig {
   wcagLevels: ('A' | 'AA' | 'AAA')[];
   /** Optional: which standard to reference (e.g. 'WCAG 2.2', 'EN 301 549', 'Section 508') */
   standard?: string;
+  // ── TrustLens Pillar Configuration ──
+  /** Which audit pillars to run (default: all enabled) */
+  enabledPillars?: AuditPillar[];
+  /** Custom pillar weight overrides */
+  pillarConfig?: Partial<PillarConfig>;
 }
 
 export interface PageData {
@@ -52,6 +59,11 @@ export interface AuditResult {
   startedAt: string;
   completedAt?: string;
   error?: string;
+  // ── TrustLens Multi-Pillar Results ──
+  /** Unified trust score across all enabled pillars */
+  trustScore?: TrustScore;
+  /** Per-pillar detailed results */
+  pillarResults?: PillarResults;
 }
 
 export type ConfidenceLevel = 'high' | 'medium' | 'low';
@@ -220,6 +232,9 @@ export interface AuditReport {
   journeyResults?: JourneyTestResult[];
   testResults?: TestResult[];
   generatedAt: string;
+  // ── TrustLens Multi-Pillar ──
+  trustScore?: TrustScore;
+  pillarResults?: PillarResults;
 }
 
 export interface WcagMappingEntry {

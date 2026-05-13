@@ -5,12 +5,19 @@ import { useParams } from 'next/navigation';
 // ===== TYPE INTERFACES =====
 interface AuditData {
   id: string; status: string; progress: number; progressMessage: string;
-  config: { url?: string; type: string; wcagLevels?: string[]; standard?: string };
+  config: { url?: string; type: string; wcagLevels?: string[]; standard?: string; enabledPillars?: string[] };
   pages: { url: string; title: string }[];
   issues: Issue[]; score: Score; report?: Report; crawlCoverage?: CrawlCoverage;
   testResults: TestResultItem[]; testLog: TestLogEntry[];
   inapplicableCriteria?: string[];
   error?: string;
+  // TrustLens
+  trustScore?: { overall: number; trustLevel: string; pillarScores: Record<string, { pillar: string; score: number; weight: number; totalFindings: number; status: string }> };
+  pillarResults?: {
+    darkpatterns?: { findings: DPFinding[]; ethicsScore: number; principleScores: Record<string, number>; categoryBreakdown: Record<string, number>; consentIntegrity: number; choiceSymmetry: number; manipulationIndex: number; totalFindings: number; findingsBySeverity: Record<string, number>; regulatoryRisks: string[] };
+    performance?: { pages: PerfPage[]; overallScore: number; averageVitals: Record<string, number | null>; totalResourceIssues: number; recommendations: string[] };
+    privacy?: { findings: PrivFinding[]; overallScore: number; cookies: any[]; trackers: TrackerInfo[]; totalTrackers: number; hasConsentBanner: boolean; hasPrivacyPolicy: boolean; findingsBySeverity: Record<string, number>; regulatoryRisks: string[] };
+  };
 }
 interface Issue {
   id: string; testId: string; title: string; description: string;
@@ -52,6 +59,27 @@ interface CrawlCoverage {
   totalPagesFound: number; pagesAudited: number; pagesSkipped: number;
   coveragePercent: number; skippedPages: { url: string; reason: string }[];
   discoveryMethods: Record<string, number>;
+}
+interface DPFinding {
+  id: string; ruleId: string; category: string; principle: string;
+  title: string; description: string; pageUrl: string;
+  severity: string; regulation: string[]; confidence: string;
+  recommendation: string; userImpact: string;
+  evidence: { summary: string; details: string[]; measurements?: Record<string, any> };
+}
+interface PerfPage {
+  url: string; title: string; score: number;
+  vitals: Record<string, number | null>;
+  totalTransferSize: number; totalRequests: number; domNodes: number; loadTime: number;
+  resourceIssues: { type: string; url: string; severity: string; description: string }[];
+}
+interface PrivFinding {
+  id: string; category: string; title: string; description: string;
+  pageUrl: string; severity: string; regulation: string[];
+  recommendation: string; evidence: { summary: string; details: string[] };
+}
+interface TrackerInfo {
+  domain: string; company: string; category: string; pageUrls: string[]; requestCount: number;
 }
 interface Report {
   testedLevel?: string;
@@ -151,6 +179,20 @@ export default function AuditResultPage() {
 
   useEffect(() => { logEndRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [data?.testLog?.length]);
 
+  // ===== PILLAR HELPERS =====
+  const enabledPillars: string[] = data?.config?.enabledPillars || ['accessibility', 'darkpatterns', 'performance', 'privacy'];
+  const a11yEnabled = enabledPillars.includes('accessibility');
+  const dpEnabled = enabledPillars.includes('darkpatterns');
+  const perfEnabled = enabledPillars.includes('performance');
+  const privEnabled = enabledPillars.includes('privacy');
+
+  const pillarMeta: Record<string, { icon: string; label: string; color: string }> = {
+    accessibility: { icon: '♿', label: 'Accessibility', color: '#0091DA' },
+    darkpatterns: { icon: '🕵️', label: 'Dark Patterns', color: '#9B59B6' },
+    performance: { icon: '⚡', label: 'Performance', color: '#00BA8C' },
+    privacy: { icon: '🔒', label: 'Privacy', color: '#E67E22' },
+  };
+
   if (!data) return <div className="container" style={{ paddingTop: 80, textAlign: 'center' }}><div className="spinner" style={{ margin: '0 auto' }} /></div>;
 
   // ===== IN-PROGRESS VIEW =====
@@ -163,16 +205,41 @@ export default function AuditResultPage() {
           <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginBottom: 14 }}>
             <div className="spinner" style={{ width: 30, height: 30, flexShrink: 0 }} />
             <div style={{ flex: 1 }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 3 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 3, flexWrap: 'wrap' }}>
                 <h2 style={{ fontSize: 18, fontWeight: 600, margin: 0 }}>Audit in Progress</h2>
-                <span className={`audit-level-chip ${levelLabel.toLowerCase()}`}>
-                  {data.config?.standard || 'WCAG 2.2'} — Level {levelLabel}
-                </span>
+                {a11yEnabled && (
+                  <span className={`audit-level-chip ${levelLabel.toLowerCase()}`}>
+                    {data.config?.standard || 'WCAG 2.2'} — Level {levelLabel}
+                  </span>
+                )}
               </div>
-              <p style={{ color: 'var(--text-secondary)', margin: 0, fontSize: 13 }}>{data.config?.url}</p>
+              <p style={{ color: 'var(--text-secondary)', margin: 0, fontSize: 12, wordBreak: 'break-all', overflowWrap: 'anywhere', maxWidth: '100%' }}>{data.config?.url}</p>
             </div>
             <div style={{ fontSize: 22, fontWeight: 300, color: 'var(--accent-blue)', letterSpacing: '-0.02em' }}>{data.progress}%</div>
           </div>
+
+          {/* Active Pillars */}
+          <div style={{ display: 'flex', gap: 8, marginBottom: 12, flexWrap: 'wrap' }}>
+            {enabledPillars.map(p => {
+              const m = pillarMeta[p];
+              if (!m) return null;
+              return (
+                <span key={p} style={{
+                  display: 'inline-flex', alignItems: 'center', gap: 5,
+                  padding: '4px 12px', borderRadius: 99,
+                  fontSize: 11, fontWeight: 700,
+                  background: `${m.color}18`, color: m.color,
+                  border: `1px solid ${m.color}40`,
+                }}>
+                  {m.icon} {m.label}
+                </span>
+              );
+            })}
+            <span style={{ fontSize: 10, color: 'var(--text-muted)', alignSelf: 'center' }}>
+              {enabledPillars.length} pillar{enabledPillars.length !== 1 ? 's' : ''} active
+            </span>
+          </div>
+
           <div className="progress-bar" style={{ marginBottom: 6 }}>
             <div className="progress-fill" style={{ width: `${data.progress}%` }} />
           </div>
@@ -182,7 +249,7 @@ export default function AuditResultPage() {
         {data.testLog && data.testLog.length > 0 && (
           <div className="glass-card" style={{ padding: 0, overflow: 'hidden' }}>
             <div style={{ padding: '10px 14px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-              <h3 style={{ fontSize: 13, fontWeight: 700, margin: 0 }}>🧪 Live Test Execution</h3>
+              <h3 style={{ fontSize: 13, fontWeight: 700, margin: 0 }}>🧪 Live Audit Execution</h3>
               <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>
                 {data.testLog.filter(l => l.status === 'pass').length} passed ·{' '}
                 {data.testLog.filter(l => l.status === 'fail').length} failed
@@ -247,8 +314,19 @@ export default function AuditResultPage() {
     a.download = `kpmg-accessibility-report-${id}.json`; a.click();
   };
 
-  const tabs = ['overview', 'tests', 'issues', 'wcag-map', 'remediation', 'pages'];
-  if (data.report?.journeyResults && data.report.journeyResults.length > 0) tabs.splice(3, 0, 'journeys');
+  const tabs: string[] = ['overview'];
+  // Accessibility-specific tabs — only when accessibility pillar is enabled
+  if (a11yEnabled) {
+    tabs.push('tests', 'issues');
+    if (data.report?.journeyResults && data.report.journeyResults.length > 0) tabs.push('journeys');
+    tabs.push('wcag-map', 'remediation');
+  }
+  // Pillar-specific tabs — based on selection AND data availability
+  if (dpEnabled) tabs.push('dark-patterns');
+  if (perfEnabled) tabs.push('perf');
+  if (privEnabled) tabs.push('privacy');
+  // Pages tab always shown
+  tabs.push('pages');
 
   // WCAG map filtered counts
   const wcagMapEntries = data.report?.wcagMapping || [];
@@ -260,14 +338,34 @@ export default function AuditResultPage() {
     <div className="container" style={{ paddingTop: 28, paddingBottom: 80 }}>
       {/* ── Header ── */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 24 }}>
-        <div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 4 }}>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 4, flexWrap: 'wrap' }}>
             <h1 className="page-title">Audit Results</h1>
-            <span className={`audit-level-chip ${testedLevel.toLowerCase()}`}>
-              {standard} · Level {testedLevel}
-            </span>
+            {a11yEnabled && (
+              <span className={`audit-level-chip ${testedLevel.toLowerCase()}`}>
+                {standard} · Level {testedLevel}
+              </span>
+            )}
           </div>
-          <p className="page-subtitle">{data.config?.url || 'PDF Upload'}</p>
+          {/* Active pillar badges */}
+          <div style={{ display: 'flex', gap: 6, marginBottom: 6, flexWrap: 'wrap' }}>
+            {enabledPillars.map(p => {
+              const m = pillarMeta[p];
+              if (!m) return null;
+              return (
+                <span key={p} style={{
+                  display: 'inline-flex', alignItems: 'center', gap: 4,
+                  padding: '3px 10px', borderRadius: 99, fontSize: 10, fontWeight: 700,
+                  background: `${m.color}15`, color: m.color, border: `1px solid ${m.color}35`,
+                }}>
+                  {m.icon} {m.label}
+                </span>
+              );
+            })}
+          </div>
+          <p style={{ fontSize: 12, color: 'var(--text-muted)', wordBreak: 'break-all', overflowWrap: 'anywhere', maxWidth: '100%', lineHeight: 1.5 }}>
+            {data.config?.url || 'PDF Upload'}
+          </p>
         </div>
         <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
           {/* Export dropdown */}
@@ -311,7 +409,8 @@ export default function AuditResultPage() {
         </div>
       </div>
 
-      {/* ── Score + Summary Cards ── */}
+      {/* ── Score + Summary Cards — only when accessibility pillar ran ── */}
+      {a11yEnabled && (
       <div style={{ display: 'grid', gridTemplateColumns: '200px 1fr', gap: 20, marginBottom: 20 }}>
         <div className="glass-card" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
           <ScoreGauge score={data.score.overall} />
@@ -358,39 +457,93 @@ export default function AuditResultPage() {
           </div>
         </div>
       </div>
+      )}
+
+      {/* ── TrustLens Pillar Scores ── */}
+      {data.trustScore && (
+        <div style={{ marginBottom: 20 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
+            <h3 style={{ fontSize: 14, fontWeight: 700, margin: 0 }}>🛡️ Digital Trust Score</h3>
+            <span className={`trust-score-badge trust-level-${data.trustScore.trustLevel}`}>
+              {data.trustScore.trustLevel === 'trusted' ? '✓ Trusted' : data.trustScore.trustLevel === 'moderate' ? '⚠ Moderate Risk' : data.trustScore.trustLevel === 'at-risk' ? '⚠ At Risk' : '✗ Critical Risk'}
+            </span>
+            <span style={{ marginLeft: 'auto', fontSize: 24, fontWeight: 300, letterSpacing: '-0.03em', color: data.trustScore.overall >= 80 ? '#00BA8C' : data.trustScore.overall >= 60 ? '#F0AB00' : data.trustScore.overall >= 40 ? '#FF8533' : '#FF3356' }}>
+              {data.trustScore.overall}<span style={{ fontSize: 14, color: 'var(--text-muted)' }}>/100</span>
+            </span>
+          </div>
+          <div className="pillar-scores-grid">
+            {Object.entries(data.trustScore.pillarScores).map(([key, ps]) => {
+              const icons: Record<string, string> = { accessibility: '♿', darkpatterns: '🕵️', performance: '⚡', privacy: '🔒' };
+              const colors: Record<string, string> = { accessibility: '#0091DA', darkpatterns: '#9B59B6', performance: '#00BA8C', privacy: '#E67E22' };
+              const labels: Record<string, string> = { accessibility: 'Accessibility', darkpatterns: 'Dark Patterns', performance: 'Performance', privacy: 'Privacy' };
+              const c = ps.score >= 80 ? '#00BA8C' : ps.score >= 50 ? '#F0AB00' : '#FF3356';
+              return (
+                <div key={key} className={`pillar-score-card pillar-${key}`}>
+                  <div className="pillar-score-icon">{icons[key] || '📊'}</div>
+                  <div className="pillar-score-value" style={{ color: c }}>{ps.score}</div>
+                  <div className="pillar-score-label" style={{ color: colors[key] }}>{labels[key] || key}</div>
+                  <div className={`pillar-score-status pillar-status-${ps.status}`}>{ps.status}</div>
+                  {ps.totalFindings > 0 && <div style={{ fontSize: 10, color: 'var(--text-muted)', marginTop: 4 }}>{ps.totalFindings} finding{ps.totalFindings !== 1 ? 's' : ''}</div>}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       {/* ── Scoring Explainability ── */}
       <details style={{ marginBottom: 20 }}>
         <summary style={{ cursor: 'pointer', fontSize: 12, fontWeight: 600, color: 'var(--accent-blue)', padding: '8px 0' }}>
-          ℹ️ How is this score calculated?
+          ℹ️ How are these scores calculated?
         </summary>
         <div className="glass-card" style={{ marginTop: 8, padding: 16 }}>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 14, fontSize: 12, color: 'var(--text-secondary)', marginBottom: 14 }}>
-            <div>
-              <div style={{ fontWeight: 700, color: 'var(--text-primary)', marginBottom: 6 }}>Severity Weights</div>
-              <div>🔴 Critical = 10 pts</div>
-              <div>🟠 High = 5 pts</div>
-              <div>🟡 Medium = 2 pts</div>
-              <div>🔵 Low = 0.5 pts</div>
+          {a11yEnabled && (
+            <div style={{ marginBottom: a11yEnabled && (dpEnabled || perfEnabled || privEnabled) ? 16 : 0 }}>
+              <div style={{ fontWeight: 700, fontSize: 13, color: 'var(--text-primary)', marginBottom: 10 }}>♿ Accessibility Score</div>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 14, fontSize: 12, color: 'var(--text-secondary)', marginBottom: 10 }}>
+                <div>
+                  <div style={{ fontWeight: 700, color: 'var(--text-primary)', marginBottom: 6 }}>Severity Weights</div>
+                  <div>🔴 Critical = 10 pts</div><div>🟠 High = 5 pts</div><div>🟡 Medium = 2 pts</div><div>🔵 Low = 0.5 pts</div>
+                </div>
+                <div>
+                  <div style={{ fontWeight: 700, color: 'var(--text-primary)', marginBottom: 6 }}>Level Multipliers</div>
+                  <div>Level A = ×1.5</div><div>Level AA = ×1.0</div><div>Level AAA = ×0.5</div>
+                </div>
+                <div>
+                  <div style={{ fontWeight: 700, color: 'var(--text-primary)', marginBottom: 6 }}>Confidence</div>
+                  <div>🎯 High = ×1.0</div><div>🎯 Medium = ×0.7</div><div>🎯 Low = ×0.4</div>
+                </div>
+              </div>
+              <div style={{ fontSize: 11, color: 'var(--text-muted)', lineHeight: 1.6 }}>
+                <strong>Formula:</strong> Score = 100 − Σ(severity × level × confidence) per issue. Logarithmic cap prevents collapse to 0 on large sites.
+              </div>
             </div>
-            <div>
-              <div style={{ fontWeight: 700, color: 'var(--text-primary)', marginBottom: 6 }}>Level Multipliers</div>
-              <div>Level A = ×1.5</div>
-              <div>Level AA = ×1.0</div>
-              <div>Level AAA = ×0.5</div>
+          )}
+          {dpEnabled && (
+            <div style={{ marginBottom: perfEnabled || privEnabled ? 16 : 0, paddingTop: a11yEnabled ? 12 : 0, borderTop: a11yEnabled ? '1px solid var(--border)' : 'none' }}>
+              <div style={{ fontWeight: 700, fontSize: 13, color: '#9B59B6', marginBottom: 8 }}>🕵️ Dark Patterns Score</div>
+              <div style={{ fontSize: 12, color: 'var(--text-secondary)', lineHeight: 1.6 }}>
+                Ethics Score starts at 100 and deducts based on detected manipulative patterns weighted by severity and ethical principle impact.
+                Consent Integrity measures clarity of opt-in/opt-out flows. Manipulation Index aggregates social pressure, urgency, and emotional manipulation signals.
+              </div>
             </div>
-            <div>
-              <div style={{ fontWeight: 700, color: 'var(--text-primary)', marginBottom: 6 }}>Confidence Multipliers</div>
-              <div>🎯 High = ×1.0</div>
-              <div>🎯 Medium = ×0.7</div>
-              <div>🎯 Low = ×0.4</div>
+          )}
+          {perfEnabled && (
+            <div style={{ marginBottom: privEnabled ? 16 : 0, paddingTop: a11yEnabled || dpEnabled ? 12 : 0, borderTop: a11yEnabled || dpEnabled ? '1px solid var(--border)' : 'none' }}>
+              <div style={{ fontWeight: 700, fontSize: 13, color: '#00BA8C', marginBottom: 8 }}>⚡ Performance Score</div>
+              <div style={{ fontSize: 12, color: 'var(--text-secondary)', lineHeight: 1.6 }}>
+                Based on Core Web Vitals (LCP, CLS, FCP, TTFB, TBT) measured against Google&apos;s good/poor thresholds. Resource optimization issues are factored in.
+              </div>
             </div>
-          </div>
-          <div style={{ fontSize: 11, color: 'var(--text-muted)', lineHeight: 1.6, borderTop: '1px solid var(--border)', paddingTop: 10 }}>
-            <strong>Formula:</strong> Score = 100 − Σ(severity × level × confidence) per issue.
-            Penalties added for issues spanning &gt;50% of pages and clusters of &gt;3 critical issues.
-            A logarithmic cap prevents scores from collapsing to 0 on large sites — maximum deduction approaches ~95 asymptotically.
-          </div>
+          )}
+          {privEnabled && (
+            <div style={{ paddingTop: a11yEnabled || dpEnabled || perfEnabled ? 12 : 0, borderTop: a11yEnabled || dpEnabled || perfEnabled ? '1px solid var(--border)' : 'none' }}>
+              <div style={{ fontWeight: 700, fontSize: 13, color: '#E67E22', marginBottom: 8 }}>🔒 Privacy Score</div>
+              <div style={{ fontSize: 12, color: 'var(--text-secondary)', lineHeight: 1.6 }}>
+                Evaluates tracker presence, cookie compliance, consent banner implementation, and privacy policy availability against GDPR/CCPA requirements.
+              </div>
+            </div>
+          )}
         </div>
       </details>
 
@@ -450,7 +603,7 @@ export default function AuditResultPage() {
       <div className="tabs" style={{ marginBottom: 20 }}>
         {tabs.map(t => (
           <button key={t} className={`tab ${activeTab === t ? 'active' : ''}`} onClick={() => setActiveTab(t)} style={{ textTransform: 'capitalize' }}>
-            {t === 'wcag-map' ? `WCAG Map` : t === 'journeys' ? '🚶 Journeys' : t === 'tests' ? '🧪 Tests' : t}
+            {t === 'overview' ? '📋 Overview' : t === 'wcag-map' ? '📊 WCAG Map' : t === 'journeys' ? '🚶 Journeys' : t === 'tests' ? '🧪 Tests' : t === 'issues' ? '⚠️ Issues' : t === 'remediation' ? '🔧 Remediation' : t === 'dark-patterns' ? '🕵️ Dark Patterns' : t === 'perf' ? '⚡ Performance' : t === 'privacy' ? '🔒 Privacy' : t === 'pages' ? '📄 Pages' : t}
           </button>
         ))}
       </div>
@@ -465,9 +618,10 @@ export default function AuditResultPage() {
             <p style={{ fontSize: 13, color: 'var(--text-secondary)', lineHeight: 1.75, whiteSpace: 'pre-line' }}>{data.report.executiveSummary}</p>
           </div>
 
-          {data.report.topCritical && data.report.topCritical.length > 0 && (
+          {/* Accessibility overview sections — only when a11y enabled */}
+          {a11yEnabled && data.report.topCritical && data.report.topCritical.length > 0 && (
             <div className="glass-card" style={{ marginBottom: 20, borderLeft: '3px solid #FF3356' }}>
-              <h3 style={{ fontSize: 16, fontWeight: 700, marginBottom: 14 }}>🔥 Top Critical Issues</h3>
+              <h3 style={{ fontSize: 16, fontWeight: 700, marginBottom: 14 }}>🔥 Top Critical Accessibility Issues</h3>
               {data.report.topCritical.map((g, idx) => (
                 <div key={g.issueKey} style={{ display: 'flex', alignItems: 'flex-start', gap: 12, padding: '11px 0', borderBottom: idx < data.report!.topCritical!.length - 1 ? '1px solid var(--border)' : 'none' }}>
                   <span style={{ background: sevColors[g.severity], color: 'white', borderRadius: '50%', width: 26, height: 26, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 700, flexShrink: 0 }}>{idx + 1}</span>
@@ -489,7 +643,7 @@ export default function AuditResultPage() {
             </div>
           )}
 
-          {data.report.journeyResults && data.report.journeyResults.length > 0 && (
+          {a11yEnabled && data.report.journeyResults && data.report.journeyResults.length > 0 && (
             <div className="glass-card" style={{ marginBottom: 20 }}>
               <h3 style={{ fontSize: 16, fontWeight: 700, marginBottom: 14 }}>🚶 User Journey Tests</h3>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: 10 }}>
@@ -500,6 +654,70 @@ export default function AuditResultPage() {
                     <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{j.steps.filter(s => s.passed).length}/{j.steps.length} steps passed</div>
                   </div>
                 ))}
+              </div>
+            </div>
+          )}
+
+          {/* Dark Patterns overview summary — only when DP enabled */}
+          {dpEnabled && data.pillarResults?.darkpatterns && (
+            <div className="glass-card" style={{ marginBottom: 20, borderLeft: '3px solid #9B59B6' }}>
+              <h3 style={{ fontSize: 16, fontWeight: 700, marginBottom: 14 }}>🕵️ Dark Patterns Summary</h3>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12, marginBottom: 12 }}>
+                <div style={{ textAlign: 'center' }}>
+                  <div style={{ fontSize: 28, fontWeight: 300, color: data.pillarResults.darkpatterns.ethicsScore >= 80 ? '#00BA8C' : data.pillarResults.darkpatterns.ethicsScore >= 50 ? '#F0AB00' : '#FF3356' }}>{data.pillarResults.darkpatterns.ethicsScore}</div>
+                  <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase' }}>Ethics Score</div>
+                </div>
+                <div style={{ textAlign: 'center' }}>
+                  <div style={{ fontSize: 28, fontWeight: 300, color: data.pillarResults.darkpatterns.totalFindings === 0 ? '#00BA8C' : '#FF3356' }}>{data.pillarResults.darkpatterns.totalFindings}</div>
+                  <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase' }}>Patterns Found</div>
+                </div>
+                <div style={{ textAlign: 'center' }}>
+                  <div style={{ fontSize: 28, fontWeight: 300, color: data.pillarResults.darkpatterns.manipulationIndex <= 20 ? '#00BA8C' : '#FF3356' }}>{data.pillarResults.darkpatterns.manipulationIndex}</div>
+                  <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase' }}>Manipulation Index</div>
+                </div>
+              </div>
+              {data.pillarResults.darkpatterns.totalFindings > 0 && (
+                <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
+                  Top categories: {Object.entries(data.pillarResults.darkpatterns.categoryBreakdown).filter(([,v]) => v > 0).sort(([,a],[,b]) => b - a).slice(0, 3).map(([k,v]) => `${k} (${v})`).join(', ')}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Performance overview summary — only when perf enabled */}
+          {perfEnabled && data.pillarResults?.performance && (
+            <div className="glass-card" style={{ marginBottom: 20, borderLeft: '3px solid #00BA8C' }}>
+              <h3 style={{ fontSize: 16, fontWeight: 700, marginBottom: 10 }}>⚡ Performance Summary</h3>
+              <div style={{ fontSize: 28, fontWeight: 300, color: data.pillarResults.performance.overallScore >= 80 ? '#00BA8C' : data.pillarResults.performance.overallScore >= 50 ? '#F0AB00' : '#FF3356', marginBottom: 6 }}>
+                {data.pillarResults.performance.overallScore}<span style={{ fontSize: 14, color: 'var(--text-muted)' }}>/100</span>
+              </div>
+              <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
+                {data.pillarResults.performance.totalResourceIssues} resource issues · {data.pillarResults.performance.pages.length} pages analyzed
+              </div>
+            </div>
+          )}
+
+          {/* Privacy overview summary — only when privacy enabled */}
+          {privEnabled && data.pillarResults?.privacy && (
+            <div className="glass-card" style={{ marginBottom: 20, borderLeft: '3px solid #E67E22' }}>
+              <h3 style={{ fontSize: 16, fontWeight: 700, marginBottom: 10 }}>🔒 Privacy Summary</h3>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10 }}>
+                <div style={{ textAlign: 'center' }}>
+                  <div style={{ fontSize: 24, fontWeight: 300, color: data.pillarResults.privacy.overallScore >= 80 ? '#00BA8C' : '#FF3356' }}>{data.pillarResults.privacy.overallScore}</div>
+                  <div style={{ fontSize: 9, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase' }}>Score</div>
+                </div>
+                <div style={{ textAlign: 'center' }}>
+                  <div style={{ fontSize: 24, fontWeight: 300, color: data.pillarResults.privacy.totalTrackers > 5 ? '#FF3356' : '#F0AB00' }}>{data.pillarResults.privacy.totalTrackers}</div>
+                  <div style={{ fontSize: 9, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase' }}>Trackers</div>
+                </div>
+                <div style={{ textAlign: 'center' }}>
+                  <div style={{ fontSize: 24, fontWeight: 300, color: data.pillarResults.privacy.hasConsentBanner ? '#00BA8C' : '#FF3356' }}>{data.pillarResults.privacy.hasConsentBanner ? '✓' : '✗'}</div>
+                  <div style={{ fontSize: 9, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase' }}>Consent</div>
+                </div>
+                <div style={{ textAlign: 'center' }}>
+                  <div style={{ fontSize: 24, fontWeight: 300, color: data.pillarResults.privacy.hasPrivacyPolicy ? '#00BA8C' : '#FF3356' }}>{data.pillarResults.privacy.hasPrivacyPolicy ? '✓' : '✗'}</div>
+                  <div style={{ fontSize: 9, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase' }}>Policy</div>
+                </div>
               </div>
             </div>
           )}
@@ -794,6 +1012,195 @@ export default function AuditResultPage() {
           ))}
         </div>
       )}
+
+      {/* ══════════════════════════════════════════════════════
+           DARK PATTERNS TAB
+         ══════════════════════════════════════════════════════ */}
+      {activeTab === 'dark-patterns' && data.pillarResults?.darkpatterns && (() => {
+        const dp = data.pillarResults.darkpatterns!;
+        const principleLabels: Record<string, string> = { 'informed-consent': 'Informed Consent', 'symmetry-of-choice': 'Symmetry of Choice', 'transparency': 'Transparency', 'user-autonomy': 'User Autonomy', 'accessibility-clarity': 'Accessibility & Clarity' };
+        const catIcons: Record<string, string> = { 'interface-interference': '🎭', 'obstruction': '🚧', 'sneaking': '🐍', 'forced-action': '⛓️', 'nagging': '📢', 'scarcity-urgency': '⏰', 'social-pressure': '👥', 'privacy-zuckering': '🔓', 'confirmshaming': '😔', 'misdirection': '🎯' };
+        return (
+          <div className="animate-fade-in">
+            {/* Ethics Score Summary */}
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12, marginBottom: 20 }}>
+              <div className="glass-card" style={{ textAlign: 'center', borderTop: '3px solid #9B59B6' }}>
+                <div style={{ fontSize: 32, fontWeight: 300, color: dp.ethicsScore >= 80 ? '#00BA8C' : dp.ethicsScore >= 50 ? '#F0AB00' : '#FF3356' }}>{dp.ethicsScore}</div>
+                <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase' }}>Ethics Score</div>
+              </div>
+              <div className="glass-card" style={{ textAlign: 'center', borderTop: '3px solid #0091DA' }}>
+                <div style={{ fontSize: 32, fontWeight: 300, color: dp.consentIntegrity >= 80 ? '#00BA8C' : '#F0AB00' }}>{dp.consentIntegrity}</div>
+                <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase' }}>Consent Integrity</div>
+              </div>
+              <div className="glass-card" style={{ textAlign: 'center', borderTop: '3px solid #E67E22' }}>
+                <div style={{ fontSize: 32, fontWeight: 300, color: dp.manipulationIndex <= 20 ? '#00BA8C' : '#FF3356' }}>{dp.manipulationIndex}</div>
+                <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase' }}>Manipulation Index</div>
+              </div>
+            </div>
+
+            {/* Principle Scores */}
+            <div className="glass-card" style={{ marginBottom: 20 }}>
+              <h3 style={{ fontSize: 14, fontWeight: 700, marginBottom: 14 }}>📐 Ethical Principle Scores</h3>
+              <div className="ethics-bar-container">
+                {Object.entries(dp.principleScores).map(([key, score]) => (
+                  <div key={key} className="ethics-bar-row">
+                    <div className="ethics-bar-label">{principleLabels[key] || key}</div>
+                    <div className="ethics-bar-track">
+                      <div className="ethics-bar-fill" style={{ width: `${score}%`, background: score >= 80 ? '#00BA8C' : score >= 50 ? '#F0AB00' : '#FF3356' }} />
+                    </div>
+                    <div className="ethics-bar-value" style={{ color: score >= 80 ? '#00BA8C' : score >= 50 ? '#F0AB00' : '#FF3356' }}>{score}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Severity Breakdown */}
+            <div className="grid-4" style={{ marginBottom: 20 }}>
+              {(['critical', 'high', 'medium', 'low'] as const).map(sev => (
+                <div key={sev} className="stat-card" style={{ textAlign: 'center' }}>
+                  <div className="stat-value" style={{ color: sevColors[sev] }}>{dp.findingsBySeverity[sev] || 0}</div>
+                  <div className="stat-label" style={{ textTransform: 'capitalize' }}>{sev}</div>
+                </div>
+              ))}
+            </div>
+
+            {/* Findings List */}
+            <h3 style={{ fontSize: 14, fontWeight: 700, marginBottom: 12 }}>🕵️ Dark Pattern Findings ({dp.totalFindings})</h3>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+              {dp.findings.map((f: DPFinding) => (
+                <div key={f.id} className="dp-finding-card">
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6, flexWrap: 'wrap' }}>
+                    <span style={{ fontWeight: 700, fontSize: 13 }}>{f.title}</span>
+                    <span className={`badge badge-${f.severity}`}>{f.severity}</span>
+                    <span className="dp-category-badge">{catIcons[f.category] || '📋'} {f.category}</span>
+                  </div>
+                  <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginBottom: 6 }}>{f.description}</div>
+                  <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginBottom: 8, padding: '6px 10px', background: 'rgba(0,0,0,0.2)', borderRadius: 'var(--radius-sm)' }}>
+                    <strong>Evidence:</strong> {f.evidence.summary}
+                  </div>
+                  <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
+                    <span className="dp-principle-badge">📐 {principleLabels[f.principle] || f.principle}</span>
+                    {f.regulation.map(r => <span key={r} className="dp-regulation-badge">{r}</span>)}
+                    <span style={{ fontSize: 10, color: 'var(--text-muted)', marginLeft: 'auto' }}>🎯 {f.confidence} confidence</span>
+                  </div>
+                  <div style={{ fontSize: 11, color: '#00BA8C', marginTop: 8 }}>💡 {f.recommendation}</div>
+                </div>
+              ))}
+              {dp.totalFindings === 0 && (
+                <div className="glass-card" style={{ textAlign: 'center', padding: 40 }}>
+                  <div style={{ fontSize: 44, marginBottom: 10 }}>✅</div>
+                  <div style={{ fontSize: 16, fontWeight: 600 }}>No Dark Patterns Detected</div>
+                  <div style={{ fontSize: 13, color: 'var(--text-muted)', marginTop: 6 }}>This interface appears to respect user autonomy and ethical design principles.</div>
+                </div>
+              )}
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* ══════════════════════════════════════════════════════
+           PERFORMANCE TAB
+         ══════════════════════════════════════════════════════ */}
+      {activeTab === 'perf' && data.pillarResults?.performance && (() => {
+        const perf = data.pillarResults.performance!;
+        const vitalColor = (val: number | null, good: number, poor: number) => val === null ? 'var(--text-muted)' : val <= good ? '#00BA8C' : val <= poor ? '#F0AB00' : '#FF3356';
+        return (
+          <div className="animate-fade-in">
+            <div className="glass-card" style={{ marginBottom: 20, textAlign: 'center', borderTop: '3px solid #00BA8C' }}>
+              <div style={{ fontSize: 40, fontWeight: 300, color: perf.overallScore >= 80 ? '#00BA8C' : perf.overallScore >= 50 ? '#F0AB00' : '#FF3356' }}>{perf.overallScore}</div>
+              <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase' }}>Performance Score</div>
+            </div>
+            <h3 style={{ fontSize: 14, fontWeight: 700, marginBottom: 12 }}>⚡ Core Web Vitals (Average)</h3>
+            <div className="cwv-grid" style={{ marginBottom: 20 }}>
+              {[
+                { key: 'lcp', label: 'LCP', unit: 'ms', good: 2500, poor: 4000 },
+                { key: 'cls', label: 'CLS', unit: '', good: 0.1, poor: 0.25 },
+                { key: 'fcp', label: 'FCP', unit: 'ms', good: 1800, poor: 3000 },
+                { key: 'ttfb', label: 'TTFB', unit: 'ms', good: 800, poor: 1800 },
+                { key: 'tbt', label: 'TBT', unit: 'ms', good: 200, poor: 600 },
+              ].map(m => {
+                const val = perf.averageVitals[m.key];
+                return (
+                  <div key={m.key} className="cwv-card">
+                    <div className="cwv-value" style={{ color: vitalColor(val, m.good, m.poor) }}>
+                      {val !== null && val !== undefined ? (m.key === 'cls' ? val.toFixed(3) : Math.round(val)) : '—'}
+                    </div>
+                    <div className="cwv-label">{m.label}</div>
+                    <div className="cwv-threshold">Good: ≤{m.key === 'cls' ? m.good : m.good + 'ms'}</div>
+                  </div>
+                );
+              })}
+            </div>
+            {perf.recommendations.length > 0 && (
+              <div className="glass-card" style={{ marginBottom: 20 }}>
+                <h3 style={{ fontSize: 14, fontWeight: 700, marginBottom: 10 }}>💡 Recommendations</h3>
+                {perf.recommendations.map((r, i) => (
+                  <div key={i} style={{ fontSize: 12, color: 'var(--text-secondary)', padding: '6px 0', borderBottom: i < perf.recommendations.length - 1 ? '1px solid var(--border)' : 'none' }}>• {r}</div>
+                ))}
+              </div>
+            )}
+          </div>
+        );
+      })()}
+
+      {/* ══════════════════════════════════════════════════════
+           PRIVACY TAB
+         ══════════════════════════════════════════════════════ */}
+      {activeTab === 'privacy' && data.pillarResults?.privacy && (() => {
+        const priv = data.pillarResults.privacy!;
+        return (
+          <div className="animate-fade-in">
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12, marginBottom: 20 }}>
+              <div className="stat-card" style={{ textAlign: 'center', borderTop: '3px solid #E67E22' }}>
+                <div className="stat-value" style={{ color: priv.overallScore >= 80 ? '#00BA8C' : '#FF3356' }}>{priv.overallScore}</div>
+                <div className="stat-label">Privacy Score</div>
+              </div>
+              <div className="stat-card" style={{ textAlign: 'center', borderTop: '3px solid #FF3356' }}>
+                <div className="stat-value" style={{ color: priv.totalTrackers > 5 ? '#FF3356' : priv.totalTrackers > 0 ? '#F0AB00' : '#00BA8C' }}>{priv.totalTrackers}</div>
+                <div className="stat-label">Trackers</div>
+              </div>
+              <div className="stat-card" style={{ textAlign: 'center', borderTop: `3px solid ${priv.hasConsentBanner ? '#00BA8C' : '#FF3356'}` }}>
+                <div className="stat-value" style={{ color: priv.hasConsentBanner ? '#00BA8C' : '#FF3356' }}>{priv.hasConsentBanner ? '✓' : '✗'}</div>
+                <div className="stat-label">Consent Banner</div>
+              </div>
+              <div className="stat-card" style={{ textAlign: 'center', borderTop: `3px solid ${priv.hasPrivacyPolicy ? '#00BA8C' : '#FF3356'}` }}>
+                <div className="stat-value" style={{ color: priv.hasPrivacyPolicy ? '#00BA8C' : '#FF3356' }}>{priv.hasPrivacyPolicy ? '✓' : '✗'}</div>
+                <div className="stat-label">Privacy Policy</div>
+              </div>
+            </div>
+            {priv.trackers.length > 0 && (
+              <div className="glass-card" style={{ marginBottom: 20 }}>
+                <h3 style={{ fontSize: 14, fontWeight: 700, marginBottom: 12 }}>🔍 Detected Trackers</h3>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                  {priv.trackers.map((t: TrackerInfo) => (
+                    <div key={t.domain} className="tracker-card">
+                      <div>
+                        <div className="tracker-company">{t.company}</div>
+                        <div className="tracker-domain">{t.domain} · {t.requestCount} requests</div>
+                      </div>
+                      <span className={`tracker-category-badge tracker-cat-${t.category}`}>{t.category}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+            <h3 style={{ fontSize: 14, fontWeight: 700, marginBottom: 12 }}>🔒 Privacy Findings ({priv.findings.length})</h3>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+              {priv.findings.map((f: PrivFinding) => (
+                <div key={f.id} className="glass-card" style={{ borderLeft: `3px solid ${sevColors[f.severity] || '#E67E22'}` }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+                    <span style={{ fontWeight: 700, fontSize: 13 }}>{f.title}</span>
+                    <span className={`badge badge-${f.severity}`}>{f.severity}</span>
+                    {f.regulation.map(r => <span key={r} className="dp-regulation-badge">{r}</span>)}
+                  </div>
+                  <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginBottom: 4 }}>{f.description}</div>
+                  <div style={{ fontSize: 11, color: '#00BA8C' }}>💡 {f.recommendation}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+        );
+      })()}
 
       {/* ══════════════════════════════════════════════════════
            ISSUE MODAL
