@@ -46,7 +46,11 @@ COPY package.json package-lock.json ./
 # Install NPM dependencies
 RUN npm ci
 
-# Install Playwright Chromium + system deps
+# Set Playwright browser path BEFORE installing so it installs to /ms-playwright
+# This must match the PLAYWRIGHT_BROWSERS_PATH env var set in Railway
+ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
+
+# Install Playwright Chromium + system deps into /ms-playwright
 RUN npx playwright install --with-deps chromium
 
 # Copy source code
