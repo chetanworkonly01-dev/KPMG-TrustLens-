@@ -1,7 +1,3 @@
-// ============================================================
-// KPMG TrustLens — Dark Pattern Detection Engine
-// ============================================================
-
 import type { BrowserContext, Page } from 'playwright';
 import type {
   DarkPatternFinding, DarkPatternResult, DarkPatternCategory,
@@ -10,38 +6,62 @@ import type {
 import { PRINCIPLE_WEIGHTS } from '../types/darkpattern';
 import {
   DARK_PATTERN_RULES, URGENCY_PATTERNS, SOCIAL_PRESSURE_PATTERNS,
-  CONFIRMSHAMING_PATTERNS,
+  CONFIRMSHAMING_PATTERNS, FEAR_LANGUAGE_PATTERNS, TRICK_QUESTION_PATTERNS,
 } from './darkpattern-rules';
+import type { TestLogEntry } from '../types/audit';
 
 interface PageData { url: string; title: string; }
+type ProgressFn = (entry: TestLogEntry) => void;
 
 // ── Main Entry Point ──
 export async function runDarkPatternAudit(
   context: BrowserContext,
   pages: PageData[],
-  options: { aiClassification?: boolean } = {}
+  options: { aiClassification?: boolean } = {},
+  onProgress?: ProgressFn
 ): Promise<DarkPatternResult> {
   const findings: DarkPatternFinding[] = [];
   let findingId = 0;
+  const log = (testId: string, status: string, message: string) => {
+    onProgress?.({ timestamp: new Date().toISOString(), testId, testName: 'Dark Pattern', wcag: '', status: status as any, message });
+  };
 
   for (const pageData of pages) {
     let page: Page | null = null;
     try {
       page = await context.newPage();
       await page.goto(pageData.url, { waitUntil: 'domcontentloaded', timeout: 30000 });
-      await page.waitForTimeout(2000); // let dynamic content render
+      await page.waitForTimeout(2000);
 
-      // Phase 1: DOM-level scans
+      log('DP-DOM', 'running', '  🔍 Phase 1: DOM & Code-Level Inspection');
       const domFindings = await runDOMScans(page, pageData.url);
       for (const f of domFindings) { f.id = `dp-${++findingId}`; findings.push(f); }
+      log('DP-DOM', domFindings.length > 0 ? 'fail' : 'pass', `  ✓ DOM inspection: ${domFindings.length} findings`);
 
-      // Phase 2: Visual asymmetry detection
+      log('DP-VIS', 'running', '  🎨 Phase 2: Visual UI Analysis');
       const visualFindings = await runVisualScans(page, pageData.url);
       for (const f of visualFindings) { f.id = `dp-${++findingId}`; findings.push(f); }
+      log('DP-VIS', visualFindings.length > 0 ? 'fail' : 'pass', `  ✓ Visual analysis: ${visualFindings.length} findings`);
 
-      // Phase 3: Text/NLP pattern detection
+      log('DP-NLP', 'running', '  📝 Phase 3: Copy & Language Analysis');
       const textFindings = await runTextPatternScans(page, pageData.url);
       for (const f of textFindings) { f.id = `dp-${++findingId}`; findings.push(f); }
+      log('DP-NLP', textFindings.length > 0 ? 'fail' : 'pass', `  ✓ Language analysis: ${textFindings.length} findings`);
+
+      log('DP-DEEP', 'running', '  🔬 Phase 4: Deep Code Inspection');
+      const deepFindings = await runDeepCodeInspection(page, pageData.url);
+      for (const f of deepFindings) { f.id = `dp-${++findingId}`; findings.push(f); }
+      log('DP-DEEP', deepFindings.length > 0 ? 'fail' : 'pass', `  ✓ Deep inspection: ${deepFindings.length} findings`);
+
+      log('DP-AX', 'running', '  ♿ Phase 5: Accessibility Cross-Mapping');
+      const axFindings = await runA11yCrossMap(page, pageData.url);
+      for (const f of axFindings) { f.id = `dp-${++findingId}`; findings.push(f); }
+      log('DP-AX', axFindings.length > 0 ? 'fail' : 'pass', `  ✓ A11Y cross-map: ${axFindings.length} findings`);
+
+      log('DP-FLOW', 'running', '  🔄 Phase 6: Interaction Flow Analysis');
+      const flowFindings = await runInteractionFlowAnalysis(page, pageData.url);
+      for (const f of flowFindings) { f.id = `dp-${++findingId}`; findings.push(f); }
+      log('DP-FLOW', flowFindings.length > 0 ? 'fail' : 'pass', `  ✓ Flow analysis: ${flowFindings.length} findings`);
 
     } catch (err) {
       console.error(`[TrustLens:DarkPattern] Error scanning ${pageData.url}:`, err);
@@ -49,6 +69,11 @@ export async function runDarkPatternAudit(
       if (page) await page.close().catch(() => {});
     }
   }
+
+  log('DP-REG', 'running', '  📋 Phase 7: Regulatory Compliance Mapping');
+  const regulationSet = new Set<string>();
+  for (const f of findings) f.regulation.forEach(r => regulationSet.add(r));
+  log('DP-REG', 'pass', `  ✓ Mapped to ${regulationSet.size} regulations: ${[...regulationSet].join(', ')}`);
 
   return buildResult(findings, pages.length);
 }
@@ -414,11 +439,36 @@ async function runTextPatternScans(page: Page, pageUrl: string): Promise<DarkPat
     }
   }
 
+  // DP-CS-03: Fear-based language
+  for (const el of textElements) {
+    for (const pattern of FEAR_LANGUAGE_PATTERNS) {
+      if (pattern.test(el.text)) {
+        findings.push(makeFinding('DP-CS-03', pageUrl, el.html, {
+          summary: `Fear-based language: "${el.text.substring(0, 80)}"`,
+          details: [`Text: "${el.text}"`, `Pattern: ${pattern.source}`],
+        }));
+        break;
+      }
+    }
+  }
+
+  // DP-MD-04: Trick questions (confusing checkbox wording)
+  for (const el of textElements) {
+    if (el.text.length > 10) {
+      for (const pattern of TRICK_QUESTION_PATTERNS) {
+        if (pattern.test(el.text)) {
+          findings.push(makeFinding('DP-MD-04', pageUrl, el.html, {
+            summary: `Confusing wording: "${el.text.substring(0, 80)}"`,
+            details: [`Text: "${el.text}"`, `Double-negative or trick wording`],
+          }));
+          break;
+        }
+      }
+    }
+  }
+
   return findings;
 }
-
-// ═══════════════════════════════════════════════════════════
-// HELPERS
 // ═══════════════════════════════════════════════════════════
 function makeFinding(
   ruleId: string, pageUrl: string, elementHtml: string, evidence: DarkPatternEvidence
@@ -540,4 +590,266 @@ function buildResult(findings: DarkPatternFinding[], pagesScanned: number): Dark
     pagesScanned,
     regulatoryRisks: [...regulatorySet] as any[],
   };
+}
+
+// ═══════════════════════════════════════════════════════════
+// PHASE 4: Deep Code Inspection
+// ═══════════════════════════════════════════════════════════
+async function runDeepCodeInspection(page: Page, pageUrl: string): Promise<DarkPatternFinding[]> {
+  const findings: DarkPatternFinding[] = [];
+
+  // DP-SN-05: Tracking scripts before consent
+  const trackingBeforeConsent = await page.evaluate(() => {
+    const consentBanner = document.querySelector('[class*="cookie"], [class*="consent"], [class*="gdpr"]');
+    const bannerVisible = consentBanner ? window.getComputedStyle(consentBanner).display !== 'none' : false;
+    if (!bannerVisible) return [];
+    const scripts = [...document.querySelectorAll('script[src]')];
+    const trackerDomains = ['google-analytics', 'googletagmanager', 'facebook', 'hotjar', 'clarity.ms', 'tiktok', 'doubleclick'];
+    return scripts
+      .filter(s => trackerDomains.some(d => (s.getAttribute('src') || '').includes(d)))
+      .map(s => s.getAttribute('src') || '');
+  }).catch(() => []);
+
+  if (trackingBeforeConsent.length > 0) {
+    findings.push(makeFinding('DP-SN-05', pageUrl, '', {
+      summary: `${trackingBeforeConsent.length} tracking script(s) fire before consent interaction`,
+      details: trackingBeforeConsent.slice(0, 5),
+    }));
+  }
+
+  // DP-IF-07: Dark CSS overlay traps
+  const overlayTraps = await page.evaluate(() => {
+    const overlays = document.querySelectorAll('div, span, a');
+    const traps: string[] = [];
+    overlays.forEach(el => {
+      const s = window.getComputedStyle(el);
+      if (s.position === 'fixed' || s.position === 'absolute') {
+        const opacity = parseFloat(s.opacity);
+        const rect = el.getBoundingClientRect();
+        if (opacity < 0.1 && rect.width > 200 && rect.height > 200 && parseInt(s.zIndex) > 100) {
+          traps.push(el.outerHTML.substring(0, 200));
+        }
+      }
+    });
+    return traps;
+  }).catch(() => []);
+
+  if (overlayTraps.length > 0) {
+    findings.push(makeFinding('DP-IF-07', pageUrl, overlayTraps[0], {
+      summary: `${overlayTraps.length} invisible overlay(s) intercepting clicks`,
+      details: overlayTraps.slice(0, 3),
+    }));
+  }
+
+  // DP-SU-04: Fake countdown (check if timer resets by comparing values)
+  const timerCheck = await page.evaluate(() => {
+    const timers = document.querySelectorAll('[class*="countdown"], [class*="timer"], [data-countdown]');
+    const results: string[] = [];
+    timers.forEach(t => {
+      const text = t.textContent?.trim() || '';
+      if (/\d+\s*[:\-]\s*\d+/.test(text)) {
+        const scripts = document.querySelectorAll('script:not([src])');
+        scripts.forEach(s => {
+          const code = s.textContent || '';
+          if (/setInterval|setTimeout/.test(code) && /countdown|timer/i.test(code)) {
+            results.push(text);
+          }
+        });
+      }
+    });
+    return results;
+  }).catch(() => []);
+
+  if (timerCheck.length > 0) {
+    findings.push(makeFinding('DP-SU-04', pageUrl, '', {
+      summary: 'Countdown timer driven by JavaScript setInterval — may reset on refresh',
+      details: timerCheck.map(t => `Timer text: "${t}"`),
+    }));
+  }
+
+  // DP-OB-05: Buried unsubscribe (check navigation depth)
+  const buriedUnsubscribe = await page.evaluate(() => {
+    const links = [...document.querySelectorAll('a')];
+    const unsub = links.filter(l => /unsubscribe|cancel|delete.?account|close.?account/i.test(l.textContent || ''));
+    const buried: string[] = [];
+    for (const link of unsub) {
+      let depth = 0; let el: Element | null = link;
+      while (el && el !== document.body) { if (el.tagName === 'NAV' || el.tagName === 'UL' || el.tagName === 'DETAILS') depth++; el = el.parentElement; }
+      if (depth >= 3) buried.push(`"${link.textContent?.trim()}" nested ${depth} levels deep`);
+    }
+    return buried;
+  }).catch(() => []);
+
+  if (buriedUnsubscribe.length > 0) {
+    findings.push(makeFinding('DP-OB-05', pageUrl, '', {
+      summary: 'Unsubscribe/cancel option buried in deep navigation',
+      details: buriedUnsubscribe,
+    }));
+  }
+
+  // DP-FA-04: Auto-renewal detection
+  const autoRenewal = await page.evaluate(() => {
+    const body = document.body?.textContent?.toLowerCase() || '';
+    const hasAutoRenew = /auto.?renew|recurring\s+(charge|billing|payment)|will\s+be\s+charged\s+(again|monthly|annually)/i.test(body);
+    const hasCancelPath = /cancel\s+(anytime|subscription|renewal)|how\s+to\s+cancel/i.test(body);
+    return { hasAutoRenew, hasCancelPath };
+  }).catch(() => ({ hasAutoRenew: false, hasCancelPath: false }));
+
+  if (autoRenewal.hasAutoRenew && !autoRenewal.hasCancelPath) {
+    findings.push(makeFinding('DP-FA-04', pageUrl, '', {
+      summary: 'Auto-renewal/recurring charges mentioned without clear cancellation path',
+      details: ['Page mentions auto-renewal but no visible cancellation instructions'],
+    }));
+  }
+
+  return findings;
+}
+
+// ═══════════════════════════════════════════════════════════
+// PHASE 5: Accessibility × Dark Pattern Cross-Mapping
+// ═══════════════════════════════════════════════════════════
+async function runA11yCrossMap(page: Page, pageUrl: string): Promise<DarkPatternFinding[]> {
+  const findings: DarkPatternFinding[] = [];
+
+  // DP-AX-02: Focus trapped in consent modal
+  const focusTrap = await page.evaluate(() => {
+    const modals = document.querySelectorAll('[role="dialog"], [class*="consent"], [class*="cookie"]');
+    for (const modal of Array.from(modals)) {
+      const s = window.getComputedStyle(modal);
+      if (s.display === 'none' || s.visibility === 'hidden') continue;
+      const focusable = modal.querySelectorAll('button, a, input, [tabindex]');
+      const closeBtn = modal.querySelector('[class*="close"], [aria-label*="close"], button[class*="dismiss"]');
+      if (focusable.length > 0 && !closeBtn) return modal.outerHTML.substring(0, 200);
+    }
+    return null;
+  }).catch(() => null);
+
+  if (focusTrap) {
+    findings.push(makeFinding('DP-AX-02', pageUrl, focusTrap, {
+      summary: 'Consent modal has no keyboard-accessible close/dismiss button',
+      details: ['Modal traps focus without providing keyboard escape'],
+    }));
+  }
+
+  // DP-AX-03: Screen reader text mismatch
+  const srMismatch = await page.evaluate(() => {
+    const mismatches: string[] = [];
+    const buttons = document.querySelectorAll('button, a[role="button"], [role="button"]');
+    buttons.forEach(btn => {
+      const visible = btn.textContent?.trim() || '';
+      const ariaLabel = btn.getAttribute('aria-label') || '';
+      if (ariaLabel && visible && ariaLabel.toLowerCase() !== visible.toLowerCase() && visible.length > 2) {
+        mismatches.push(`Visible: "${visible}" vs aria-label: "${ariaLabel}"`);
+      }
+    });
+    return mismatches.slice(0, 5);
+  }).catch(() => []);
+
+  if (srMismatch.length > 0) {
+    findings.push(makeFinding('DP-AX-03', pageUrl, '', {
+      summary: `${srMismatch.length} button(s) have mismatched visible text and screen reader label`,
+      details: srMismatch,
+    }));
+  }
+
+  // DP-AX-01: Low-contrast reject buttons (check against consent banners)
+  const lowContrastReject = await page.evaluate(() => {
+    const banners = document.querySelectorAll('[class*="cookie"], [class*="consent"], [class*="gdpr"]');
+    const results: string[] = [];
+    banners.forEach(banner => {
+      const s = window.getComputedStyle(banner);
+      if (s.display === 'none') return;
+      const btns = banner.querySelectorAll('button, a[role="button"]');
+      btns.forEach(btn => {
+        const text = btn.textContent?.trim() || '';
+        if (/reject|decline|no|dismiss|close/i.test(text)) {
+          const bs = window.getComputedStyle(btn);
+          const opacity = parseFloat(bs.opacity);
+          if (opacity < 0.6) results.push(`"${text}" opacity: ${opacity}`);
+        }
+      });
+    });
+    return results;
+  }).catch(() => []);
+
+  if (lowContrastReject.length > 0) {
+    findings.push(makeFinding('DP-AX-01', pageUrl, '', {
+      summary: 'Reject/decline button has low visibility in consent banner',
+      details: lowContrastReject,
+    }));
+  }
+
+  return findings;
+}
+
+// ═══════════════════════════════════════════════════════════
+// PHASE 6: Interaction Flow Analysis (Ethical Friction Score)
+// ═══════════════════════════════════════════════════════════
+async function runInteractionFlowAnalysis(page: Page, pageUrl: string): Promise<DarkPatternFinding[]> {
+  const findings: DarkPatternFinding[] = [];
+
+  // Measure subscribe vs cancel friction
+  const frictionAnalysis = await page.evaluate(() => {
+    const body = document.body?.textContent?.toLowerCase() || '';
+    const allLinks = [...document.querySelectorAll('a, button')];
+
+    // Count entry points (subscribe/signup)
+    const entryPoints = allLinks.filter(el =>
+      /subscribe|sign.?up|register|join|start|get.?started|create.?account/i.test(el.textContent || '')
+    );
+
+    // Count exit points (unsubscribe/cancel)
+    const exitPoints = allLinks.filter(el =>
+      /unsubscribe|cancel|opt.?out|delete.?account|close.?account|deactivate|remove/i.test(el.textContent || '')
+    );
+
+    // Measure visibility: are exit points as prominent as entry?
+    const entryVisible = entryPoints.filter(el => {
+      const s = window.getComputedStyle(el);
+      return s.display !== 'none' && s.visibility !== 'hidden';
+    });
+    const exitVisible = exitPoints.filter(el => {
+      const s = window.getComputedStyle(el);
+      return s.display !== 'none' && s.visibility !== 'hidden';
+    });
+
+    return {
+      entryCount: entryVisible.length,
+      exitCount: exitVisible.length,
+      entryTexts: entryVisible.map(e => e.textContent?.trim()?.substring(0, 50) || '').slice(0, 3),
+      exitTexts: exitVisible.map(e => e.textContent?.trim()?.substring(0, 50) || '').slice(0, 3),
+    };
+  }).catch(() => ({ entryCount: 0, exitCount: 0, entryTexts: [] as string[], exitTexts: [] as string[] }));
+
+  if (frictionAnalysis.entryCount > 0 && frictionAnalysis.exitCount === 0) {
+    // Ethical Friction Score: infinite (no exit at all)
+    findings.push(makeFinding('DP-OB-04', pageUrl, '', {
+      summary: `${frictionAnalysis.entryCount} subscribe/signup option(s) but 0 cancel/unsubscribe options — EFS: ∞`,
+      details: [
+        `Entry points: ${frictionAnalysis.entryTexts.join(', ')}`,
+        'No visible exit/cancel path found on page',
+        'Ethical Friction Score: ∞ (infinite asymmetry)',
+      ],
+      measurements: { entryCount: frictionAnalysis.entryCount, exitCount: 0, efs: 'infinity' },
+    }));
+  } else if (frictionAnalysis.entryCount > 0 && frictionAnalysis.exitCount > 0) {
+    // Check for multi-step confirmation dialogs
+    const confirmDialogs = await page.$$eval(
+      '[class*="confirm"], [class*="are-you-sure"], [class*="cancel-confirm"]',
+      els => els.filter(el => window.getComputedStyle(el).display !== 'none').length
+    ).catch(() => 0);
+
+    if (confirmDialogs > 0) {
+      findings.push(makeFinding('DP-OB-04', pageUrl, '', {
+        summary: `Exit path has ${confirmDialogs} confirmation dialog(s) while entry is direct`,
+        details: [
+          `Entry: ${frictionAnalysis.entryCount} direct action(s)`,
+          `Exit: requires ${confirmDialogs} extra confirmation step(s)`,
+        ],
+        measurements: { entryCount: frictionAnalysis.entryCount, exitCount: frictionAnalysis.exitCount, confirmDialogs },
+      }));
+    }
+  }
+
+  return findings;
 }

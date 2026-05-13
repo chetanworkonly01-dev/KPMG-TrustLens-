@@ -20,7 +20,21 @@ export type ResourceIssueType =
   | 'no-compression'          // Missing gzip/brotli
   | 'no-caching'              // Missing cache headers
   | 'excessive-dom'           // Too many DOM nodes
-  | 'excessive-requests';     // Too many HTTP requests
+  | 'excessive-requests'      // Too many HTTP requests
+  // ── Network & Caching (NEW) ──
+  | 'missing-cache-headers'   // No Cache-Control/ETag
+  | 'missing-compression'     // No gzip/brotli on text resources
+  | 'http1-usage'             // Not using HTTP/2+
+  | 'duplicate-requests'      // Same resource loaded multiple times
+  // ── JS Execution (NEW) ──
+  | 'long-tasks'              // Main thread blocking > 50ms
+  | 'sync-scripts'            // Missing async/defer on scripts
+  | 'third-party-impact'      // Slow third-party JS
+  // ── Rendering (NEW) ──
+  | 'font-loading'            // FOUT/FOIT flash
+  // ── Mobile (NEW) ──
+  | 'missing-viewport'        // Missing responsive viewport meta
+  | 'small-touch-target';     // Interactive elements < 44px
 
 export interface ResourceIssue {
   type: ResourceIssueType;

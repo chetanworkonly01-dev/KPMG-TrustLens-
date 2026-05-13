@@ -232,6 +232,9 @@ async function runAuditPipeline(id: string, config: AuditConfig) {
     // PHASE 4: AI ANALYSIS
     // ─────────────────────────────────────────
     if (config.includeAI) {
+      if (!process.env.OPENAI_API_KEY) {
+        addLog({ timestamp: new Date().toISOString(), testId: 'AI-WARN', testName: 'AI Analysis', wcag: '', status: 'error', message: '⚠️ AI Analysis skipped: OPENAI_API_KEY not set in .env.local' });
+      } else {
       audit.status = 'analyzing';
       updateProgress('Running AI-powered UX & cognitive analysis...', 86);
 
@@ -250,6 +253,7 @@ async function runAuditPipeline(id: string, config: AuditConfig) {
         });
         allIssues.push(...aiIssues);
       }
+      } // end if OPENAI_API_KEY
     }
 
     // ─────────────────────────────────────────
@@ -287,7 +291,7 @@ async function runAuditPipeline(id: string, config: AuditConfig) {
       updateProgress('🕵️ Running Dark Pattern & Ethical UX audit...', 87);
       addLog({ timestamp: new Date().toISOString(), testId: 'DP-ENGINE', testName: 'Dark Pattern Engine', wcag: '', status: 'running', message: '━━━ 🕵️ Dark Pattern & Ethical UX Audit ━━━' });
       try {
-        darkPatternResult = await runDarkPatternAudit(crawlResult.context, pageList);
+        darkPatternResult = await runDarkPatternAudit(crawlResult.context, pageList, {}, addLog);
         addLog({ timestamp: new Date().toISOString(), testId: 'DP-ENGINE', testName: 'Dark Pattern Engine', wcag: '', status: darkPatternResult.totalFindings > 0 ? 'fail' : 'pass', message: `🕵️ Dark patterns: ${darkPatternResult.totalFindings} findings | Ethics: ${darkPatternResult.ethicsScore}/100` });
       } catch (err) {
         console.error('[TrustLens] Dark pattern engine error:', err);
@@ -299,7 +303,7 @@ async function runAuditPipeline(id: string, config: AuditConfig) {
       updateProgress('⚡ Running Performance audit...', 89);
       addLog({ timestamp: new Date().toISOString(), testId: 'PERF-ENGINE', testName: 'Performance Engine', wcag: '', status: 'running', message: '━━━ ⚡ Performance & Core Web Vitals Audit ━━━' });
       try {
-        performanceResult = await runPerformanceAudit(crawlResult.context, pageList.slice(0, 5));
+        performanceResult = await runPerformanceAudit(crawlResult.context, pageList.slice(0, 5), addLog);
         addLog({ timestamp: new Date().toISOString(), testId: 'PERF-ENGINE', testName: 'Performance Engine', wcag: '', status: performanceResult.overallScore >= 80 ? 'pass' : 'fail', message: `⚡ Performance: ${performanceResult.overallScore}/100 | ${performanceResult.totalResourceIssues} resource issues` });
       } catch (err) {
         console.error('[TrustLens] Performance engine error:', err);
@@ -311,7 +315,7 @@ async function runAuditPipeline(id: string, config: AuditConfig) {
       updateProgress('🔒 Running Privacy & Compliance audit...', 91);
       addLog({ timestamp: new Date().toISOString(), testId: 'PRIV-ENGINE', testName: 'Privacy Engine', wcag: '', status: 'running', message: '━━━ 🔒 Privacy & Compliance Audit ━━━' });
       try {
-        privacyResult = await runPrivacyAudit(crawlResult.context, pageList.slice(0, 5));
+        privacyResult = await runPrivacyAudit(crawlResult.context, pageList.slice(0, 5), addLog);
         addLog({ timestamp: new Date().toISOString(), testId: 'PRIV-ENGINE', testName: 'Privacy Engine', wcag: '', status: privacyResult.overallScore >= 80 ? 'pass' : 'fail', message: `🔒 Privacy: ${privacyResult.overallScore}/100 | ${privacyResult.totalTrackers} trackers` });
       } catch (err) {
         console.error('[TrustLens] Privacy engine error:', err);

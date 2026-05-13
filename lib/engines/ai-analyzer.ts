@@ -116,13 +116,19 @@ IMPORTANT: Think like a real accessibility expert doing a manual audit. Focus on
       messages.push({ role: 'user', content: prompt });
     }
 
+    // 60s timeout to prevent hanging on slow API responses
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 60000);
+
     const response = await openai.chat.completions.create({
       model: 'gpt-4o',
       messages,
       temperature: 0.3,
       max_tokens: 3000,
       response_format: { type: 'json_object' }
-    });
+    }, { signal: controller.signal as any });
+
+    clearTimeout(timeout);
 
     const content = response.choices[0]?.message?.content;
     if (!content) return [];

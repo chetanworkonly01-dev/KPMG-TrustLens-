@@ -2,7 +2,7 @@
 // KPMG TrustLens — Privacy & Compliance Types
 // ============================================================
 
-export type PrivacyRegulation = 'GDPR' | 'CCPA' | 'ePrivacy' | 'PECR' | 'LGPD';
+export type PrivacyRegulation = 'GDPR' | 'CCPA' | 'ePrivacy' | 'PECR' | 'LGPD' | 'IN-DPDPA' | 'IN-RBI';
 
 export type PrivacyFindingCategory =
   | 'cookie-consent'         // Missing or broken consent mechanism
@@ -12,7 +12,10 @@ export type PrivacyFindingCategory =
   | 'mixed-content'          // HTTP resources on HTTPS page
   | 'data-storage'           // Excessive localStorage/sessionStorage
   | 'cross-origin'           // Unclassified cross-origin requests
-  | 'consent-mechanism';     // Consent banner functionality issues
+  | 'consent-mechanism'      // Consent banner functionality issues
+  | 'fingerprinting'         // Canvas/WebGL fingerprinting detection
+  | 'security-header'        // Missing security headers (HSTS, CSP)
+  | 'data-minimization';     // Excessive fields for purpose
 
 export interface PrivacyFinding {
   id: string;

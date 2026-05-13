@@ -81,6 +81,9 @@ export type DarkPatternRegulation =
   | 'US-FTC'          // Federal Trade Commission Act
   | 'US-CCPA'         // California Consumer Privacy Act
   | 'IN-CCPA'         // India Consumer Protection Act
+  | 'IN-DPDPA'        // India Digital Personal Data Protection Act 2023
+  | 'IN-RBI'          // Reserve Bank of India Guidelines
+  | 'IN-SEBI'         // Securities and Exchange Board of India
   | 'UK-CPR';         // UK Consumer Protection Regulations
 
 // ── Individual Dark Pattern Finding ──
@@ -119,7 +122,7 @@ export interface DarkPatternRule {
   description: string;
   severity: 'critical' | 'high' | 'medium' | 'low';
   regulation: DarkPatternRegulation[];
-  detect: 'dom' | 'visual' | 'journey' | 'ai';  // Detection method type
+  detect: 'dom' | 'visual' | 'journey' | 'ai' | 'flow';  // Detection method type
 }
 
 // ── Aggregated Dark Pattern Result ──
