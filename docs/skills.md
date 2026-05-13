@@ -1,6 +1,6 @@
 # Core Competencies & Skills Demonstrated
 
-In designing AccessiSense, the team demonstrated a rare convergence of high-end UI/UX design, empathetic product thinking, and deep technical engineering. This unique blend is what sets this solution apart for an AI Innovation Award.
+In designing KPMG TrustLens, the team demonstrated a rare convergence of high-end UI/UX design, empathetic product thinking, and deep technical engineering. This unique blend is what sets this solution apart for an AI Innovation Award.
 
 ## 🎨 1. Aesthetic Engineering & UI/UX Mastery
 *   **Premium Visual Language:** Implementation of highly modern Glassmorphism, tailored color palettes, and cinematic layouts that transform a typically "dry" technical process (auditing) into a delightful, premium experience.

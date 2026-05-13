@@ -1,6 +1,6 @@
 # The AI Ethical Manifesto & Behavior Rules
 
-To maintain absolute trust and deliver award-winning precision, the AccessiSense Intelligence Layer and Execution Engines strictly adhere to the following behavioral mandates.
+To maintain absolute trust and deliver award-winning precision, the KPMG TrustLens Intelligence Layer and Execution Engines strictly adhere to the following behavioral mandates.
 
 ---
 

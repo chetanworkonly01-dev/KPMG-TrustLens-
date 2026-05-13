@@ -9,14 +9,14 @@ Here is your 5-minute knockout demo script structure:
 ## 🎬 Act 1: The Hook (1 Min)
 *Aim: Connect emotionally with the PMs, Executives, and Designers in the room.*
 - **The Problem:** "Accessibility tools today are basically spell-checkers for code. They find missing commas, but ignore that a blind user is permanently trapped in a checkout modal. They spit out 10,000-line Excel sheets that developers hate and product managers ignore."
-- **The Reveal:** Open the **AccessiSense Dashboard**. Show the beautifully designed Glassmorphic UI. "This is AccessiSense. We didn't build a scanner; we built an AI Accessibility Engineer that sits next to your team."
+- **The Reveal:** Open the **KPMG TrustLens Dashboard**. Show the beautifully designed Glassmorphic UI. "This is KPMG TrustLens. We didn't build a scanner; we built an AI Accessibility Engineer that sits next to your team."
 
 ## ⚙️ Act 2: The "Under the Hood" Wow Factor (2 Mins)
 *Aim: Impress the technical leads and engineers.*
 - **The Setup:** Enter a URL (e.g., a complex modern web app) and click 'Start Audit'.
 - **The Action:** While the progress bar fills, point directly to the **Live Terminal Execution Log**. 
 - **The Script:** 
-  > *"Look right here. Standard tools just read the HTML. AccessiSense is actually booting up a Chromium browser in the background. It is pressing the `Tab` key 50 times right now. It is tracking focus rings. It is submitting empty forms to see if the error messages make sense out loud. It is doing exactly what a human accessibility QA tester does.*"
+  > *"Look right here. Standard tools just read the HTML. KPMG TrustLens is actually booting up a Chromium browser in the background. It is pressing the `Tab` key 50 times right now. It is tracking focus rings. It is submitting empty forms to see if the error messages make sense out loud. It is doing exactly what a human accessibility QA tester does.*"
 
 ## 🧠 Act 3: The AI & Empathy Difference (1 Min)
 *Aim: Impress the UX Designers and Innovation Judges.*
@@ -30,7 +30,7 @@ Here is your 5-minute knockout demo script structure:
 - **The Setup:** "So we found the issues. How do we fix them? Usually, this means weeks of Jira ticketing."
 - **The Action:** Click the **📥 Download Report** dropdown.
 - **The Script:**
-  > *"AccessiSense speaks the language of your entire company. 
+  > *"KPMG TrustLens speaks the language of your entire company. 
   > We export a **PowerPoint deck** for the VP to see compliance risk at a glance. 
   > We export a **Word Document** for PMs mapping out the user journey failures. 
   > And we export a **JSON schema with exact code fixes** for the engineering team. 

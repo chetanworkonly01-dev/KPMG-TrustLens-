@@ -1,4 +1,10 @@
-FROM node:20-slim
+# ============================================
+# KPMG TrustLens — Production Dockerfile
+# Platform: Railway (Docker-based deploy)
+# ============================================
+
+# ── Stage 1: Build ──
+FROM node:20-slim AS builder
 
 # Install system dependencies required by Playwright Chromium
 RUN apt-get update && apt-get install -y \
@@ -52,16 +58,24 @@ RUN npm run build
 # --- Production setup ---
 # The standalone build outputs to .next/standalone
 # We need to copy the public and static files into it
-
 RUN cp -r public .next/standalone/public 2>/dev/null || true
 RUN cp -r .next/static .next/standalone/.next/static
 
+# Ensure the audit data directory exists for the volume mount
+RUN mkdir -p .next/standalone/.audit-data
+
+# ── Runtime Configuration ──
 # Railway sets PORT dynamically, Next.js standalone server reads it
 ENV NODE_ENV=production
 ENV PORT=3000
 ENV HOSTNAME="0.0.0.0"
 
+# Expose the port
 EXPOSE 3000
+
+# Health check — Railway uses this to verify container is alive
+HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
+  CMD wget --no-verbose --tries=1 --spider http://localhost:3000/api/health || exit 1
 
 # Run the standalone server (much lighter than `next start`)
 CMD ["node", ".next/standalone/server.js"]

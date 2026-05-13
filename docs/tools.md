@@ -1,6 +1,6 @@
 # Tools & Technology Stack
 
-> **For everyone:** A transparent breakdown of every tool, platform, and AI model powering AccessiSense — designed to build trust with technical judges, cross-functional teams, and executive stakeholders alike.
+> **For everyone:** A transparent breakdown of every tool, platform, and AI model powering KPMG TrustLens — designed to build trust with technical judges, cross-functional teams, and executive stakeholders alike.
 
 ---
 
@@ -30,7 +30,7 @@
 | **Max Tokens** | `3,000` per audit request |
 | **Response Format** | Structured `JSON` — enforced via `response_format: json_object` |
 
-**What GPT-4 does in AccessiSense:**
+**What GPT-4 does in KPMG TrustLens:**
 - Receives a DOM snapshot (up to 12,000 characters of raw HTML) plus a list of already-detected issues.
 - Evaluates the page like a human accessibility expert — looking for **semantic quality, cognitive load, visual hierarchy, and contextual meaning**.
 - Returns up to 8 unique, non-duplicate issues in a strict JSON schema.
@@ -170,6 +170,6 @@ Every engine (`test-runner.ts`, `audit-orchestrator.ts`, `ai-analyzer.ts`) is **
 | Tool | Usage |
 |---|---|
 | **Git + GitHub** | Version control, branched feature development |
-| **Vercel** | Target deployment platform (zero-config Next.js) |
+| **Railway** | Target deployment platform (Docker-based) |
 | **`.env.local`** | Secure key management for `OPENAI_API_KEY` |
 | **Node.js** | Runtime environment for Playwright and server processes |
