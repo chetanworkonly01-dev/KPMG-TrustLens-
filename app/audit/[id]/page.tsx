@@ -42,6 +42,9 @@ interface TestResultItem {
 interface TestLogEntry {
   timestamp: string; testId: string; testName: string; wcag: string;
   status: string; message: string; pageUrl?: string;
+  pillar?: 'accessibility' | 'darkpatterns' | 'performance' | 'privacy';
+  methodology?: string;
+  phase?: string;
 }
 interface GroupedIssue {
   issueKey: string; title: string; testId: string;
@@ -248,35 +251,114 @@ export default function AuditResultPage() {
 
         {data.testLog && data.testLog.length > 0 && (
           <div className="glass-card" style={{ padding: 0, overflow: 'hidden' }}>
-            <div style={{ padding: '10px 14px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-              <h3 style={{ fontSize: 13, fontWeight: 700, margin: 0 }}>🧪 Live Audit Execution</h3>
-              <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>
-                {data.testLog.filter(l => l.status === 'pass').length} passed ·{' '}
-                {data.testLog.filter(l => l.status === 'fail').length} failed
-              </span>
+            {/* ── Log Header ── */}
+            <div style={{ padding: '10px 14px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 }}>
+              <h3 style={{ fontSize: 13, fontWeight: 700, margin: 0 }}>🔬 Live AI Audit Execution</h3>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                {/* Active pillar indicators */}
+                {(['darkpatterns', 'performance', 'privacy', 'accessibility'] as const).filter(p =>
+                  data.testLog.some((l: TestLogEntry) => l.pillar === p)
+                ).map(p => {
+                  const pc: Record<string, string> = { accessibility: '#0091DA', darkpatterns: '#9B59B6', performance: '#00BA8C', privacy: '#E67E22' };
+                  const pi: Record<string, string> = { accessibility: '♿', darkpatterns: '🕵️', performance: '⚡', privacy: '🔒' };
+                  const pl: Record<string, string> = { accessibility: 'A11Y', darkpatterns: 'Dark Patterns', performance: 'Performance', privacy: 'Privacy' };
+                  return (
+                    <span key={p} style={{ fontSize: 9, padding: '2px 8px', borderRadius: 99, background: `${pc[p]}20`, color: pc[p], border: `1px solid ${pc[p]}50`, fontWeight: 700 }}>
+                      {pi[p]} {pl[p]}
+                    </span>
+                  );
+                })}
+                <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+                  {data.testLog.filter((l: TestLogEntry) => l.status === 'pass').length} passed ·{' '}
+                  {data.testLog.filter((l: TestLogEntry) => l.status === 'fail').length} failed
+                </span>
+              </div>
             </div>
-            <div style={{ maxHeight: 380, overflowY: 'auto', padding: '6px 0', fontFamily: "'Cascadia Code', 'Fira Code', monospace", fontSize: 11 }}>
-              {data.testLog.map((entry, i) => (
-                <div key={i} style={{
-                  padding: '5px 14px', display: 'flex', alignItems: 'flex-start', gap: 8,
-                  background: entry.status === 'running' ? 'rgba(0,145,218,0.05)' : 'transparent',
-                  borderLeft: `3px solid ${statusColors[entry.status] || '#5B7198'}`,
-                  animation: entry.status === 'running' ? 'pulse 2s ease infinite' : 'none',
-                }}>
-                  <span style={{ color: statusColors[entry.status], fontSize: 12, flexShrink: 0, width: 14, textAlign: 'center' }}>
-                    {statusIcons[entry.status] || '·'}
-                  </span>
-                  <span style={{
-                    color: entry.status === 'running' ? 'var(--accent-blue)' :
-                           entry.status === 'fail' ? '#FF3356' :
-                           entry.status === 'pass' ? '#00BA8C' : 'var(--text-secondary)',
-                    flex: 1, lineHeight: 1.45
+
+            {/* ── Log Entries ── */}
+            <div style={{ maxHeight: 520, overflowY: 'auto', padding: '4px 0', fontFamily: "'Cascadia Code', 'Fira Code', monospace", fontSize: 11 }}>
+              {data.testLog.map((entry: TestLogEntry, i: number) => {
+                const pillarColor: Record<string, string> = { accessibility: '#0091DA', darkpatterns: '#9B59B6', performance: '#00BA8C', privacy: '#E67E22' };
+                const borderColor = entry.pillar ? pillarColor[entry.pillar] : (statusColors[entry.status] || '#5B7198');
+                const isPhaseHeader = entry.message.startsWith('━━━');
+                const isSubStep    = !isPhaseHeader && entry.message.trimStart().startsWith('→');
+                const isSummary    = !isPhaseHeader && entry.message.trimStart().startsWith('✓');
+
+                // ── Phase separator / header ──
+                if (isPhaseHeader) {
+                  return (
+                    <div key={i} style={{
+                      margin: '10px 0 2px',
+                      padding: '7px 14px',
+                      borderLeft: `3px solid ${borderColor}`,
+                      background: entry.pillar ? `${pillarColor[entry.pillar]}14` : 'rgba(255,255,255,0.04)',
+                      display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap',
+                      animation: entry.status === 'running' ? 'pulse 2s ease infinite' : 'none',
+                    }}>
+                      <span style={{ color: borderColor, fontWeight: 700, fontSize: 11, letterSpacing: '0.02em' }}>
+                        {entry.message.replace('━━━', '').trim()}
+                      </span>
+                      {entry.methodology && (
+                        <span style={{
+                          fontSize: 9, padding: '2px 8px', borderRadius: 99,
+                          background: `${borderColor}22`, color: borderColor,
+                          border: `1px solid ${borderColor}55`, fontWeight: 700, letterSpacing: '0.03em',
+                        }}>
+                          {entry.methodology}
+                        </span>
+                      )}
+                      {entry.status === 'running' && (
+                        <span style={{ fontSize: 10, color: borderColor, marginLeft: 'auto', opacity: 0.8 }}>⏳ scanning…</span>
+                      )}
+                    </div>
+                  );
+                }
+
+                // ── Sub-step or summary row ──
+                return (
+                  <div key={i} style={{
+                    padding: isSubStep ? '2px 14px 2px 22px' : '4px 14px',
+                    display: 'flex', alignItems: 'flex-start', gap: 8,
+                    background: entry.status === 'running' && !isSubStep ? `${borderColor}09` : 'transparent',
+                    borderLeft: `3px solid ${isSubStep ? borderColor + '55' : isSummary ? borderColor : borderColor + '35'}`,
+                    opacity: isSubStep && entry.status !== 'running' ? 0.7 : 1,
+                    animation: entry.status === 'running' ? 'pulse 2s ease infinite' : 'none',
                   }}>
-                    {entry.message}
-                    {entry.wcag && <span style={{ color: 'var(--text-muted)', marginLeft: 6 }}>(WCAG {entry.wcag})</span>}
-                  </span>
-                </div>
-              ))}
+                    {/* status icon */}
+                    <span style={{
+                      color: isSubStep ? borderColor + '90' : statusColors[entry.status],
+                      fontSize: 11, flexShrink: 0, width: 14, textAlign: 'center', marginTop: 1,
+                    }}>
+                      {isSubStep ? '·' : (statusIcons[entry.status] || '·')}
+                    </span>
+
+                    {/* message + methodology badge */}
+                    <div style={{ flex: 1, lineHeight: 1.55 }}>
+                      <span style={{
+                        color: entry.status === 'running' ? borderColor
+                             : entry.status === 'fail'    ? '#FF3356'
+                             : entry.status === 'pass'    ? '#00BA8C'
+                             : isSubStep ? 'var(--text-muted)' : 'var(--text-secondary)',
+                        fontSize: isSubStep ? 10 : 11,
+                      }}>
+                        {entry.message}
+                        {entry.wcag && <span style={{ color: 'var(--text-muted)', marginLeft: 6 }}>(WCAG {entry.wcag})</span>}
+                      </span>
+                      {/* methodology badge — shown on sub-steps & summaries */}
+                      {entry.methodology && !isPhaseHeader && (
+                        <span style={{
+                          display: 'inline-block', marginLeft: 7, verticalAlign: 'middle',
+                          fontSize: 8, padding: '1px 6px', borderRadius: 99,
+                          background: `${borderColor}18`, color: borderColor,
+                          border: `1px solid ${borderColor}40`, fontWeight: 700, letterSpacing: '0.02em',
+                        }}>
+                          {entry.methodology}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
               <div ref={logEndRef} />
             </div>
           </div>

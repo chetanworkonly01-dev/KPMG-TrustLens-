@@ -116,6 +116,12 @@ export interface TestLogEntry {
   status: TestStatus;
   message: string;
   pageUrl?: string;
+  /** Which audit pillar this log entry belongs to */
+  pillar?: 'accessibility' | 'darkpatterns' | 'performance' | 'privacy';
+  /** The principle, standard or framework being applied (e.g. "Brignull Taxonomy", "GDPR Art. 7", "RAIL Model") */
+  methodology?: string;
+  /** The named phase within the engine (e.g. "Phase 1: DOM Scan", "Layer C: Consent Infrastructure") */
+  phase?: string;
 }
 
 export interface AccessibilityIssue {

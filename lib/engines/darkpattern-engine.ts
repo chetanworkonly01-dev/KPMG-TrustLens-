@@ -22,8 +22,8 @@ export async function runDarkPatternAudit(
 ): Promise<DarkPatternResult> {
   const findings: DarkPatternFinding[] = [];
   let findingId = 0;
-  const log = (testId: string, status: string, message: string) => {
-    onProgress?.({ timestamp: new Date().toISOString(), testId, testName: 'Dark Pattern', wcag: '', status: status as any, message });
+  const log = (testId: string, status: string, message: string, methodology?: string, phase?: string) => {
+    onProgress?.({ timestamp: new Date().toISOString(), testId, testName: 'Dark Pattern', wcag: '', status: status as any, message, pillar: 'darkpatterns', methodology, phase });
   };
 
   for (const pageData of pages) {
@@ -33,35 +33,68 @@ export async function runDarkPatternAudit(
       await page.goto(pageData.url, { waitUntil: 'domcontentloaded', timeout: 30000 });
       await page.waitForTimeout(2000);
 
-      log('DP-DOM', 'running', '  🔍 Phase 1: DOM & Code-Level Inspection');
+      // ── Phase 1: DOM & Code-Level Inspection ──
+      log('DP-DOM', 'running', '━━━ Phase 1: DOM & Code-Level Inspection', 'Brignull Taxonomy (12 Patterns)', 'Phase 1: DOM Scan');
+      log('DP-DOM-TQ', 'running', '  → Trick Questions (Brignull #1): Pre-ticked opt-ins, double-negatives, misleading labels', 'Brignull #1 — Trick Questions', 'Phase 1: DOM Scan');
+      log('DP-DOM-SB', 'running', '  → Sneak into Basket (Brignull #2): Preselected add-ons, auto-added extras', 'Brignull #2 — Sneak into Basket', 'Phase 1: DOM Scan');
+      log('DP-DOM-RM', 'running', '  → Roach Motel (Brignull #3): Subscribe vs cancel/delete path depth ratio', 'Brignull #3 — Roach Motel', 'Phase 1: DOM Scan');
+      log('DP-DOM-NG', 'running', '  → Nagging (EU DSA Art. 25): Overlapping modals, repeated interruption gates', 'EU DSA Art. 25 — Nagging / Obstruction', 'Phase 1: DOM Scan');
+      log('DP-DOM-FA', 'running', '  → Forced Action (FTC §5): Login walls, mandatory registration blocking content', 'FTC §5 — Deceptive Practices', 'Phase 1: DOM Scan');
+      log('DP-DOM-PZ', 'running', '  → Privacy Zuckering (GDPR Art. 5): Excessive form field data collection', 'GDPR Art. 5 — Data Minimisation', 'Phase 1: DOM Scan');
+      log('DP-DOM-FC', 'running', '  → Forced Continuity (Brignull #10): Auto-renewal without visible cancel path', 'Brignull #10 — Forced Continuity', 'Phase 1: DOM Scan');
       const domFindings = await runDOMScans(page, pageData.url);
       for (const f of domFindings) { f.id = `dp-${++findingId}`; findings.push(f); }
-      log('DP-DOM', domFindings.length > 0 ? 'fail' : 'pass', `  ✓ DOM inspection: ${domFindings.length} findings`);
+      log('DP-DOM', domFindings.length > 0 ? 'fail' : 'pass', `  ✓ Phase 1 complete — ${domFindings.length} finding(s) detected`, 'Brignull Taxonomy', 'Phase 1: DOM Scan');
 
-      log('DP-VIS', 'running', '  🎨 Phase 2: Visual UI Analysis');
+      // ── Phase 2: Visual UI Analysis ──
+      log('DP-VIS', 'running', '━━━ Phase 2: Visual & Interface Interference Analysis', 'EU DSA Art. 25 — Interface Interference', 'Phase 2: Visual Scan');
+      log('DP-VIS-AS', 'running', '  → Button Asymmetry: Accept vs Reject size, prominence & click-area ratio', 'EU DSA — Asymmetric Framing', 'Phase 2: Visual Scan');
+      log('DP-VIS-CC', 'running', '  → Colour Weaponisation: High-contrast accept, washed-out / hidden reject', 'Misdirection — Visual Design Exploitation', 'Phase 2: Visual Scan');
+      log('DP-VIS-SZ', 'running', '  → Size Manipulation: Unwanted options smaller, greyed or outside scan path', 'EU DSA — Visual Interference', 'Phase 2: Visual Scan');
+      log('DP-VIS-IM', 'running', '  → Dismiss Target Size: Close/X button touch-target compliance (min 44×44px)', 'WCAG 2.5.8 + ICO Guidance', 'Phase 2: Visual Scan');
       const visualFindings = await runVisualScans(page, pageData.url);
       for (const f of visualFindings) { f.id = `dp-${++findingId}`; findings.push(f); }
-      log('DP-VIS', visualFindings.length > 0 ? 'fail' : 'pass', `  ✓ Visual analysis: ${visualFindings.length} findings`);
+      log('DP-VIS', visualFindings.length > 0 ? 'fail' : 'pass', `  ✓ Phase 2 complete — ${visualFindings.length} finding(s) detected`, 'EU DSA Art. 25', 'Phase 2: Visual Scan');
 
-      log('DP-NLP', 'running', '  📝 Phase 3: Copy & Language Analysis');
+      // ── Phase 3: Copy & Language (NLP) Analysis ──
+      log('DP-NLP', 'running', '━━━ Phase 3: Copy & Language Pattern Analysis', 'Cognitive Bias Exploitation Framework', 'Phase 3: NLP Scan');
+      log('DP-NLP-SU', 'running', '  → Urgency/Scarcity (Brignull #12): Countdown timers, "Only N left!", false limited-time framing', 'Brignull #12 — Urgency / Scarcity', 'Phase 3: NLP Scan');
+      log('DP-NLP-SP', 'running', '  → Social Proof Manipulation: Fake real-time activity, unverifiable viewer counts', 'Cognitive Bias — Social Proof Manipulation', 'Phase 3: NLP Scan');
+      log('DP-NLP-CS', 'running', '  → Confirmshaming (Brignull #8): Guilt-inducing decline copy ("No thanks, I hate saving")', 'Brignull #8 — Confirmshaming', 'Phase 3: NLP Scan');
+      log('DP-NLP-LA', 'running', '  → Loss Aversion Framing: "Don\'t miss out", "Lose access to X" language patterns', 'Cognitive Bias — Loss Aversion', 'Phase 3: NLP Scan');
+      log('DP-NLP-AB', 'running', '  → Authority Bias: Fake trust badges, unverified award logos, fabricated accreditations', 'Cognitive Bias — Authority Bias', 'Phase 3: NLP Scan');
       const textFindings = await runTextPatternScans(page, pageData.url);
       for (const f of textFindings) { f.id = `dp-${++findingId}`; findings.push(f); }
-      log('DP-NLP', textFindings.length > 0 ? 'fail' : 'pass', `  ✓ Language analysis: ${textFindings.length} findings`);
+      log('DP-NLP', textFindings.length > 0 ? 'fail' : 'pass', `  ✓ Phase 3 complete — ${textFindings.length} finding(s) detected`, 'Cognitive Bias Framework', 'Phase 3: NLP Scan');
 
-      log('DP-DEEP', 'running', '  🔬 Phase 4: Deep Code Inspection');
+      // ── Phase 4: Deep Code Inspection ──
+      log('DP-DEEP', 'running', '━━━ Phase 4: Deep Code & Behavioural Inspection', 'FTC Enforcement Layer + GDPR Art. 6', 'Phase 4: Deep Code Scan');
+      log('DP-DEEP-TK', 'running', '  → Pre-Consent Tracking: Scripts firing before user interaction (GDPR violation)', 'GDPR Art. 6 — Lawful Basis Required', 'Phase 4: Deep Code Scan');
+      log('DP-DEEP-OV', 'running', '  → Invisible Overlay Traps: Transparent click-jacking overlays (high z-index)', 'FTC — Deceptive Interface Practices', 'Phase 4: Deep Code Scan');
+      log('DP-DEEP-CT', 'running', '  → Fake Countdowns: setInterval-driven timers that reset on page refresh', 'Brignull #12 — Manufactured Scarcity', 'Phase 4: Deep Code Scan');
+      log('DP-DEEP-AR', 'running', '  → Auto-Renewal Detection: Recurring charge mentions without visible cancel instructions', 'Brignull #10 — Forced Continuity', 'Phase 4: Deep Code Scan');
+      log('DP-DEEP-BU', 'running', '  → Buried Cancellation: Unsubscribe/cancel links nested 3+ levels deep in navigation', 'EU DSA Art. 25 — Obstruction', 'Phase 4: Deep Code Scan');
       const deepFindings = await runDeepCodeInspection(page, pageData.url);
       for (const f of deepFindings) { f.id = `dp-${++findingId}`; findings.push(f); }
-      log('DP-DEEP', deepFindings.length > 0 ? 'fail' : 'pass', `  ✓ Deep inspection: ${deepFindings.length} findings`);
+      log('DP-DEEP', deepFindings.length > 0 ? 'fail' : 'pass', `  ✓ Phase 4 complete — ${deepFindings.length} finding(s) detected`, 'FTC + GDPR Art. 6', 'Phase 4: Deep Code Scan');
 
-      log('DP-AX', 'running', '  ♿ Phase 5: Accessibility Cross-Mapping');
+      // ── Phase 5: Accessibility × Dark Pattern Cross-Mapping ──
+      log('DP-AX', 'running', '━━━ Phase 5: Ethical Accessibility Cross-Mapping', 'WCAG 2.2 + Dark Pattern Intersection', 'Phase 5: A11Y Cross-Map');
+      log('DP-AX-FT', 'running', '  → Focus Trap in Consent Modal: Keyboard escape path blocked (WCAG 2.1.2)', 'WCAG 2.1.2 — No Keyboard Trap', 'Phase 5: A11Y Cross-Map');
+      log('DP-AX-SR', 'running', '  → Screen Reader Mismatch: Visible label vs aria-label deception check', 'WCAG 4.1.2 — Name, Role, Value', 'Phase 5: A11Y Cross-Map');
+      log('DP-AX-LC', 'running', '  → Low-Contrast Reject: Consent banner reject button contrast weaponisation', 'WCAG 1.4.3 — Contrast Minimum', 'Phase 5: A11Y Cross-Map');
       const axFindings = await runA11yCrossMap(page, pageData.url);
       for (const f of axFindings) { f.id = `dp-${++findingId}`; findings.push(f); }
-      log('DP-AX', axFindings.length > 0 ? 'fail' : 'pass', `  ✓ A11Y cross-map: ${axFindings.length} findings`);
+      log('DP-AX', axFindings.length > 0 ? 'fail' : 'pass', `  ✓ Phase 5 complete — ${axFindings.length} finding(s) detected`, 'WCAG + Dark Pattern Intersection', 'Phase 5: A11Y Cross-Map');
 
-      log('DP-FLOW', 'running', '  🔄 Phase 6: Interaction Flow Analysis');
+      // ── Phase 6: Interaction Flow (Ethical Friction Score) ──
+      log('DP-FLOW', 'running', '━━━ Phase 6: Interaction Flow — Ethical Friction Score', 'Ethical Friction Score (EFS) Methodology', 'Phase 6: Flow Analysis');
+      log('DP-FLOW-AS', 'running', '  → Subscribe vs Cancel Symmetry: Entry CTA count vs exit CTA count ratio', 'EFS — Choice Asymmetry Principle', 'Phase 6: Flow Analysis');
+      log('DP-FLOW-HP', 'running', '  → Homepage Scan Simulation: First-impression CTA prominence & scan-path analysis', 'Misdirection — Visual Hierarchy Bias', 'Phase 6: Flow Analysis');
+      log('DP-FLOW-MD', 'running', '  → Misdirection (Brignull #5): Visual design drawing attention away from key information', 'Brignull #5 — Misdirection', 'Phase 6: Flow Analysis');
       const flowFindings = await runInteractionFlowAnalysis(page, pageData.url);
       for (const f of flowFindings) { f.id = `dp-${++findingId}`; findings.push(f); }
-      log('DP-FLOW', flowFindings.length > 0 ? 'fail' : 'pass', `  ✓ Flow analysis: ${flowFindings.length} findings`);
+      log('DP-FLOW', flowFindings.length > 0 ? 'fail' : 'pass', `  ✓ Phase 6 complete — ${flowFindings.length} finding(s) detected`, 'Ethical Friction Score', 'Phase 6: Flow Analysis');
 
     } catch (err) {
       console.error(`[TrustLens:DarkPattern] Error scanning ${pageData.url}:`, err);
@@ -70,10 +103,15 @@ export async function runDarkPatternAudit(
     }
   }
 
-  log('DP-REG', 'running', '  📋 Phase 7: Regulatory Compliance Mapping');
+  // ── Phase 7: Regulatory Compliance Mapping ──
+  log('DP-REG', 'running', '━━━ Phase 7: Regulatory & Legal Risk Mapping', 'Multi-Regulation Compliance Framework', 'Phase 7: Regulatory Mapping');
+  log('DP-REG-FTC', 'running', '  → FTC Enforcement: Section 5 deceptive practices coverage', 'FTC §5 — Unfair or Deceptive Acts', 'Phase 7: Regulatory Mapping');
+  log('DP-REG-DSA', 'running', '  → EU Digital Services Act: Art. 25 prohibited dark pattern clauses', 'EU DSA Art. 25 — Prohibited Dark Patterns', 'Phase 7: Regulatory Mapping');
+  log('DP-REG-GD', 'running', '  → GDPR / ePrivacy: Consent dark patterns (ICO, CNIL enforcement guidance)', 'GDPR + ePrivacy — Consent Integrity', 'Phase 7: Regulatory Mapping');
+  log('DP-REG-IN', 'running', '  → IN-DPDPA 2023: India Digital Personal Data Protection Act mapping', 'India DPDPA 2023 — Data Principal Rights', 'Phase 7: Regulatory Mapping');
   const regulationSet = new Set<string>();
   for (const f of findings) f.regulation.forEach(r => regulationSet.add(r));
-  log('DP-REG', 'pass', `  ✓ Mapped to ${regulationSet.size} regulations: ${[...regulationSet].join(', ')}`);
+  log('DP-REG', 'pass', `  ✓ Phase 7 complete — Mapped to ${regulationSet.size} regulation(s): ${[...regulationSet].join(', ')}`, 'Multi-Regulation Framework', 'Phase 7: Regulatory Mapping');
 
   return buildResult(findings, pages.length);
 }
@@ -265,8 +303,101 @@ async function runDOMScans(page: Page, pageUrl: string): Promise<DarkPatternFind
     }
   }
 
+
+  // DP-BS-01: Bait & Switch — link/button text vs actual destination mismatch
+  const baitLinks = await page.$$eval('a[href]', anchors => {
+    return (anchors as HTMLAnchorElement[]).filter(a => {
+      const text = (a.textContent || '').trim().toLowerCase();
+      const href = a.href.toLowerCase();
+      const visibleDest = /close|cancel|no thanks|dismiss|skip|decline/i.test(text);
+      const actualDest  = href && !href.startsWith('javascript') && !href.startsWith('#') && !href.includes(window.location.hostname);
+      return visibleDest && actualDest;
+    }).map(a => ({ text: a.textContent?.trim().substring(0, 80) || '', href: a.href.substring(0, 150), html: a.outerHTML.substring(0, 200) }));
+  }).catch(() => []);
+
+  for (const l of baitLinks) {
+    findings.push(makeFinding('DP-BS-01', pageUrl, l.html, {
+      summary: `Bait & Switch: Dismissal link "${l.text}" redirects externally`,
+      details: [`Visible text implies dismissal but href navigates externally: ${l.href}`],
+      measurements: { text: l.text, href: l.href },
+    }));
+  }
+
+  // DP-DA-01: Disguised Ads — sponsored/promoted content lacking clear Ad label
+  const sponsoredContent = await page.$$eval(
+    '[class*="sponsor"], [class*="promoted"], [class*="ad-"], [class*="-ad"], [data-ad], [class*="native-ad"]',
+    els => els.filter(el => {
+      const s = window.getComputedStyle(el);
+      if (s.display === 'none' || s.visibility === 'hidden') return false;
+      const text = el.textContent?.toLowerCase() || '';
+      const hasAdLabel = /\b(ad|ads|advertisement|sponsored|promoted)\b/i.test(text);
+      return !hasAdLabel;
+    }).map(el => ({ html: el.outerHTML.substring(0, 200), classes: el.className.substring(0, 100) }))
+  ).catch(() => []);
+
+  if (sponsoredContent.length > 0) {
+    findings.push(makeFinding('DP-DA-01', pageUrl, sponsoredContent[0].html, {
+      summary: `${sponsoredContent.length} sponsored/promoted element(s) without visible "Ad" or "Sponsored" label`,
+      details: sponsoredContent.map(e => `Class: ${e.classes}`),
+      measurements: { count: sponsoredContent.length },
+    }));
+  }
+
+  // DP-FS-01: Friend Spam — contact harvesting, social invite flows
+  const friendSpam = await page.$$eval('a, button, [role="button"]', els =>
+    els.filter(el => {
+      const text = (el.textContent || '').trim();
+      return /invite (friends?|contacts?)|import contacts|share with friends|refer .{0,20} earn|tell a friend/i.test(text);
+    }).map(el => ({ text: el.textContent?.trim().substring(0, 80) || '', html: el.outerHTML.substring(0, 200) }))
+  ).catch(() => []);
+
+  for (const f of friendSpam) {
+    findings.push(makeFinding('DP-FS-01', pageUrl, f.html, {
+      summary: `Friend Spam / Contact Harvesting CTA: "${f.text}"`,
+      details: [`Social invite or contact import CTA found: "${f.text}"`, 'May access user contacts without granular consent'],
+    }));
+  }
+
+  // DP-HC-01: Hidden Costs — price shown but tax/fee language suggests different total
+  const hiddenCostSignals = await page.$$eval('*', els =>
+    els.filter(el => {
+      if (el.children.length > 20) return false;
+      const text = el.textContent || '';
+      const hasPrice = /\$[\d,]+|\d+\.\d{2}|£[\d,]+|€[\d,]+/.test(text);
+      const hasFeeLanguage = /excl\. tax|plus tax|before tax|taxes? not included|additional fees?|processing fee|service fee|booking fee/i.test(text);
+      return hasPrice && hasFeeLanguage && text.length < 500;
+    }).slice(0, 3).map(el => ({ text: el.textContent?.trim().substring(0, 200) || '', html: el.outerHTML.substring(0, 250) }))
+  ).catch(() => []);
+
+  for (const h of hiddenCostSignals) {
+    findings.push(makeFinding('DP-HC-01', pageUrl, h.html, {
+      summary: 'Hidden Costs: Price shown excludes mandatory fees/tax',
+      details: [`Text: "${h.text}"`, 'Price displayed before mandatory fees/taxes are added'],
+    }));
+  }
+
+  // DP-SP-01: Fake Social Proof — unverifiable real-time viewer/buyer counters
+  const fakeSocialProof = await page.$$eval('*', els =>
+    els.filter(el => {
+      if (el.children.length > 5) return false;
+      const text = el.textContent || '';
+      return /\d+\s+(people|visitors?|users?|shoppers?|others?)\s+(are\s+)?(viewing|watching|looking at|browsing|buying|in their cart)/i.test(text)
+          || /only\s+\d+\s+left\s+in\s+stock/i.test(text)
+          || /\d+\s+sold in the last/i.test(text)
+          || /\d+\s+watching/i.test(text);
+    }).slice(0, 5).map(el => ({ text: el.textContent?.trim().substring(0, 120) || '', html: el.outerHTML.substring(0, 200) }))
+  ).catch(() => []);
+
+  for (const sp of fakeSocialProof) {
+    findings.push(makeFinding('DP-SP-01', pageUrl, sp.html, {
+      summary: `Fake Social Proof counter: "${sp.text}"`,
+      details: [`Unverifiable real-time social proof signal: "${sp.text}"`, 'Users cannot verify if these figures are real or manufactured'],
+    }));
+  }
+
   return findings;
 }
+
 
 // ═══════════════════════════════════════════════════════════
 // PHASE 2: Visual Asymmetry Detection

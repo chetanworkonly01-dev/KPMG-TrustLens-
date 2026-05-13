@@ -159,6 +159,25 @@ export async function generateDocx(audit: AuditResult): Promise<Buffer> {
   const auditDate   = new Date(audit.startedAt).toLocaleDateString('en-GB', { year: 'numeric', month: 'long', day: 'numeric' });
   const projectName = config.url || 'PDF Document';
 
+  // ── Pillar-aware title ────────────────────────────────────────
+  const pillars = ((config as any).enabledPillars as string[] | undefined) || [];
+  const reportTitle = pillars.length === 0 || pillars.includes('accessibility') && pillars.length === 1
+    ? 'Accessibility Audit'
+    : pillars.length === 1
+      ? ({ darkpatterns: 'Dark Pattern Audit', performance: 'Performance Audit', privacy: 'Privacy Compliance Audit' } as Record<string,string>)[pillars[0]] || 'Digital Trust Audit'
+      : pillars.length === 4 ? 'TrustLens 4-Pillar Audit' : 'TrustLens Multi-Pillar Audit';
+  const footerText = `Confidential  |  KPMG ${reportTitle}  |  Page `;
+  const isA11y = pillars.length === 0 || pillars.includes('accessibility');
+  const isDP   = pillars.includes('darkpatterns');
+  const isPerf = pillars.includes('performance');
+  const isPriv = pillars.includes('privacy');
+
+  // ── Pillar-specific column headers for issue table ────────────
+  const col3Header = isA11y ? 'WCAG SC'      : isDP ? 'Pattern ID' : isPerf ? 'Metric'      : 'Regulation';
+  const col4Header = isA11y ? 'Level'        : isDP ? 'Regulation' : isPerf ? 'Target'      : 'Article';
+  const col3Val    = (iss: AccessibilityIssue) => isA11y ? iss.wcagCriterion : (iss as any).ruleId || (iss as any).patternId || '—';
+  const col4Val    = (iss: AccessibilityIssue) => isA11y ? iss.wcagLevel     : ((iss as any).regulation?.[0]) || '—';
+
   // Group by team for Section 4
   const byTeam: Record<string, AccessibilityIssue[]> = {};
   for (const iss of issues) {
@@ -210,7 +229,7 @@ export async function generateDocx(audit: AuditResult): Promise<Buffer> {
       spacing: { after: 80 },
       children: [
         new TextRun({ text: 'KPMG ', font: 'Calibri', size: 16, bold: true, color: K.navy }),
-        new TextRun({ text: 'Accessibility Audit Report', font: 'Calibri', size: 16, color: K.darkGrey, italics: true }),
+        new TextRun({ text: `${reportTitle} Report`, font: 'Calibri', size: 16, color: K.darkGrey, italics: true }),
         new TextRun({ text: '  |  ' + auditDate, font: 'Calibri', size: 16, color: K.midGrey }),
       ],
     }),
@@ -222,7 +241,7 @@ export async function generateDocx(audit: AuditResult): Promise<Buffer> {
       border: { top: { style: BorderStyle.SINGLE, size: 1, color: 'D1DCE8' } },
       spacing: { before: 80 },
       children: [
-        new TextRun({ text: 'Confidential  |  KPMG Accessibility Audit  |  Page ', font: 'Calibri', size: 14, color: K.midGrey }),
+        new TextRun({ text: footerText, font: 'Calibri', size: 14, color: K.midGrey }),
         new TextRun({ children: [PageNumber.CURRENT], font: 'Calibri', size: 14, color: K.midGrey }),
         new TextRun({ text: ' of ', font: 'Calibri', size: 14, color: K.midGrey }),
         new TextRun({ children: [PageNumber.TOTAL_PAGES], font: 'Calibri', size: 14, color: K.midGrey }),
@@ -261,7 +280,7 @@ export async function generateDocx(audit: AuditResult): Promise<Buffer> {
           new Paragraph({
             alignment: AlignmentType.CENTER,
             spacing: { after: 300 },
-            children: [new TextRun({ text: 'Accessibility Audit — Final Delivery Report', font: 'Calibri', size: 32, color: K.lightBlue })],
+            children: [new TextRun({ text: `${reportTitle} — Final Delivery Report`, font: 'Calibri', size: 32, color: K.lightBlue })],
           }),
           new Paragraph({
             alignment: AlignmentType.CENTER,
@@ -279,7 +298,8 @@ export async function generateDocx(audit: AuditResult): Promise<Buffer> {
             alignment: AlignmentType.CENTER,
             borders: TABLE_BORDERS,
             rows: [
-              new TableRow({ children: [cell('Standard', { bold: true, color: K.navy, width: 40, bg: K.offWhite }), cell(`${standard} Level ${testedLevel}`, { width: 60 })] }),
+              new TableRow({ children: [cell('Report Type', { bold: true, color: K.navy, width: 40, bg: K.offWhite }), cell(reportTitle, { width: 60, bold: true, color: K.lightBlue })] }),
+              isA11y ? new TableRow({ children: [cell('Standard', { bold: true, color: K.navy, width: 40, bg: K.offWhite }), cell(`${standard} Level ${testedLevel}`, { width: 60 })] }) : new TableRow({ children: [cell('Pillars Audited', { bold: true, color: K.navy, width: 40, bg: K.offWhite }), cell(pillars.join(', '), { width: 60 })] }),
               new TableRow({ children: [cell('Audit Date', { bold: true, color: K.navy, width: 40, bg: K.offWhite }), cell(auditDate, { width: 60 })] }),
               new TableRow({ children: [cell('Pages Audited', { bold: true, color: K.navy, width: 40, bg: K.offWhite }), cell(String(audit.pages.length), { width: 60 })] }),
               new TableRow({ children: [cell('Score', { bold: true, color: K.navy, width: 40, bg: K.offWhite }), cell(`${score.overall}/100`, { width: 60, color: score.overall >= 75 ? K.teal : score.overall >= 50 ? K.medium : K.critical, bold: true })] }),
@@ -293,7 +313,7 @@ export async function generateDocx(audit: AuditResult): Promise<Buffer> {
           // SECTION 1: EXECUTIVE SUMMARY
           // ─────────────────────────────────────────────────────
           h1('1. Executive Summary'),
-          ...(report.executiveSummary || `This KPMG accessibility audit evaluated ${projectName} against ${standard} Level ${testedLevel} guidelines. The overall score is ${score.overall}/100 (${compLabel(score.complianceLevel)}).`)
+          ...(report.executiveSummary || `This KPMG ${reportTitle} evaluated ${projectName}${isA11y ? ` against ${standard} Level ${testedLevel} guidelines` : ''}. The overall score is ${score.overall}/100 (${compLabel(score.complianceLevel)}). ${score.totalIssues} issue(s) were identified.`)
             .split('\n\n')
             .filter((s: string) => s.trim())
             .map((para: string) => body(para.trim(), K.darkGrey)),
@@ -314,19 +334,31 @@ export async function generateDocx(audit: AuditResult): Promise<Buffer> {
             ],
           }),
           sp(),
-          h2('1.2 Category Scores'),
-          new Table({
-            width: { size: 100, type: WidthType.PERCENTAGE },
-            borders: TABLE_BORDERS,
-            rows: [
-              new TableRow({ children: ['Perceivable','Operable','Understandable','Robust','PDF'].map(c => cell(c, { bold: true, bg: K.navy, color: K.white, align: AlignmentType.CENTER })) }),
-              new TableRow({ children: ['perceivable','operable','understandable','robust','pdf'].map(k => {
-                const v = score.categoryScores[k as keyof typeof score.categoryScores] || 0;
-                const col = v >= 75 ? K.teal : v >= 50 ? K.medium : K.critical;
-                return cell(String(v) + '/100', { align: AlignmentType.CENTER, bold: true, color: col });
-              }) }),
-            ],
-          }),
+          ...(isA11y ? [
+            h2('1.2 Category Scores (WCAG Principles)'),
+            new Table({
+              width: { size: 100, type: WidthType.PERCENTAGE },
+              borders: TABLE_BORDERS,
+              rows: [
+                new TableRow({ children: ['Perceivable','Operable','Understandable','Robust','PDF'].map(c => cell(c, { bold: true, bg: K.navy, color: K.white, align: AlignmentType.CENTER })) }),
+                new TableRow({ children: ['perceivable','operable','understandable','robust','pdf'].map(k => {
+                  const v = score.categoryScores[k as keyof typeof score.categoryScores] || 0;
+                  const col = v >= 75 ? K.teal : v >= 50 ? K.medium : K.critical;
+                  return cell(String(v) + '/100', { align: AlignmentType.CENTER, bold: true, color: col });
+                }) }),
+              ],
+            }),
+          ] : [
+            h2(`1.2 Pillar Score Summary`),
+            new Table({
+              width: { size: 100, type: WidthType.PERCENTAGE },
+              borders: TABLE_BORDERS,
+              rows: [
+                new TableRow({ children: pillars.map(p => cell(p.charAt(0).toUpperCase()+p.slice(1), { bold: true, bg: K.navy, color: K.white, align: AlignmentType.CENTER })) }),
+                new TableRow({ children: pillars.map(() => { const v = score.overall; const col = v >= 75 ? K.teal : v >= 50 ? K.medium : K.critical; return cell(String(v)+'/100', { align: AlignmentType.CENTER, bold: true, color: col }); }) }),
+              ],
+            }),
+          ]),
 
           // ─────────────────────────────────────────────────────
           // SECTION 2: ISSUE BACKLOG (DEVELOPER FORMAT)
@@ -335,7 +367,7 @@ export async function generateDocx(audit: AuditResult): Promise<Buffer> {
           body('Each issue below includes all information needed to assign, estimate, implement, and verify the fix. Issues are sorted by severity.', K.darkGrey),
           sp(),
 
-          // Summary table
+          // Summary table — pillar-aware columns
           new Table({
             width: { size: 100, type: WidthType.PERCENTAGE },
             borders: TABLE_BORDERS,
@@ -343,8 +375,8 @@ export async function generateDocx(audit: AuditResult): Promise<Buffer> {
               new TableRow({ children: [
                 cell('#', { bold: true, bg: K.navy, color: K.white, width: 8, align: AlignmentType.CENTER }),
                 cell('Issue Title', { bold: true, bg: K.navy, color: K.white, width: 30 }),
-                cell('WCAG SC', { bold: true, bg: K.navy, color: K.white, width: 12 }),
-                cell('Level', { bold: true, bg: K.navy, color: K.white, width: 8, align: AlignmentType.CENTER }),
+                cell(col3Header, { bold: true, bg: K.navy, color: K.white, width: 12 }),
+                cell(col4Header, { bold: true, bg: K.navy, color: K.white, width: 8, align: AlignmentType.CENTER }),
                 cell('Severity', { bold: true, bg: K.navy, color: K.white, width: 12, align: AlignmentType.CENTER }),
                 cell('Team Owner', { bold: true, bg: K.navy, color: K.white, width: 15 }),
                 cell('Effort', { bold: true, bg: K.navy, color: K.white, width: 15, align: AlignmentType.CENTER }),
@@ -352,8 +384,8 @@ export async function generateDocx(audit: AuditResult): Promise<Buffer> {
               ...issues.map((iss, idx) => new TableRow({ children: [
                 cell(`#${String(idx+1).padStart(3,'0')}`, { align: AlignmentType.CENTER, bold: true, bg: idx % 2 === 0 ? K.offWhite : K.white, size: 17 }),
                 cell(iss.title, { bg: idx % 2 === 0 ? K.offWhite : K.white, size: 17 }),
-                cell(iss.wcagCriterion, { bg: idx % 2 === 0 ? K.offWhite : K.white, size: 17 }),
-                cell(iss.wcagLevel, { align: AlignmentType.CENTER, bg: idx % 2 === 0 ? K.offWhite : K.white, size: 17, color: K.lightBlue, bold: true }),
+                cell(col3Val(iss), { bg: idx % 2 === 0 ? K.offWhite : K.white, size: 17 }),
+                cell(col4Val(iss), { align: AlignmentType.CENTER, bg: idx % 2 === 0 ? K.offWhite : K.white, size: 17, color: K.lightBlue, bold: true }),
                 cell(iss.severity.toUpperCase(), { align: AlignmentType.CENTER, bold: true, color: sevColor(iss.severity), bg: sevBg(iss.severity), size: 17 }),
                 cell(deriveTeam(iss), { bg: idx % 2 === 0 ? K.offWhite : K.white, size: 17 }),
                 cell(deriveEffort(iss), { align: AlignmentType.CENTER, bg: idx % 2 === 0 ? K.offWhite : K.white, size: 17 }),
@@ -468,11 +500,11 @@ export async function generateDocx(audit: AuditResult): Promise<Buffer> {
               width: { size: 100, type: WidthType.PERCENTAGE },
               borders: TABLE_BORDERS,
               rows: [
-                new TableRow({ children: [cell('ID', { bold: true, bg: K.lightBlue, color: K.white, width: 10, align: AlignmentType.CENTER }), cell('Title', { bold: true, bg: K.lightBlue, color: K.white, width: 45 }), cell('WCAG', { bold: true, bg: K.lightBlue, color: K.white, width: 13 }), cell('Severity', { bold: true, bg: K.lightBlue, color: K.white, width: 15, align: AlignmentType.CENTER }), cell('Effort', { bold: true, bg: K.lightBlue, color: K.white, width: 17, align: AlignmentType.CENTER })] }),
+                new TableRow({ children: [cell('ID', { bold: true, bg: K.lightBlue, color: K.white, width: 10, align: AlignmentType.CENTER }), cell('Title', { bold: true, bg: K.lightBlue, color: K.white, width: 45 }), cell(col3Header, { bold: true, bg: K.lightBlue, color: K.white, width: 13 }), cell('Severity', { bold: true, bg: K.lightBlue, color: K.white, width: 15, align: AlignmentType.CENTER }), cell('Effort', { bold: true, bg: K.lightBlue, color: K.white, width: 17, align: AlignmentType.CENTER })] }),
                 ...tIssues.map((iss, i) => new TableRow({ children: [
                   cell(`#${String(issues.indexOf(iss) + 1).padStart(3,'0')}`, { bold: true, align: AlignmentType.CENTER, bg: i % 2 === 0 ? K.offWhite : K.white, size: 17 }),
                   cell(iss.title, { bg: i % 2 === 0 ? K.offWhite : K.white, size: 17 }),
-                  cell(iss.wcagCriterion, { bg: i % 2 === 0 ? K.offWhite : K.white, size: 17 }),
+                  cell(col3Val(iss), { bg: i % 2 === 0 ? K.offWhite : K.white, size: 17 }),
                   cell(iss.severity.toUpperCase(), { align: AlignmentType.CENTER, bold: true, color: sevColor(iss.severity), bg: sevBg(iss.severity), size: 17 }),
                   cell(deriveEffort(iss), { align: AlignmentType.CENTER, bg: i % 2 === 0 ? K.offWhite : K.white, size: 17 }),
                 ] })),
@@ -547,7 +579,7 @@ export async function generateDocx(audit: AuditResult): Promise<Buffer> {
             alignment: AlignmentType.CENTER,
             spacing: { before: 200 },
             children: [
-              new TextRun({ text: 'KPMG Accessibility Audit — Confidential', font: 'Calibri', size: 18, color: K.midGrey, italics: true }),
+              new TextRun({ text: `KPMG ${reportTitle} — Confidential`, font: 'Calibri', size: 18, color: K.midGrey, italics: true }),
             ],
           }),
         ],

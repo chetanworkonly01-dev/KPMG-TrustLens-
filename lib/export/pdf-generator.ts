@@ -56,7 +56,7 @@ function addKpmgHeader(doc: jsPDF, pageWidth: number) {
   doc.rect(0, 5, pageWidth, 1.5, 'F');
 }
 
-function addKpmgFooter(doc: jsPDF) {
+function addKpmgFooter(doc: jsPDF, label = 'KPMG TrustLens Audit — Confidential') {
   const pageCount = doc.getNumberOfPages();
   const pw = doc.internal.pageSize.getWidth();
   const ph = doc.internal.pageSize.getHeight();
@@ -74,7 +74,7 @@ function addKpmgFooter(doc: jsPDF) {
     // Footer text
     doc.setFontSize(7);
     doc.setTextColor(...K.midGrey);
-    doc.text('KPMG Accessibility Audit — Confidential', 20, ph - 11);
+    doc.text(label, 20, ph - 11);
     doc.text(`Page ${i} of ${pageCount}`, pw - 20, ph - 11, { align: 'right' });
   }
 }
@@ -104,6 +104,26 @@ export async function generatePdf(audit: AuditResult): Promise<Buffer> {
   const pw = 210; // A4
   const ph = 297;
 
+  // ── Dynamic pillar-aware report title ──────────────────────
+  const pillars = (config as any).enabledPillars as string[] | undefined;
+  const reportTitle = !pillars || pillars.length === 0 ? 'Accessibility Audit'
+    : pillars.length === 1 ? ({
+        accessibility: 'Accessibility Audit',
+        darkpatterns:  'Dark Pattern Audit',
+        performance:   'Performance Audit',
+        privacy:       'Privacy Compliance Audit',
+      } as Record<string, string>)[pillars[0]] || 'Digital Trust Audit'
+    : pillars.length === 4 ? 'TrustLens 4-Pillar Audit'
+    : 'TrustLens Multi-Pillar Audit';
+  const footerLabel = `KPMG ${reportTitle} — Confidential`;
+  const isA11y = !pillars || pillars.length === 0 || pillars.includes('accessibility');
+  const isDP   = pillars?.includes('darkpatterns') ?? false;
+  const isPerf = pillars?.includes('performance')  ?? false;
+  const col3H  = isA11y ? 'WCAG SC'    : isDP ? 'Pattern ID' : isPerf ? 'Metric'  : 'Regulation';
+  const col4H  = isA11y ? 'Level'      : isDP ? 'Regulation' : isPerf ? 'Target'  : 'Article';
+  const col3V  = (iss: AccessibilityIssue) => isA11y ? iss.wcagCriterion : ((iss as any).ruleId || '—');
+  const col4V  = (iss: AccessibilityIssue) => isA11y ? iss.wcagLevel     : ((iss as any).regulation?.[0] || '—');
+
   const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
 
   // ══════════════════════════════════════════════
@@ -127,7 +147,7 @@ export async function generatePdf(audit: AuditResult): Promise<Buffer> {
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(24);
   doc.setTextColor(...K.lightBlue);
-  doc.text('Accessibility Audit', 20, 85);
+  doc.text(reportTitle, 20, 85);
 
   doc.setFontSize(16);
   doc.setTextColor(...K.teal);
@@ -194,7 +214,10 @@ export async function generatePdf(audit: AuditResult): Promise<Buffer> {
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(9);
   doc.setTextColor(...K.darkGrey);
-  const summaryText = report.executiveSummary || `This KPMG accessibility audit evaluated ${projectName} against ${standard} Level ${testedLevel}. The overall score is ${score.overall}/100 (${compLabel(score.complianceLevel)}). ${score.totalIssues} issues were identified across ${audit.pages.length} page(s).`;
+  const summaryText = report.executiveSummary ||
+    (isA11y
+      ? `This KPMG ${reportTitle} evaluated ${projectName} against ${standard} Level ${testedLevel}. The overall score is ${score.overall}/100 (${compLabel(score.complianceLevel)}). ${score.totalIssues} issues were identified across ${audit.pages.length} page(s).`
+      : `This KPMG ${reportTitle} audited ${projectName} across: ${(pillars||[]).join(', ')}. Overall score: ${score.overall}/100 (${compLabel(score.complianceLevel)}). ${score.totalIssues} issue(s) identified.`);
   const splitSummary = doc.splitTextToSize(summaryText, pw - 40);
   doc.text(splitSummary, 20, y);
   y += splitSummary.length * 4 + 10;
@@ -233,29 +256,24 @@ export async function generatePdf(audit: AuditResult): Promise<Buffer> {
     margin: { left: 20, right: 20 },
   });
 
-  // Category scores cards
-  y = (doc as any).lastAutoTable.finalY + 12;
-  const cats = ['perceivable', 'operable', 'understandable', 'robust'] as const;
-  const catLabels = { perceivable: 'Perceivable', operable: 'Operable', understandable: 'Understandable', robust: 'Robust' };
-  const cardW = (pw - 40 - 15) / 4;
-
-  cats.forEach((cat, i) => {
-    const x = 20 + i * (cardW + 5);
-    const v = score.categoryScores[cat] || 0;
-    const col = v >= 75 ? K.teal : v >= 50 ? K.medium : K.critical;
-    doc.setFillColor(...K.offWhite);
-    doc.roundedRect(x, y, cardW, 22, 2, 2, 'F');
-    doc.setDrawColor(...col);
-    doc.setLineWidth(0.4);
-    doc.roundedRect(x, y, cardW, 22, 2, 2, 'S');
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(18);
-    doc.setTextColor(...col);
-    doc.text(String(v), x + cardW / 2, y + 11, { align: 'center' });
-    doc.setFontSize(7);
-    doc.setTextColor(...K.darkGrey);
-    doc.text(catLabels[cat], x + cardW / 2, y + 18, { align: 'center' });
-  });
+  // Category scores cards — WCAG principles only for accessibility pillar
+  if (isA11y) {
+    y = (doc as any).lastAutoTable.finalY + 12;
+    const cats = ['perceivable', 'operable', 'understandable', 'robust'] as const;
+    const catLabels = { perceivable: 'Perceivable', operable: 'Operable', understandable: 'Understandable', robust: 'Robust' };
+    const cardW = (pw - 40 - 15) / 4;
+    cats.forEach((cat, i) => {
+      const x = 20 + i * (cardW + 5);
+      const v = score.categoryScores[cat] || 0;
+      const col = v >= 75 ? K.teal : v >= 50 ? K.medium : K.critical;
+      doc.setFillColor(...K.offWhite); doc.roundedRect(x, y, cardW, 22, 2, 2, 'F');
+      doc.setDrawColor(...col); doc.setLineWidth(0.4); doc.roundedRect(x, y, cardW, 22, 2, 2, 'S');
+      doc.setFont('helvetica', 'bold'); doc.setFontSize(18); doc.setTextColor(...col);
+      doc.text(String(v), x + cardW / 2, y + 11, { align: 'center' });
+      doc.setFontSize(7); doc.setTextColor(...K.darkGrey);
+      doc.text(catLabels[cat], x + cardW / 2, y + 18, { align: 'center' });
+    });
+  }
 
   // ══════════════════════════════════════════════
   // SECTION 2: SUMMARY OF FINDINGS
@@ -272,12 +290,12 @@ export async function generatePdf(audit: AuditResult): Promise<Buffer> {
 
   autoTable(doc, {
     startY: y,
-    head: [['#', 'Issue Title', 'WCAG SC', 'Level', 'Severity', 'Team Owner', 'Effort']],
+    head: [['#', 'Issue Title', col3H, col4H, 'Severity', 'Team Owner', 'Effort']],
     body: issues.map((iss, idx) => [
       `#${String(idx + 1).padStart(3, '0')}`,
       iss.title,
-      iss.wcagCriterion,
-      iss.wcagLevel,
+      col3V(iss),
+      col4V(iss),
       iss.severity.toUpperCase(),
       deriveTeam(iss),
       deriveEffort(iss),
@@ -344,11 +362,15 @@ export async function generatePdf(audit: AuditResult): Promise<Buffer> {
 
     doc.setTextColor(...K.midGrey);
     doc.text('|', 62, y);
-
     doc.setTextColor(...K.navy);
-    doc.text('WCAG: ', 68, y);
+    doc.text(isA11y ? 'WCAG: ' : 'Rule: ', 68, y);
     doc.setTextColor(...K.lightBlue);
-    doc.text(`${issue.wcagCriterion} — ${issue.wcagName} (${issue.wcagLevel})`, 80, y);
+    doc.text(
+      isA11y
+        ? `${issue.wcagCriterion} — ${issue.wcagName} (${issue.wcagLevel})`
+        : `${(issue as any).ruleId || issue.wcagCriterion || '—'}`,
+      80, y
+    );
     y += 5;
 
     doc.setTextColor(...K.navy);
@@ -632,8 +654,6 @@ export async function generatePdf(audit: AuditResult): Promise<Buffer> {
   });
 
   // Footer on all pages
-  addKpmgFooter(doc);
-
-  const arrayBuffer = doc.output('arraybuffer');
-  return Buffer.from(arrayBuffer);
+  addKpmgFooter(doc, footerLabel);
+  return Buffer.from(doc.output('arraybuffer'));
 }

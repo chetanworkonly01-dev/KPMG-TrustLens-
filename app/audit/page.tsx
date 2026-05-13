@@ -12,7 +12,9 @@ const STANDARDS = [
 export default function AuditPage() {
   const router = useRouter();
   const fileRef = useRef<HTMLInputElement>(null);
-  const [tab, setTab] = useState<'website' | 'pdf'>('website');
+  const imageRef = useRef<HTMLInputElement>(null);
+  const videoRef = useRef<HTMLInputElement>(null);
+  const [tab, setTab] = useState<'website' | 'pdf' | 'image' | 'video'>('website');
   const [url, setUrl] = useState('');
   const [crawlDepth, setCrawlDepth] = useState(2);
   const [maxPages, setMaxPages] = useState(5);
@@ -28,6 +30,9 @@ export default function AuditPage() {
   const [error, setError] = useState('');
   const [dragOver, setDragOver] = useState(false);
   const [pdfFile, setPdfFile] = useState<File | null>(null);
+  const [imageFile, setImageFile] = useState<File | null>(null);
+  const [videoFile, setVideoFile] = useState<File | null>(null);
+  const [videoProcessing, setVideoProcessing] = useState(false);
 
   // WCAG level selection
   const [wcagLevelA, setWcagLevelA]     = useState(true);
@@ -103,6 +108,67 @@ export default function AuditPage() {
       else setError(data.error || 'Failed to start audit');
     } catch { setError('Network error'); }
     setLoading(false);
+  };
+
+  const startImageAudit = async () => {
+    if (!imageFile) { setError('Please select an image file'); return; }
+    setLoading(true); setError('');
+    try {
+      const form = new FormData();
+      form.append('file', imageFile);
+      form.append('pillars', getEnabledPillars().join(','));
+      const res = await fetch('/api/audit/image', { method: 'POST', body: form });
+      const data = await res.json();
+      if (data.auditId) router.push(`/audit/${data.auditId}`);
+      else setError(data.error || 'Failed to start image audit');
+    } catch { setError('Network error'); }
+    setLoading(false);
+  };
+
+  const startVideoAudit = async () => {
+    if (!videoFile) { setError('Please select a video file'); return; }
+    setLoading(true); setVideoProcessing(true); setError('');
+    try {
+      // Client-side frame extraction via <canvas>
+      const frames = await extractVideoFrames(videoFile, 8);
+      const res = await fetch('/api/audit/video', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ frames, pillars: getEnabledPillars(), filename: videoFile.name }),
+      });
+      const data = await res.json();
+      if (data.auditId) router.push(`/audit/${data.auditId}`);
+      else setError(data.error || 'Failed to start video audit');
+    } catch (e) { setError(e instanceof Error ? e.message : 'Video processing failed'); }
+    setLoading(false); setVideoProcessing(false);
+  };
+
+  const extractVideoFrames = (file: File, count: number): Promise<Array<{ base64: string; mimeType: string; timestampMs: number }>> => {
+    return new Promise((resolve, reject) => {
+      const url = URL.createObjectURL(file);
+      const video = document.createElement('video');
+      video.src = url; video.preload = 'metadata'; video.muted = true;
+      video.onloadedmetadata = () => {
+        const duration = video.duration;
+        const times = Array.from({ length: count }, (_, i) => (duration / (count + 1)) * (i + 1) * 1000);
+        const frames: Array<{ base64: string; mimeType: string; timestampMs: number }> = [];
+        let idx = 0;
+        const capture = () => {
+          if (idx >= times.length) { URL.revokeObjectURL(url); resolve(frames); return; }
+          video.currentTime = times[idx] / 1000;
+          video.onseeked = () => {
+            const canvas = document.createElement('canvas');
+            canvas.width = Math.min(video.videoWidth, 1280);
+            canvas.height = Math.round(canvas.width * (video.videoHeight / video.videoWidth));
+            canvas.getContext('2d')!.drawImage(video, 0, 0, canvas.width, canvas.height);
+            frames.push({ base64: canvas.toDataURL('image/jpeg', 0.7).split(',')[1], mimeType: 'image/jpeg', timestampMs: times[idx] });
+            idx++; capture();
+          };
+        };
+        capture();
+      };
+      video.onerror = () => reject(new Error('Failed to load video. Try MP4 or WebM format.'));
+    });
   };
 
   const handleDrop = (e: React.DragEvent) => {
@@ -195,11 +261,15 @@ export default function AuditPage() {
 
       {/* Tabs */}
       <div className="tabs" style={{ marginBottom: 20 }}>
-        <button className={`tab ${tab === 'website' ? 'active' : ''}`} onClick={() => setTab('website')}>
-          🌐 Website / Portal
+        <button className={`tab ${tab === 'website' ? 'active' : ''}`} onClick={() => setTab('website')}>🌐 Website / Portal</button>
+        <button className={`tab ${tab === 'pdf' ? 'active' : ''}`} onClick={() => setTab('pdf')}>📄 PDF Document</button>
+        <button className={`tab ${tab === 'image' ? 'active' : ''}`} onClick={() => setTab('image')} style={{ position: 'relative' }}>
+          📸 Screenshot / Image
+          <span style={{ marginLeft: 5, fontSize: 8, padding: '1px 5px', borderRadius: 99, background: '#9B59B620', color: '#9B59B6', border: '1px solid #9B59B640', fontWeight: 700, verticalAlign: 'middle' }}>AI Vision</span>
         </button>
-        <button className={`tab ${tab === 'pdf' ? 'active' : ''}`} onClick={() => setTab('pdf')}>
-          📄 PDF Document
+        <button className={`tab ${tab === 'video' ? 'active' : ''}`} onClick={() => setTab('video')} style={{ position: 'relative' }}>
+          🎥 Video Recording
+          <span style={{ marginLeft: 5, fontSize: 8, padding: '1px 5px', borderRadius: 99, background: '#E67E2220', color: '#E67E22', border: '1px solid #E67E2240', fontWeight: 700, verticalAlign: 'middle' }}>AI Vision</span>
         </button>
       </div>
 
@@ -330,19 +400,123 @@ export default function AuditPage() {
               </div>
             )}
           </div>
-          <button
-            className="btn btn-primary btn-lg"
-            style={{ width: '100%', marginTop: 18 }}
-            onClick={startPdfAudit}
-            disabled={loading || !pdfFile}
+          <button className="btn btn-primary btn-lg" style={{ width: '100%', marginTop: 18 }} onClick={startPdfAudit} disabled={loading || !pdfFile}>
+            {loading ? <><div className="spinner" style={{ width: 18, height: 18, borderWidth: 2 }} /> Analyzing PDF...</> : '📊 Analyze PDF Accessibility'}
+          </button>
+        </div>
+      )}
+
+      {/* ── IMAGE AUDIT TAB ──────────────────────────────────── */}
+      {tab === 'image' && (
+        <div className="glass-card animate-fade-in">
+          <div style={{ padding: '10px 0 16px', borderBottom: '1px solid var(--border)', marginBottom: 18 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+              <span style={{ fontSize: 18 }}>📸</span>
+              <span style={{ fontWeight: 700, fontSize: 14 }}>Screenshot / Image Audit</span>
+              <span style={{ fontSize: 9, padding: '2px 8px', borderRadius: 99, background: '#9B59B620', color: '#9B59B6', border: '1px solid #9B59B640', fontWeight: 700 }}>GPT-4o Vision</span>
+            </div>
+            <p style={{ fontSize: 12, color: 'var(--text-muted)', margin: 0 }}>
+              Upload a screenshot or UI image. GPT-4o will analyse it across your selected pillars. ~70% confidence — complements DOM auditing.
+            </p>
+          </div>
+
+          <div
+            className="upload-area"
+            onClick={() => imageRef.current?.click()}
+            style={{ borderColor: imageFile ? '#9B59B6' : undefined, background: imageFile ? 'rgba(155,89,182,0.06)' : undefined }}
           >
-            {loading
-              ? <><div className="spinner" style={{ width: 18, height: 18, borderWidth: 2 }} /> Analyzing PDF...</>
-              : '📊 Analyze PDF Accessibility'
-            }
+            <input ref={imageRef} type="file" accept="image/jpeg,image/png,image/webp,image/gif" hidden
+              onChange={e => { if (e.target.files?.[0]) { setImageFile(e.target.files[0]); setError(''); } }} />
+            <div style={{ fontSize: 44, marginBottom: 14 }}>📸</div>
+            {imageFile ? (
+              <div>
+                <div style={{ fontWeight: 700, fontSize: 15, color: '#9B59B6', marginBottom: 4 }}>{imageFile.name}</div>
+                <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>{(imageFile.size / 1024).toFixed(1)} KB · {imageFile.type}</div>
+              </div>
+            ) : (
+              <div>
+                <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 4 }}>Click to upload screenshot or UI image</div>
+                <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>Supports JPEG, PNG, WebP, GIF · Max 20MB</div>
+              </div>
+            )}
+          </div>
+
+          <div style={{ margin: '14px 0', padding: '10px 14px', borderRadius: 8, background: 'rgba(155,89,182,0.06)', border: '1px solid rgba(155,89,182,0.2)', fontSize: 12 }}>
+            <div style={{ fontWeight: 700, color: '#9B59B6', marginBottom: 4 }}>🔬 What Vision AI checks per pillar:</div>
+            <div style={{ color: 'var(--text-secondary)', lineHeight: 1.7 }}>
+              <span style={{ color: '#0091DA', fontWeight: 600 }}>♿ A11Y:</span> Contrast, focus indicators, label visibility, text size, heading hierarchy<br/>
+              <span style={{ color: '#9B59B6', fontWeight: 600 }}>🕵️ Dark Patterns:</span> Consent asymmetry, urgency cues, confirmshaming, disguised CTAs<br/>
+              <span style={{ color: '#00BA8C', fontWeight: 600 }}>⚡ Performance:</span> Loading states, layout shifts, image density, font rendering<br/>
+              <span style={{ color: '#E67E22', fontWeight: 600 }}>🔒 Privacy:</span> Consent banner quality, reject option, privacy policy link visibility
+            </div>
+          </div>
+
+          <button className="btn btn-primary btn-lg" style={{ width: '100%' }} onClick={startImageAudit} disabled={loading || !imageFile}>
+            {loading ? <><div className="spinner" style={{ width: 18, height: 18, borderWidth: 2 }} /> Analysing with GPT-4o...</> : `👁️ Analyse Image (${getEnabledPillars().length} pillar${getEnabledPillars().length !== 1 ? 's' : ''})`}
+          </button>
+        </div>
+      )}
+
+      {/* ── VIDEO AUDIT TAB ──────────────────────────────────── */}
+      {tab === 'video' && (
+        <div className="glass-card animate-fade-in">
+          <div style={{ padding: '10px 0 16px', borderBottom: '1px solid var(--border)', marginBottom: 18 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+              <span style={{ fontSize: 18 }}>🎥</span>
+              <span style={{ fontWeight: 700, fontSize: 14 }}>Video Recording Audit</span>
+              <span style={{ fontSize: 9, padding: '2px 8px', borderRadius: 99, background: '#E67E2220', color: '#E67E22', border: '1px solid #E67E2240', fontWeight: 700 }}>Frame Sampling</span>
+            </div>
+            <p style={{ fontSize: 12, color: 'var(--text-muted)', margin: 0 }}>
+              Upload a screen recording. 8 frames are extracted automatically in your browser via Canvas API, then analysed by GPT-4o. ~60% confidence.
+            </p>
+          </div>
+
+          <div
+            className="upload-area"
+            onClick={() => videoRef.current?.click()}
+            style={{ borderColor: videoFile ? '#E67E22' : undefined, background: videoFile ? 'rgba(230,126,34,0.06)' : undefined }}
+          >
+            <input ref={videoRef} type="file" accept="video/mp4,video/webm,video/mov,video/quicktime" hidden
+              onChange={e => { if (e.target.files?.[0]) { setVideoFile(e.target.files[0]); setError(''); } }} />
+            <div style={{ fontSize: 44, marginBottom: 14 }}>🎥</div>
+            {videoFile ? (
+              <div>
+                <div style={{ fontWeight: 700, fontSize: 15, color: '#E67E22', marginBottom: 4 }}>{videoFile.name}</div>
+                <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>{(videoFile.size / 1024 / 1024).toFixed(1)} MB · {videoFile.type || 'video'}</div>
+              </div>
+            ) : (
+              <div>
+                <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 4 }}>Click to upload screen recording</div>
+                <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>Supports MP4, WebM, MOV · Max 500MB</div>
+              </div>
+            )}
+          </div>
+
+          <div style={{ margin: '14px 0', padding: '10px 14px', borderRadius: 8, background: 'rgba(230,126,34,0.06)', border: '1px solid rgba(230,126,34,0.2)', fontSize: 12 }}>
+            <div style={{ fontWeight: 700, color: '#E67E22', marginBottom: 6 }}>🎬 How video analysis works:</div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6, color: 'var(--text-secondary)', lineHeight: 1.6 }}>
+              <div>✦ 8 frames extracted evenly from video duration</div>
+              <div>✦ Frame extraction happens in your browser (Canvas API)</div>
+              <div>✦ Each frame analysed by GPT-4o per selected pillar</div>
+              <div>✦ Duplicate findings automatically deduplicated</div>
+              <div>✦ Results same as a standard audit report</div>
+              <div>✦ No video data stored — frames only</div>
+            </div>
+          </div>
+
+          {videoProcessing && (
+            <div style={{ marginBottom: 14, padding: '10px 14px', borderRadius: 8, background: 'rgba(230,126,34,0.1)', border: '1px solid rgba(230,126,34,0.3)', fontSize: 12, color: '#E67E22', display: 'flex', alignItems: 'center', gap: 8 }}>
+              <div className="spinner" style={{ width: 14, height: 14, borderWidth: 2, borderColor: 'rgba(230,126,34,0.3)', borderTopColor: '#E67E22' }} />
+              Extracting frames from video in browser... this may take a moment.
+            </div>
+          )}
+
+          <button className="btn btn-primary btn-lg" style={{ width: '100%', background: 'linear-gradient(135deg, #E67E22, #D35400)' }} onClick={startVideoAudit} disabled={loading || !videoFile}>
+            {loading ? <><div className="spinner" style={{ width: 18, height: 18, borderWidth: 2 }} /> {videoProcessing ? 'Extracting frames...' : 'Analysing...'}</> : `🎬 Analyse Video (${getEnabledPillars().length} pillar${getEnabledPillars().length !== 1 ? 's' : ''})`}
           </button>
         </div>
       )}
     </div>
   );
 }
+

@@ -16,8 +16,8 @@ export async function runPerformanceAudit(
   onProgress?: ProgressFn
 ): Promise<PerformanceResult> {
   const pageResults: PagePerformance[] = [];
-  const log = (testId: string, status: string, message: string) => {
-    onProgress?.({ timestamp: new Date().toISOString(), testId, testName: 'Performance', wcag: '', status: status as any, message });
+  const log = (testId: string, status: string, message: string, methodology?: string, phase?: string) => {
+    onProgress?.({ timestamp: new Date().toISOString(), testId, testName: 'Performance', wcag: '', status: status as any, message, pillar: 'performance', methodology, phase });
   };
 
   for (const pageData of pages) {
@@ -42,42 +42,64 @@ export async function runPerformanceAudit(
       await page.waitForTimeout(2000);
 
       // ── Layer A: Core Web Vitals ──
-      log('PERF-CWV', 'running', '  📊 Layer A: Core Web Vitals Measurement');
+      log('PERF-CWV', 'running', '━━━ Layer A: Core Web Vitals Measurement', 'Google Core Web Vitals (CWV) — Ranking Signals', 'Layer A: Core Web Vitals');
+      log('PERF-CWV-LCP', 'running', '  → LCP (Largest Contentful Paint): target <2.5s — hero image, H1, above-fold block', 'CWV — LCP Google Ranking Signal', 'Layer A: Core Web Vitals');
+      log('PERF-CWV-INP', 'running', '  → INP (Interaction to Next Paint): target <200ms — replaces FID as primary responsiveness metric', 'CWV — INP Google Ranking Signal', 'Layer A: Core Web Vitals');
+      log('PERF-CWV-CLS', 'running', '  → CLS (Cumulative Layout Shift): target <0.1 — images without dimensions, injected content', 'CWV — CLS Google Ranking Signal', 'Layer A: Core Web Vitals');
+      log('PERF-CWV-FCP', 'running', '  → FCP (First Contentful Paint): target <1.8s — Lighthouse performance score component', 'Lighthouse — FCP Criterion', 'Layer A: Core Web Vitals');
+      log('PERF-CWV-TBT', 'running', '  → TBT (Total Blocking Time): target <200ms — long tasks >50ms on main thread', 'Lighthouse — TBT Criterion', 'Layer A: Core Web Vitals');
+      log('PERF-CWV-TTFB', 'running', '  → TTFB (Time to First Byte): target <800ms — server response, CDN, network latency', 'RAIL Model — Load Phase', 'Layer A: Core Web Vitals');
       const vitals = await measureCoreWebVitals(page);
       const t = CWV_THRESHOLDS;
       const lcpLabel = vitals.lcp !== null ? (vitals.lcp <= t.lcp.good ? 'Good' : vitals.lcp <= t.lcp.poor ? 'Needs Work' : 'Poor') : 'N/A';
       const clsLabel = vitals.cls !== null ? (vitals.cls <= t.cls.good ? 'Good' : vitals.cls <= t.cls.poor ? 'Needs Work' : 'Poor') : 'N/A';
       const fcpLabel = vitals.fcp !== null ? (vitals.fcp <= t.fcp.good ? 'Good' : vitals.fcp <= t.fcp.poor ? 'Needs Work' : 'Poor') : 'N/A';
-      log('PERF-CWV', 'pass', `  ✓ LCP: ${vitals.lcp ?? '?'}ms (${lcpLabel}) | CLS: ${vitals.cls ?? '?'} (${clsLabel}) | FCP: ${vitals.fcp ?? '?'}ms (${fcpLabel})`);
+      log('PERF-CWV', 'pass', `  ✓ CWV: LCP ${vitals.lcp ?? '?'}ms (${lcpLabel}) | CLS ${vitals.cls ?? '?'} (${clsLabel}) | FCP ${vitals.fcp ?? '?'}ms (${fcpLabel})`, 'Google Core Web Vitals', 'Layer A: Core Web Vitals');
 
       // ── Layer B: Resource Optimization ──
-      log('PERF-RES', 'running', '  🔍 Layer B: Resource Optimization Analysis');
+      log('PERF-RES', 'running', '━━━ Layer B: Resource Optimisation Analysis', 'Lighthouse Asset Optimisation Criteria', 'Layer B: Resource Optimization');
+      log('PERF-RES-IMG', 'running', '  → Unoptimised Images: WebP/AVIF format check, size >500KB threshold', 'Lighthouse — Serve Images in Modern Formats', 'Layer B: Resource Optimization');
+      log('PERF-RES-JS', 'running', '  → Large JS Bundles: >500KB bundles without code splitting or tree shaking', 'Lighthouse — Reduce Unused JavaScript', 'Layer B: Resource Optimization');
+      log('PERF-RES-LL', 'running', '  → Lazy Loading: Below-fold images missing loading="lazy" attribute', 'Lighthouse — Defer Offscreen Images', 'Layer B: Resource Optimization');
+      log('PERF-RES-CSS', 'running', '  → Render-Blocking CSS: Stylesheets in <head> without media query scoping', 'Lighthouse — Eliminate Render-Blocking Resources', 'Layer B: Resource Optimization');
+      log('PERF-RES-DOM', 'running', '  → DOM Size: Node count >1500 warning, >3000 critical (Lighthouse threshold)', 'Lighthouse — Avoid Excessive DOM Size', 'Layer B: Resource Optimization');
       const resourceIssues = await detectResourceIssues(page, pageData.url, requests);
-      log('PERF-RES', resourceIssues.length > 0 ? 'fail' : 'pass', `  ✓ Resource check: ${resourceIssues.length} issues found`);
+      log('PERF-RES', resourceIssues.length > 0 ? 'fail' : 'pass', `  ✓ Layer B complete — ${resourceIssues.length} resource issue(s) found`, 'Lighthouse Optimisation', 'Layer B: Resource Optimization');
 
       // ── Layer C: Network & Caching ──
-      log('PERF-NET', 'running', '  🌐 Layer C: Network & Caching Analysis');
+      log('PERF-NET', 'running', '━━━ Layer C: Network & Caching Analysis', 'RAIL Model — Load Phase (<1s on fast connections)', 'Layer C: Network & Caching');
+      log('PERF-NET-CH', 'running', '  → Cache Headers: Cache-Control / ETag / Last-Modified on static assets', 'HTTP Caching — RFC 7234', 'Layer C: Network & Caching');
+      log('PERF-NET-GZ', 'running', '  → Compression: gzip/brotli encoding on text resources (JS, CSS, HTML, JSON)', 'HTTP Compression — Content-Encoding', 'Layer C: Network & Caching');
+      log('PERF-NET-DUP', 'running', '  → Duplicate Requests: Resources loaded multiple times across the page lifecycle', 'Network Efficiency — Request Deduplication', 'Layer C: Network & Caching');
       const networkIssues = await detectNetworkIssues(page, pageData.url, requests);
       resourceIssues.push(...networkIssues);
-      log('PERF-NET', networkIssues.length > 0 ? 'fail' : 'pass', `  ✓ Network/caching: ${networkIssues.length} issues`);
+      log('PERF-NET', networkIssues.length > 0 ? 'fail' : 'pass', `  ✓ Layer C complete — ${networkIssues.length} network issue(s)`, 'RAIL Load Phase', 'Layer C: Network & Caching');
 
       // ── Layer D: JavaScript Execution ──
-      log('PERF-JS', 'running', '  ⚙️ Layer D: JavaScript Execution Analysis');
+      log('PERF-JS', 'running', '━━━ Layer D: JavaScript Execution Analysis', 'RAIL Model — Response Phase (<100ms target)', 'Layer D: JS Execution');
+      log('PERF-JS-SY', 'running', '  → Synchronous Scripts: Render-blocking <script> in <head> without async/defer', 'RAIL Response — Eliminate Main Thread Blocking', 'Layer D: JS Execution');
+      log('PERF-JS-3P', 'running', '  → Third-Party Scripts: Analytics, chat, ads, fonts (>5 = performance risk)', 'Lighthouse — Reduce Third-Party Impact', 'Layer D: JS Execution');
+      log('PERF-JS-LT', 'running', '  → Long Tasks: JavaScript tasks >50ms on main thread (INP / TBT impact)', 'RAIL Response — Long Task Detection (50ms)', 'Layer D: JS Execution');
       const jsIssues = await detectJSIssues(page, pageData.url);
       resourceIssues.push(...jsIssues);
-      log('PERF-JS', jsIssues.length > 0 ? 'fail' : 'pass', `  ✓ JS execution: ${jsIssues.length} issues`);
+      log('PERF-JS', jsIssues.length > 0 ? 'fail' : 'pass', `  ✓ Layer D complete — ${jsIssues.length} JS issue(s)`, 'RAIL Response Phase', 'Layer D: JS Execution');
 
       // ── Layer E: Rendering & Layout ──
-      log('PERF-RENDER', 'running', '  🎨 Layer E: Rendering & Layout Analysis');
+      log('PERF-RENDER', 'running', '━━━ Layer E: Rendering & Layout Performance', 'RAIL Model — Animation Phase (60fps = 16ms/frame)', 'Layer E: Rendering');
+      log('PERF-RENDER-AN', 'running', '  → Non-Composited Animations: top/left instead of transform/opacity (forces layout)', 'RAIL Animation — Compositor-Only Properties', 'Layer E: Rendering');
+      log('PERF-RENDER-FT', 'running', '  → Font Loading: FOIT/FOUT detection, font-display strategy, excessive font variants', 'Lighthouse — Ensure Text Remains Visible During Font Load', 'Layer E: Rendering');
+      log('PERF-RENDER-CL', 'running', '  → Layout Thrashing: Forced synchronous layout patterns causing style recalculation storms', 'CWV — CLS Root Cause Analysis', 'Layer E: Rendering');
       const renderIssues = await detectRenderIssues(page, pageData.url);
       resourceIssues.push(...renderIssues);
-      log('PERF-RENDER', renderIssues.length > 0 ? 'fail' : 'pass', `  ✓ Rendering: ${renderIssues.length} issues`);
+      log('PERF-RENDER', renderIssues.length > 0 ? 'fail' : 'pass', `  ✓ Layer E complete — ${renderIssues.length} rendering issue(s)`, 'RAIL Animation Phase', 'Layer E: Rendering');
 
       // ── Layer F: Mobile Performance ──
-      log('PERF-MOBILE', 'running', '  📱 Layer F: Mobile Performance Check');
+      log('PERF-MOBILE', 'running', '━━━ Layer F: Mobile Performance Standards', 'Mobile-First Performance — 4G Simulation', 'Layer F: Mobile');
+      log('PERF-MOBILE-VP', 'running', '  → Viewport Meta: <meta name="viewport"> presence — required for mobile rendering', 'Mobile Web — Viewport Configuration', 'Layer F: Mobile');
+      log('PERF-MOBILE-TT', 'running', '  → Touch Targets: Interactive elements <44×44px (WCAG 2.5.8 + mobile usability)', 'WCAG 2.5.8 + Google Mobile Usability', 'Layer F: Mobile');
       const mobileIssues = await detectMobileIssues(page, pageData.url);
       resourceIssues.push(...mobileIssues);
-      log('PERF-MOBILE', mobileIssues.length > 0 ? 'fail' : 'pass', `  ✓ Mobile: ${mobileIssues.length} issues`);
+      log('PERF-MOBILE', mobileIssues.length > 0 ? 'fail' : 'pass', `  ✓ Layer F complete — ${mobileIssues.length} mobile issue(s)`, 'Mobile Performance Standards', 'Layer F: Mobile');
 
       const domNodes = await page.evaluate(() => document.querySelectorAll('*').length).catch(() => 0);
       const cwv: CoreWebVitals = {

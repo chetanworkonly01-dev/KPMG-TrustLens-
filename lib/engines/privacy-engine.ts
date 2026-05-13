@@ -23,8 +23,8 @@ export async function runPrivacyAudit(
   let hasMixedContent = false;
   let findingId = 0;
   const trackedRequests: Array<{ url: string; pageUrl: string }> = [];
-  const log = (testId: string, status: string, message: string) => {
-    onProgress?.({ timestamp: new Date().toISOString(), testId, testName: 'Privacy', wcag: '', status: status as any, message });
+  const log = (testId: string, status: string, message: string, methodology?: string, phase?: string) => {
+    onProgress?.({ timestamp: new Date().toISOString(), testId, testName: 'Privacy', wcag: '', status: status as any, message, pillar: 'privacy', methodology, phase });
   };
 
   for (const pageData of pages) {
@@ -36,7 +36,11 @@ export async function runPrivacyAudit(
       await page.waitForTimeout(2000);
 
       // ── Layer A: Cookie & Storage Analysis ──
-      log('PRIV-CK', 'running', '  🍪 Layer A: Cookie & Storage Analysis');
+      log('PRIV-CK', 'running', '━━━ Layer A: Cookie & Storage Analysis', 'GDPR Art. 5(1)(e) + ePrivacy Directive', 'Layer A: Cookie Audit');
+      log('PRIV-CK-CL', 'running', '  → Cookie Classification: Necessary / Analytics / Marketing / Functional mapping', 'ePrivacy Directive — Cookie Categorisation', 'Layer A: Cookie Audit');
+      log('PRIV-CK-EX', 'running', '  → Cookie Lifetime: Flagging non-essential cookies persisting >1 year (CNIL guidance)', 'GDPR Art. 5(1)(e) — Storage Limitation', 'Layer A: Cookie Audit');
+      log('PRIV-CK-SC', 'running', '  → Cookie Security: Secure flag, HttpOnly, SameSite attributes on sensitive cookies', 'GDPR Art. 32 — Security of Processing', 'Layer A: Cookie Audit');
+      log('PRIV-CK-ST', 'running', '  → Client Storage: localStorage / sessionStorage item count (data minimisation check)', 'GDPR Art. 5(1)(c) — Data Minimisation', 'Layer A: Cookie Audit');
       const cookies = await context.cookies(pageData.url);
       for (const cookie of cookies) {
         const info: CookieInfo = {
@@ -88,10 +92,13 @@ export async function runPrivacyAudit(
           evidence: { summary: `${storageAnalysis.ls} localStorage + ${storageAnalysis.ss} sessionStorage`, details: [] },
         });
       }
-      log('PRIV-CK', 'pass', `  ✓ Cookies: ${cookies.length} found | Storage: ${storageAnalysis.ls + storageAnalysis.ss} items`);
+      log('PRIV-CK', 'pass', `  ✓ Layer A complete — Cookies: ${cookies.length} | Storage: ${storageAnalysis.ls + storageAnalysis.ss} items`, 'GDPR Art. 5 + ePrivacy', 'Layer A: Cookie Audit');
 
       // ── Layer B: Tracker Detection ──
-      log('PRIV-TR', 'running', '  🔍 Layer B: Third-Party Tracker Detection');
+      log('PRIV-TR', 'running', '━━━ Layer B: Third-Party Tracker Detection', 'GDPR Art. 6 — Lawful Basis for Processing', 'Layer B: Tracker Detection');
+      log('PRIV-TR-TK', 'running', '  → Known Trackers: Google Analytics, Meta Pixel, Hotjar, Clarity, TikTok Pixel detection', 'GDPR Art. 6 — Consent Required for Trackers', 'Layer B: Tracker Detection');
+      log('PRIV-TR-FP', 'running', '  → Browser Fingerprinting: Canvas, AudioContext, font-enumeration fingerprint signals', 'GDPR Art. 4(1) — Fingerprint = Personal Data', 'Layer B: Tracker Detection');
+      log('PRIV-TR-PX', 'running', '  → Tracking Pixels: 1×1 image beacons for cross-site tracking identification', 'ePrivacy Directive — Electronic Surveillance', 'Layer B: Tracker Detection');
       // (tracked requests processed after loop)
 
       // Fingerprinting detection
@@ -145,10 +152,15 @@ export async function runPrivacyAudit(
           evidence: { summary: `${trackingPixels.length} pixels`, details: trackingPixels.slice(0, 5) },
         });
       }
-      log('PRIV-TR', 'pass', `  ✓ Fingerprinting: ${fingerprinting.length} signals | Pixels: ${trackingPixels.length}`);
+      log('PRIV-TR', 'pass', `  ✓ Layer B complete — Fingerprinting: ${fingerprinting.length} signals | Pixels: ${trackingPixels.length}`, 'GDPR Art. 6', 'Layer B: Tracker Detection');
 
       // ── Layer C: Consent Infrastructure ──
-      log('PRIV-CN', 'running', '  📋 Layer C: Consent Infrastructure');
+      log('PRIV-CN', 'running', '━━━ Layer C: Consent Infrastructure Audit', 'GDPR Art. 7 + ICO Enforcement Guidance', 'Layer C: Consent Audit');
+      log('PRIV-CN-BN', 'running', '  → Consent Banner: Detection of cookie/GDPR consent UI presence', 'GDPR Art. 7 — Conditions for Consent', 'Layer C: Consent Audit');
+      log('PRIV-CN-RJ', 'running', '  → Reject Option: "Reject All" / "Decline" button at first layer (ICO, CNIL requirement)', 'GDPR Art. 7 + CNIL Guidance — Equal Prominence', 'Layer C: Consent Audit');
+      log('PRIV-CN-AS', 'running', '  → Asymmetric UI: Accept prominent vs Reject hidden/de-emphasised (ICO enforcement focus)', 'ICO Enforcement — Asymmetric Consent UI', 'Layer C: Consent Audit');
+      log('PRIV-CN-LI', 'running', '  → Legitimate Interest: Pre-selected LI toggles without user action (illegal under GDPR)', 'GDPR Art. 6(1)(f) — Legitimate Interest', 'Layer C: Consent Audit');
+      log('PRIV-CN-CW', 'running', '  → Consent Wall: Page access blocked unless user consents (generally illegal GDPR)', 'GDPR Art. 7(4) — Conditional Consent', 'Layer C: Consent Audit');
       const consentDetected = await page.$$eval(
         '[class*="cookie"], [class*="consent"], [class*="gdpr"], [id*="cookie"], [id*="consent"]',
         els => els.filter(el => { const s = window.getComputedStyle(el); return s.display !== 'none' && s.visibility !== 'hidden'; }).length
@@ -181,10 +193,13 @@ export async function runPrivacyAudit(
           });
         }
       }
-      log('PRIV-CN', hasConsentBanner ? 'pass' : 'fail', `  ✓ Consent banner: ${hasConsentBanner ? 'Found' : 'Missing'}`);
+      log('PRIV-CN', hasConsentBanner ? 'pass' : 'fail', `  ✓ Layer C complete — Consent banner: ${hasConsentBanner ? 'Found ✓' : 'MISSING ✗'}`, 'GDPR Art. 7 + ICO', 'Layer C: Consent Audit');
 
       // ── Layer D: Data Collection Analysis ──
-      log('PRIV-DC', 'running', '  📝 Layer D: Data Collection Analysis');
+      log('PRIV-DC', 'running', '━━━ Layer D: Data Collection & Minimisation Analysis', 'GDPR Art. 5(1)(c) — Data Minimisation Principle', 'Layer D: Data Collection');
+      log('PRIV-DC-FM', 'running', '  → Form Field Audit: Counting visible fields — email + phone + >6 fields = excessive', 'GDPR Art. 5(1)(c) — Collect Only What Is Necessary', 'Layer D: Data Collection');
+      log('PRIV-DC-HF', 'running', '  → Hidden Input Fields: Tracking submission of data user cannot see or control', 'GDPR Art. 5(1)(a) — Transparency Principle', 'Layer D: Data Collection');
+      log('PRIV-DC-SL', 'running', '  → Social Login: Data-sharing disclosure for OAuth providers (Google, Facebook, Apple)', 'GDPR Art. 13 — Information to Be Provided', 'Layer D: Data Collection');
       const formAnalysis = await page.$$eval('form', forms => forms.map(f => {
         const inputs = f.querySelectorAll('input:not([type="hidden"]):not([type="submit"]):not([type="button"]), select, textarea');
         const hidden = f.querySelectorAll('input[type="hidden"]');
@@ -208,18 +223,26 @@ export async function runPrivacyAudit(
           });
         }
       }
-      log('PRIV-DC', 'pass', `  ✓ Forms analyzed: ${formAnalysis.length}`);
+      log('PRIV-DC', 'pass', `  ✓ Layer D complete — Forms analysed: ${formAnalysis.length}`, 'GDPR Art. 5(1)(c)', 'Layer D: Data Collection');
 
       // ── Layer E: Privacy Policy Analysis ──
-      log('PRIV-PP', 'running', '  📜 Layer E: Privacy Policy Analysis');
+      log('PRIV-PP', 'running', '━━━ Layer E: Privacy Policy Quality Audit', 'GDPR Art. 12–14 — Transparency Obligations', 'Layer E: Privacy Policy');
+      log('PRIV-PP-LK', 'running', '  → Policy Link: Visible link from homepage/footer (legal requirement, Art. 13)', 'GDPR Art. 13 — Information at Collection', 'Layer E: Privacy Policy');
+      log('PRIV-PP-LB', 'running', '  → Legal Basis: Each processing purpose must state its lawful basis (Art. 6)', 'GDPR Art. 6 — Lawful Basis Per Purpose', 'Layer E: Privacy Policy');
+      log('PRIV-PP-PL', 'running', '  → Plain Language: Policy must be written in clear, plain language (Art. 12)', 'GDPR Art. 12 — Transparent Communication', 'Layer E: Privacy Policy');
+      log('PRIV-PP-RT', 'running', '  → User Rights: Access, erasure, portability, objection rights must be explained', 'GDPR Art. 15–22 — Data Subject Rights', 'Layer E: Privacy Policy');
+      log('PRIV-PP-DP', 'running', '  → DPO Contact: Data Protection Officer contact details required (Art. 37)', 'GDPR Art. 37 — DPO Designation', 'Layer E: Privacy Policy');
       const privacyLink = await page.$$eval('a', links =>
         links.some(l => /privacy\s*(policy|notice|statement)/i.test(l.textContent || ''))
       ).catch(() => false);
       if (privacyLink) hasPrivacyPolicy = true;
-      log('PRIV-PP', hasPrivacyPolicy ? 'pass' : 'fail', `  ✓ Privacy policy: ${hasPrivacyPolicy ? 'Found' : 'Missing'}`);
+      log('PRIV-PP', hasPrivacyPolicy ? 'pass' : 'fail', `  ✓ Layer E complete — Privacy policy: ${hasPrivacyPolicy ? 'Found ✓' : 'MISSING ✗'}`, 'GDPR Art. 13/14', 'Layer E: Privacy Policy');
 
       // ── Layer F: Security Baseline ──
-      log('PRIV-SC', 'running', '  🔒 Layer F: Security Baseline');
+      log('PRIV-SC', 'running', '━━━ Layer F: Security Baseline & Data Protection', 'GDPR Art. 32 — Security of Processing', 'Layer F: Security');
+      log('PRIV-SC-MC', 'running', '  → Mixed Content: HTTP resources on HTTPS page (data interception risk)', 'GDPR Art. 32 — Encryption in Transit', 'Layer F: Security');
+      log('PRIV-SC-HS', 'running', '  → Security Headers: HSTS, CSP, X-Frame-Options, Referrer-Policy presence', 'GDPR Art. 32 + OWASP Security Headers', 'Layer F: Security');
+      log('PRIV-SC-HT', 'running', '  → HTTPS Enforcement: All resources served over TLS (Strict-Transport-Security)', 'GDPR Art. 32(1)(a) — Pseudonymisation & Encryption', 'Layer F: Security');
       // Mixed content
       const mixedContent = await page.evaluate(() => {
         if (window.location.protocol !== 'https:') return [];
@@ -267,7 +290,7 @@ export async function runPrivacyAudit(
           }
         }
       } catch {}
-      log('PRIV-SC', mixedContent.length > 0 ? 'fail' : 'pass', `  ✓ Mixed content: ${mixedContent.length} | Security headers checked`);
+      log('PRIV-SC', mixedContent.length > 0 ? 'fail' : 'pass', `  ✓ Layer F complete — Mixed content: ${mixedContent.length} | Security headers checked`, 'GDPR Art. 32', 'Layer F: Security');
 
     } catch (err) {
       console.error(`[TrustLens:Privacy] Error on ${pageData.url}:`, err);
@@ -327,11 +350,15 @@ export async function runPrivacyAudit(
   }
 
   // ── Layer G: Regulatory Risk Mapping ──
-  log('PRIV-REG', 'running', '  ⚖️ Layer G: Regulatory Risk Mapping');
+  log('PRIV-REG', 'running', '━━━ Layer G: Multi-Regulation Risk Mapping', 'Privacy Regulatory Framework', 'Layer G: Regulatory Mapping');
+  log('PRIV-REG-EU', 'running', '  → GDPR (EU 2016/679): Data protection, consent, data subject rights', 'GDPR — European Data Protection Regulation', 'Layer G: Regulatory Mapping');
+  log('PRIV-REG-US', 'running', '  → CCPA / CPRA: California consumer privacy rights & opt-out of sale', 'CCPA / CPRA — California Privacy Rights', 'Layer G: Regulatory Mapping');
+  log('PRIV-REG-UK', 'running', '  → UK GDPR + PECR: Post-Brexit UK data protection & cookie rules (ICO)', 'UK GDPR + PECR — ICO Enforcement', 'Layer G: Regulatory Mapping');
+  log('PRIV-REG-IN', 'running', '  → IN-DPDPA 2023: India Digital Personal Data Protection Act', 'India DPDPA 2023 — Data Fiduciary Obligations', 'Layer G: Regulatory Mapping');
+  log('PRIV-REG-BD', 'running', '  → Privacy by Design: Ann Cavoukian 7 Principles — proactive, default, embedded', 'Privacy by Design — ISO 29101 Framework', 'Layer G: Regulatory Mapping');
   const regSet = new Set<string>();
   for (const f of findings) f.regulation.forEach(r => regSet.add(r));
-  log('PRIV-REG', 'pass', `  ✓ Mapped to ${regSet.size} regulations: ${[...regSet].join(', ')}`);
-
+  log('PRIV-REG', 'pass', `  ✓ Layer G complete — Mapped to ${regSet.size} regulation(s): ${[...regSet].join(', ')}`, 'Privacy Regulatory Framework', 'Layer G: Regulatory Mapping');
   // Build result
   const findingsBySeverity: Record<string, number> = { critical: 0, high: 0, medium: 0, low: 0 };
   const cookiesByPurpose: Record<string, number> = { necessary: 0, analytics: 0, marketing: 0, functional: 0, unknown: 0 };

@@ -3,20 +3,23 @@ import { useState, useEffect } from 'react';
 import Link from 'next/link';
 
 interface Audit {
-  id: string; status: string; config: { url?: string; type: string; wcagLevels?: string[]; standard?: string };
+  id: string; status: string;
+  config: { url?: string; type: string; wcagLevels?: string[]; standard?: string; enabledPillars?: string[] };
   score: { overall: number; complianceLevel: string; totalIssues: number; testsRun?: number };
+  trustScore?: { overall: number; trustLevel: string };
   progress: number; startedAt: string; completedAt?: string;
   crawlCoverage?: { totalPagesFound: number; pagesAudited: number; coveragePercent: number };
 }
 
-const compColors: Record<string, string> = {
-  'non-compliant': '#FF3356', 'partially-compliant': '#F0AB00',
-  'aa-compliant': '#0091DA', 'aaa-compliant': '#00B2A9'
+const PILLAR_META: Record<string, { icon: string; label: string; color: string; desc: string; regs: string[] }> = {
+  accessibility: { icon: '♿', label: 'Accessibility', color: '#0091DA', desc: 'WCAG 2.2, EN 301 549, Section 508 — automated + AI visual + journey testing', regs: ['WCAG 2.2', 'EN 301 549', 'Section 508', 'WCAG 2.1'] },
+  darkpatterns:  { icon: '🕵️', label: 'Dark Patterns', color: '#9B59B6', desc: 'Brignull 12-pattern taxonomy, EU DSA Art. 25, FTC §5, cognitive bias exploitation', regs: ['EU DSA', 'FTC §5', 'GDPR', 'DPDPA'] },
+  performance:   { icon: '⚡', label: 'Performance', color: '#00BA8C', desc: 'Core Web Vitals (LCP/INP/CLS), RAIL model, Lighthouse scoring, mobile 4G', regs: ['CWV', 'RAIL', 'Lighthouse', 'HTTP/2'] },
+  privacy:       { icon: '🔒', label: 'Privacy', color: '#E67E22', desc: 'GDPR Art. 5–37, CCPA/CPRA, DPDPA 2023, ePrivacy, ICO enforcement', regs: ['GDPR', 'CCPA', 'DPDPA', 'ePrivacy'] },
 };
-const compLabels: Record<string, string> = {
-  'non-compliant': 'Non-Compliant', 'partially-compliant': 'Partially Compliant',
-  'aa-compliant': 'AA Compliant', 'aaa-compliant': 'AAA Compliant'
-};
+
+const compColors: Record<string, string> = { 'non-compliant': '#FF3356', 'partially-compliant': '#F0AB00', 'aa-compliant': '#0091DA', 'aaa-compliant': '#00B2A9' };
+const compLabels: Record<string, string> = { 'non-compliant': 'Non-Compliant', 'partially-compliant': 'Partially Compliant', 'aa-compliant': 'AA Compliant', 'aaa-compliant': 'AAA Compliant' };
 
 export default function HomePage() {
   const [audits, setAudits] = useState<Audit[]>([]);
@@ -24,10 +27,7 @@ export default function HomePage() {
 
   useEffect(() => {
     const fetchAudits = async () => {
-      try {
-        const res = await fetch('/api/audit/list');
-        if (res.ok) setAudits(await res.json());
-      } catch { /* ignore */ }
+      try { const res = await fetch('/api/audit/list'); if (res.ok) setAudits(await res.json()); } catch { /* ignore */ }
       setLoading(false);
     };
     fetchAudits();
@@ -35,106 +35,169 @@ export default function HomePage() {
     return () => clearInterval(i);
   }, []);
 
-  const running = audits.filter(a => a.status !== 'complete' && a.status !== 'error');
+  const running   = audits.filter(a => a.status !== 'complete' && a.status !== 'error');
   const completed = audits.filter(a => a.status === 'complete');
-
-  const avgScore = completed.length
-    ? Math.round(completed.reduce((s, a) => s + a.score.overall, 0) / completed.length)
-    : 0;
+  const avgScore  = completed.length ? Math.round(completed.reduce((s, a) => s + a.score.overall, 0) / completed.length) : 0;
 
   return (
     <div>
-      {/* ── KPMG Hero ── */}
+      {/* ══ HERO ══════════════════════════════════════════════════════════ */}
       <div className="hero">
-        <div style={{ marginBottom: 20 }}>
+        <div style={{ marginBottom: 18 }}>
           <span className="kpmg-ai-badge" style={{ fontSize: 12 }}>
             <span className="kpmg-ai-dot" />
-            KPMG AI — Powered by GPT-4o
+            KPMG AI — GPT-4o · Playwright · axe-core
           </span>
         </div>
 
         <h1 className="hero-title">
-          KPMG <span>TrustLens</span><br />Digital Compliance Intelligence
+          KPMG <span>TrustLens</span><br />
+          Enterprise AI Governance &amp; Experience Audit
         </h1>
 
-        <p className="hero-subtitle">
-          AI-powered 4-pillar digital trust auditing: Accessibility · Dark Patterns · Performance · Privacy.
-          Enterprise-grade compliance intelligence for websites, portals, and digital products.
+        <p className="hero-subtitle" style={{ maxWidth: 620, margin: '0 auto 36px' }}>
+          The only 4-pillar audit platform that combines DOM analysis, AI vision,
+          behavioural simulation and regulatory mapping in a single pipeline.
+          Accessibility · Dark Patterns · Performance · Privacy.
         </p>
 
-        <div style={{ display: 'flex', gap: 12, justifyContent: 'center', flexWrap: 'wrap', marginBottom: 56 }}>
-          <Link href="/audit" className="btn btn-primary btn-lg">
-            🚀 Start New Audit
-          </Link>
-          <a href="#audits" className="btn btn-secondary btn-lg">
-            📊 View History
-          </a>
+        <div style={{ display: 'flex', gap: 12, justifyContent: 'center', flexWrap: 'wrap', marginBottom: 48 }}>
+          <Link href="/audit" className="btn btn-primary btn-lg">🚀 Start Free Audit</Link>
+          <a href="#audits" className="btn btn-secondary btn-lg">📋 View History</a>
         </div>
 
-        {/* Stats row */}
-        <div style={{ display: 'flex', justifyContent: 'center', gap: 36, flexWrap: 'wrap' }}>
+        {/* Stats strip */}
+        <div style={{ display: 'flex', justifyContent: 'center', gap: 40, flexWrap: 'wrap' }}>
           {[
-            { val: '4 Pillars', label: 'Audit Domains', color: 'var(--accent-blue)' },
-            { val: '30+ Rules', label: 'Dark Pattern Detection', color: '#9B59B6' },
-            { val: 'WCAG 2.2', label: 'Standard Coverage', color: 'var(--kpmg-teal)' },
-            { val: 'GPT-4o', label: 'AI Engine', color: '#A78BFA' },
+            { val: '4 Pillars', label: 'Audit Domains',          color: 'var(--accent-blue)' },
+            { val: '7 Layers', label: 'Per-Engine Depth',        color: '#9B59B6' },
+            { val: 'GDPR+DSA', label: 'Regulation Coverage',     color: '#E67E22' },
+            { val: 'GPT-4o',   label: 'Vision AI Engine',        color: '#A78BFA' },
           ].map(s => (
             <div key={s.label} style={{ textAlign: 'center' }}>
               <div style={{ fontSize: 20, fontWeight: 700, color: s.color, marginBottom: 3 }}>{s.val}</div>
-              <div style={{ fontSize: 11, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.07em', fontWeight: 600 }}>{s.label}</div>
+              <div style={{ fontSize: 10, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', fontWeight: 600 }}>{s.label}</div>
             </div>
           ))}
         </div>
       </div>
 
       <div className="container">
-        {/* Feature Cards */}
-        <div className="grid-3 animate-slide-up stagger-1" style={{ marginBottom: 44 }}>
-          {[
-            {
-              icon: '🌐', title: 'Website Auditing', color: 'var(--kpmg-light-blue)',
-              desc: 'Deep multi-page crawl with Playwright, axe-core engine, custom WCAG rule tests, and journey simulation.'
-            },
-            {
-              icon: '🔐', title: 'Portal Access', color: 'var(--accent-teal)',
-              desc: 'Authenticated portal auditing with login flow automation — test behind sign-in pages.'
-            },
-            {
-              icon: '📄', title: 'PDF Accessibility', color: '#A78BFA',
-              desc: 'PDF/UA and WCAG PDF technique compliance checking including tagged structure, reading order, and alt text.'
-            },
-          ].map(f => (
-            <div key={f.title} className="glass-card" style={{ borderTop: `3px solid ${f.color}` }}>
-              <div style={{ fontSize: 36, marginBottom: 12 }}>{f.icon}</div>
-              <h3 style={{ fontWeight: 700, marginBottom: 8, fontSize: 15 }}>{f.title}</h3>
-              <p style={{ fontSize: 13, color: 'var(--text-secondary)', lineHeight: 1.65 }}>{f.desc}</p>
-            </div>
-          ))}
-        </div>
 
-        {/* WCAG levels info strip */}
-        <div className="glass-card animate-slide-up stagger-2" style={{ marginBottom: 44, padding: '18px 24px' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap' }}>
-            <div style={{ flex: 1 }}>
-              <h3 style={{ fontWeight: 700, fontSize: 14, marginBottom: 5 }}>Standards Covered</h3>
-              <p style={{ fontSize: 12, color: 'var(--text-secondary)', margin: 0 }}>Select your required conformance level before starting an audit</p>
-            </div>
-            <div style={{ display: 'flex', gap: 8 }}>
-              <div className="audit-level-chip a">Level A — Minimum</div>
-              <div className="audit-level-chip aa">Level AA — Standard</div>
-              <div className="audit-level-chip aaa">Level AAA — Enhanced</div>
-            </div>
-            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-              <span className="badge badge-info">WCAG 2.2</span>
-              <span className="badge badge-na">EN 301 549</span>
-              <span className="badge badge-na">Section 508</span>
-            </div>
+        {/* ══ 4-PILLAR CARDS ════════════════════════════════════════════ */}
+        <div style={{ marginBottom: 44 }}>
+          <div style={{ textAlign: 'center', marginBottom: 24 }}>
+            <h2 style={{ fontSize: 22, fontWeight: 700, marginBottom: 6 }}>Four Pillars of Digital Trust</h2>
+            <p style={{ fontSize: 13, color: 'var(--text-secondary)' }}>Each pillar runs independently or combined — scored to a unified Trust Score</p>
+          </div>
+          <div className="grid-4 animate-slide-up stagger-1">
+            {Object.entries(PILLAR_META).map(([key, p]) => (
+              <div key={key} className="glass-card" style={{ borderTop: `3px solid ${p.color}`, padding: '20px 18px' }}>
+                <div style={{ fontSize: 32, marginBottom: 10 }}>{p.icon}</div>
+                <h3 style={{ fontWeight: 700, fontSize: 14, marginBottom: 6, color: p.color }}>{p.label}</h3>
+                <p style={{ fontSize: 11, color: 'var(--text-secondary)', lineHeight: 1.65, marginBottom: 12 }}>{p.desc}</p>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+                  {p.regs.map(r => (
+                    <span key={r} style={{ fontSize: 8, padding: '2px 6px', borderRadius: 99, background: `${p.color}18`, color: p.color, border: `1px solid ${p.color}35`, fontWeight: 700 }}>{r}</span>
+                  ))}
+                </div>
+              </div>
+            ))}
           </div>
         </div>
 
-        {/* ── Summary Stats (if audits exist) ── */}
+        {/* ══ AI CAPABILITIES ════════════════════════════════════════════ */}
+        <div className="glass-card animate-slide-up stagger-2" style={{ marginBottom: 44, padding: '22px 28px', background: 'linear-gradient(135deg, rgba(0,51,141,0.12) 0%, rgba(155,89,182,0.08) 100%)', border: '1px solid rgba(0,145,218,0.2)' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 18 }}>
+            <span style={{ fontSize: 22 }}>🤖</span>
+            <div>
+              <div style={{ fontWeight: 700, fontSize: 15 }}>How the AI thinks</div>
+              <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>Multi-source intelligence layered per pillar</div>
+            </div>
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: 14 }}>
+            {[
+              { icon: '🌐', title: 'DOM Analysis',        desc: 'Playwright full-page crawl, axe-core engine, custom WCAG rule tests',   color: '#0091DA' },
+              { icon: '👁️', title: 'Vision AI (GPT-4o)', desc: 'Screenshot analysis for contrast, layout, dark patterns, consent UI',   color: '#9B59B6' },
+              { icon: '🎭', title: 'Behavioural Sim',     desc: 'Journey testing, interaction flow, subscribe vs cancel path ratio',      color: '#00BA8C' },
+              { icon: '⚖️', title: 'Regulatory Map',      desc: 'GDPR, DSA, FTC, DPDPA — mapped to each finding automatically',         color: '#E67E22' },
+              { icon: '📊', title: 'Confidence Scoring',  desc: 'High/Medium/Low confidence per finding with evidence chain',            color: '#A78BFA' },
+              { icon: '🔬', title: '7-Layer Engines',     desc: 'DOM → Visual → NLP → Deep Code → A11Y → Flow → Regulatory',            color: '#F0AB00' },
+            ].map(c => (
+              <div key={c.title} style={{ display: 'flex', gap: 10, alignItems: 'flex-start' }}>
+                <span style={{ fontSize: 20, flexShrink: 0 }}>{c.icon}</span>
+                <div>
+                  <div style={{ fontWeight: 700, fontSize: 12, color: c.color, marginBottom: 3 }}>{c.title}</div>
+                  <div style={{ fontSize: 11, color: 'var(--text-secondary)', lineHeight: 1.55 }}>{c.desc}</div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* ══ MULTI-INPUT SHOWCASE ══════════════════════════════════════ */}
+        <div style={{ marginBottom: 44 }}>
+          <div style={{ textAlign: 'center', marginBottom: 20 }}>
+            <h2 style={{ fontSize: 18, fontWeight: 700, marginBottom: 6 }}>Audit Any Digital Asset</h2>
+            <p style={{ fontSize: 13, color: 'var(--text-secondary)' }}>Multiple input modes — from live websites to video recordings</p>
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: 12, marginBottom: 0 }}>
+            {[
+              { icon: '🌐', mode: 'Website / Portal', conf: '95% confidence', desc: 'Full DOM audit, multi-page crawl, live interaction', color: '#0091DA', available: true },
+              { icon: '📄', mode: 'PDF Document',      conf: '85% confidence', desc: 'PDF/UA, tagged structure, reading order, alt text',  color: '#00BA8C', available: true },
+              { icon: '📸', mode: 'Screenshot/Image',  conf: '70% confidence', desc: 'GPT-4o visual analysis — contrast, layout, consent', color: '#9B59B6', available: true },
+              { icon: '🎥', mode: 'Video Recording',   conf: '60% confidence', desc: 'Frame-by-frame behavioural pattern detection',       color: '#E67E22', available: true },
+            ].map(m => (
+              <div key={m.mode} className="glass-card" style={{ padding: '16px', borderLeft: `3px solid ${m.color}`, position: 'relative' }}>
+                <div style={{ fontSize: 26, marginBottom: 8 }}>{m.icon}</div>
+                <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 4 }}>{m.mode}</div>
+                <div style={{ fontSize: 11, color: 'var(--text-secondary)', marginBottom: 8, lineHeight: 1.5 }}>{m.desc}</div>
+                <span style={{ fontSize: 9, padding: '2px 7px', borderRadius: 99, background: `${m.color}18`, color: m.color, border: `1px solid ${m.color}40`, fontWeight: 700 }}>{m.conf}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* ══ HOW IT WORKS ════════════════════════════════════════════════ */}
+        <div className="glass-card animate-slide-up stagger-3" style={{ marginBottom: 44, padding: '24px 28px' }}>
+          <h2 style={{ fontSize: 16, fontWeight: 700, marginBottom: 20, textAlign: 'center' }}>How TrustLens Works</h2>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 24 }}>
+            {[
+              { step: '01', icon: '⚙️', title: 'Configure', desc: 'Select your input (URL, PDF, image, video), choose which pillars to audit, set crawl depth and WCAG level.' },
+              { step: '02', icon: '🔬', title: 'AI Analysis', desc: '7-layer engines run simultaneously. DOM, visual AI, NLP, deep code inspection, journey testing, regulatory mapping.' },
+              { step: '03', icon: '📋', title: 'Enterprise Report', desc: 'Pillar-specific PDF/DOCX/PPTX with issue register, remediation roadmap, team matrix, and compliance certificates.' },
+            ].map(s => (
+              <div key={s.step} style={{ textAlign: 'center' }}>
+                <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--accent-blue)', letterSpacing: '0.1em', marginBottom: 8 }}>STEP {s.step}</div>
+                <div style={{ fontSize: 28, marginBottom: 10 }}>{s.icon}</div>
+                <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 6 }}>{s.title}</div>
+                <div style={{ fontSize: 12, color: 'var(--text-secondary)', lineHeight: 1.65 }}>{s.desc}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* ══ COMPLIANCE GRID ════════════════════════════════════════════ */}
+        <div style={{ marginBottom: 44 }}>
+          <div style={{ textAlign: 'center', marginBottom: 16 }}>
+            <h2 style={{ fontSize: 16, fontWeight: 700, marginBottom: 4 }}>Regulation & Standards Coverage</h2>
+            <p style={{ fontSize: 12, color: 'var(--text-muted)' }}>Every finding is automatically mapped to applicable regulations</p>
+          </div>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, justifyContent: 'center' }}>
+            {[
+              ['♿ WCAG 2.2','#0091DA'], ['♿ EN 301 549','#0091DA'], ['♿ Section 508','#0091DA'], ['♿ WCAG 2.1','#0091DA'],
+              ['🛡️ GDPR Art. 5–37','#9B59B6'], ['🛡️ CCPA / CPRA','#9B59B6'], ['🛡️ IN-DPDPA 2023','#9B59B6'], ['🛡️ ePrivacy','#9B59B6'],
+              ['⚖️ EU DSA Art. 25','#E67E22'], ['⚖️ FTC §5','#E67E22'], ['⚖️ ICO Guidance','#E67E22'], ['⚖️ CNIL','#E67E22'],
+              ['⚡ Core Web Vitals','#00BA8C'], ['⚡ RAIL Model','#00BA8C'], ['⚡ Lighthouse','#00BA8C'],
+            ].map(([label, color]) => (
+              <span key={label} style={{ fontSize: 11, padding: '5px 12px', borderRadius: 99, background: `${color}14`, color, border: `1px solid ${color}35`, fontWeight: 600 }}>{label}</span>
+            ))}
+          </div>
+        </div>
+
+        {/* ══ SUMMARY STATS ══════════════════════════════════════════════ */}
         {completed.length > 0 && (
-          <div className="grid-4 animate-slide-up stagger-3" style={{ marginBottom: 28 }}>
+          <div className="grid-4 animate-slide-up" style={{ marginBottom: 28 }}>
             {[
               { val: completed.length, label: 'Audits Completed', color: 'var(--accent-blue)' },
               { val: avgScore, label: 'Average Score', color: avgScore >= 75 ? '#00BA8C' : avgScore >= 50 ? '#F0AB00' : '#FF3356' },
@@ -149,7 +212,7 @@ export default function HomePage() {
           </div>
         )}
 
-        {/* ── Running Audits ── */}
+        {/* ══ RUNNING AUDITS ══════════════════════════════════════════════ */}
         {running.length > 0 && (
           <div style={{ marginBottom: 28 }}>
             <h2 style={{ fontSize: 16, fontWeight: 700, marginBottom: 12 }}>⏳ Running Audits</h2>
@@ -158,10 +221,15 @@ export default function HomePage() {
                 <Link key={a.id} href={`/audit/${a.id}`} style={{ textDecoration: 'none' }}>
                   <div className="glass-card animate-glow" style={{ cursor: 'pointer' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 9 }}>
-                      <div className="animate-spin" style={{ width: 18, height: 18, borderRadius: '50%', border: '2px solid rgba(0,145,218,0.2)', borderTopColor: 'var(--accent-blue)' }} />
+                      <div className="animate-spin" style={{ width: 18, height: 18, borderRadius: '50%', border: '2px solid rgba(0,145,218,0.2)', borderTopColor: 'var(--accent-blue)', flexShrink: 0 }} />
                       <div style={{ flex: 1 }}>
                         <div style={{ fontWeight: 600, fontSize: 13 }}>{a.config?.url || 'PDF Audit'}</div>
-                        <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{a.status} · {a.progress}%</div>
+                        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 3 }}>
+                          {(a.config?.enabledPillars || []).map(p => {
+                            const m = PILLAR_META[p]; if (!m) return null;
+                            return <span key={p} style={{ fontSize: 9, padding: '1px 6px', borderRadius: 99, background: `${m.color}18`, color: m.color, border: `1px solid ${m.color}40`, fontWeight: 700 }}>{m.icon} {m.label}</span>;
+                          })}
+                        </div>
                       </div>
                       <div style={{ fontSize: 18, fontWeight: 300, color: 'var(--accent-blue)' }}>{a.progress}%</div>
                     </div>
@@ -173,7 +241,7 @@ export default function HomePage() {
           </div>
         )}
 
-        {/* ── Audit History ── */}
+        {/* ══ AUDIT HISTORY ══════════════════════════════════════════════ */}
         <div id="audits">
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
             <h2 style={{ fontSize: 16, fontWeight: 700 }}>📋 Audit History</h2>
@@ -189,10 +257,13 @@ export default function HomePage() {
 
           {!loading && completed.length === 0 && (
             <div className="glass-card" style={{ textAlign: 'center', padding: 56 }}>
-              <div style={{ fontSize: 52, marginBottom: 16 }}>♿</div>
+              <div style={{ fontSize: 52, marginBottom: 16 }}>🛡️</div>
               <h3 style={{ fontWeight: 700, marginBottom: 8, fontSize: 18 }}>No Audits Yet</h3>
-              <p style={{ color: 'var(--text-secondary)', marginBottom: 22, fontSize: 14 }}>
-                Start your first KPMG accessibility audit to see results here.
+              <p style={{ color: 'var(--text-secondary)', marginBottom: 10, fontSize: 14 }}>
+                Start your first TrustLens audit to get enterprise-grade digital trust insights.
+              </p>
+              <p style={{ color: 'var(--text-muted)', fontSize: 12, marginBottom: 24 }}>
+                Covers Accessibility · Dark Patterns · Performance · Privacy in one run
               </p>
               <Link href="/audit" className="btn btn-primary btn-lg">🚀 Start First Audit</Link>
             </div>
@@ -200,26 +271,43 @@ export default function HomePage() {
 
           <div style={{ display: 'grid', gap: 12 }}>
             {completed.map(a => {
-              const level = a.config?.wcagLevels?.includes('AAA') ? 'AAA' : a.config?.wcagLevels?.includes('AA') ? 'AA' : 'A';
+              const level      = a.config?.wcagLevels?.includes('AAA') ? 'AAA' : a.config?.wcagLevels?.includes('AA') ? 'AA' : 'A';
               const scoreColor = a.score.overall >= 75 ? '#00BA8C' : a.score.overall >= 50 ? '#F0AB00' : '#FF3356';
+              const pillars    = a.config?.enabledPillars || [];
+              const trustColor = a.trustScore ? (a.trustScore.overall >= 80 ? '#00BA8C' : a.trustScore.overall >= 60 ? '#F0AB00' : '#FF3356') : scoreColor;
               return (
                 <Link key={a.id} href={`/audit/${a.id}`} style={{ textDecoration: 'none' }}>
-                  <div className="glass-card" style={{ cursor: 'pointer', display: 'flex', gap: 16, alignItems: 'center' }}>
+                  <div className="glass-card" style={{ cursor: 'pointer', display: 'flex', gap: 14, alignItems: 'center' }}>
                     {/* Score circle */}
-                    <div style={{ width: 58, height: 58, borderRadius: '50%', border: `2.5px solid ${scoreColor}`, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                      <div style={{ fontSize: 18, fontWeight: 300, color: scoreColor, letterSpacing: '-0.02em', lineHeight: 1 }}>{a.score.overall}</div>
-                      <div style={{ fontSize: 9, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Score</div>
+                    <div style={{ width: 56, height: 56, borderRadius: '50%', border: `2.5px solid ${trustColor}`, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                      <div style={{ fontSize: 17, fontWeight: 300, color: trustColor, lineHeight: 1 }}>
+                        {a.trustScore ? a.trustScore.overall : a.score.overall}
+                      </div>
+                      <div style={{ fontSize: 8, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                        {a.trustScore ? 'Trust' : 'Score'}
+                      </div>
                     </div>
 
                     <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 3, flexWrap: 'wrap' }}>
-                        <span style={{ fontWeight: 700, fontSize: 14, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 300 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 4, flexWrap: 'wrap' }}>
+                        <span style={{ fontWeight: 700, fontSize: 13, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 280 }}>
                           {a.config?.url || 'PDF Document'}
                         </span>
-                        <span className={`audit-level-chip ${level.toLowerCase()}`} style={{ fontSize: 10, padding: '3px 8px' }}>
-                          {a.config?.standard || 'WCAG 2.2'} {level}
-                        </span>
+                        {pillars.includes('accessibility') && (
+                          <span className={`audit-level-chip ${level.toLowerCase()}`} style={{ fontSize: 9, padding: '2px 7px' }}>
+                            {a.config?.standard || 'WCAG 2.2'} {level}
+                          </span>
+                        )}
                       </div>
+                      {/* Pillar badges */}
+                      {pillars.length > 0 && (
+                        <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap', marginBottom: 4 }}>
+                          {pillars.map(p => {
+                            const m = PILLAR_META[p]; if (!m) return null;
+                            return <span key={p} style={{ fontSize: 9, padding: '1px 6px', borderRadius: 99, background: `${m.color}15`, color: m.color, border: `1px solid ${m.color}35`, fontWeight: 700 }}>{m.icon} {m.label}</span>;
+                          })}
+                        </div>
+                      )}
                       <div style={{ display: 'flex', gap: 10, fontSize: 11, color: 'var(--text-muted)', flexWrap: 'wrap' }}>
                         <span>📄 {a.crawlCoverage?.pagesAudited ?? '—'} pages</span>
                         <span>🔍 {a.score.totalIssues} issues</span>
@@ -239,6 +327,7 @@ export default function HomePage() {
             })}
           </div>
         </div>
+
       </div>
     </div>
   );
