@@ -131,7 +131,7 @@ async function runAuditPipeline(id: string, config: AuditConfig) {
     if (crawlResult.pages.length === 0) {
       await closeCrawler(crawlResult.browser);
       audit.status = 'error';
-      audit.error = `Could not crawl any pages from ${config.url}. The site may be blocking automated access (WAF/Cloudflare), redirecting to a different domain, or the URL may be unreachable.`;
+      audit.error = `Could not crawl any pages from ${config.url}. The site is blocking automated access (WAF/Cloudflare/Akamai). Try: (1) auditing a specific inner page URL, (2) uploading a screenshot via the Image tab, or (3) check that the URL is publicly accessible.`;
       audit.progressMessage = audit.error;
       audit.score = calculateScore([], 0);
       return;

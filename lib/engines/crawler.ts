@@ -28,20 +28,76 @@ const SKIP_PATTERNS = [
   /#$/,
 ];
 
+// ── Realistic browser user-agents (rotated to avoid detection) ──
+const USER_AGENTS = [
+  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36 Edg/123.0.0.0',
+  'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+  'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+];
+
+// Script injected before any page script runs — hides Playwright/webdriver signals
+const STEALTH_INIT_SCRIPT = `
+  // Remove webdriver flag
+  Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
+  // Fake plugins array
+  Object.defineProperty(navigator, 'plugins', { get: () => [1, 2, 3, 4, 5] });
+  // Fake languages
+  Object.defineProperty(navigator, 'languages', { get: () => ['en-US', 'en'] });
+  // Spoof chrome runtime
+  window.chrome = { runtime: {} };
+  // Fake permissions
+  const originalQuery = window.navigator.permissions?.query;
+  if (originalQuery) {
+    window.navigator.permissions.query = (parameters) =>
+      parameters.name === 'notifications'
+        ? Promise.resolve({ state: Notification.permission })
+        : originalQuery(parameters);
+  }
+`;
+
 const CONCURRENCY = 3;
 
 export async function crawlWebsite(options: CrawlOptions): Promise<CrawlResult> {
   const { url, maxPages, crawlDepth, loginConfig, onProgress } = options;
 
+  const userAgent = USER_AGENTS[Math.floor(Math.random() * USER_AGENTS.length)];
+
   const browser = await chromium.launch({
     headless: true,
-    args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage']
+    args: [
+      '--no-sandbox',
+      '--disable-setuid-sandbox',
+      '--disable-dev-shm-usage',
+      '--disable-blink-features=AutomationControlled',
+      '--disable-infobars',
+      '--disable-extensions',
+      '--no-first-run',
+      '--no-default-browser-check',
+      '--window-size=1280,720',
+    ]
   });
 
   const context = await browser.newContext({
     viewport: { width: 1280, height: 720 },
-    userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 KPMGAccessibilityAuditBot/3.0'
+    userAgent,
+    locale: 'en-US',
+    timezoneId: 'Asia/Kolkata',
+    geolocation: { latitude: 19.076, longitude: 72.877 }, // Mumbai
+    permissions: ['geolocation'],
+    extraHTTPHeaders: {
+      'Accept-Language': 'en-US,en;q=0.9',
+      'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
+      'Sec-Fetch-Dest': 'document',
+      'Sec-Fetch-Mode': 'navigate',
+      'Sec-Fetch-Site': 'none',
+      'Sec-Fetch-User': '?1',
+      'Upgrade-Insecure-Requests': '1',
+    },
   });
+
+  // Inject stealth script before page JS runs — hides automation signals
+  await context.addInitScript(STEALTH_INIT_SCRIPT);
 
   if (loginConfig) {
     onProgress?.('Performing login...', 5);
@@ -165,8 +221,35 @@ async function crawlSinglePage(
   const page = await context.newPage();
 
   try {
-    await page.goto(item.url, { waitUntil: 'domcontentloaded', timeout: 30000 });
+    // Human-like delay before navigation to avoid rate limiting
+    await page.waitForTimeout(500 + Math.random() * 1000);
+
+    const response = await page.goto(item.url, { waitUntil: 'domcontentloaded', timeout: 30000 });
     await page.waitForLoadState('networkidle', { timeout: 12000 }).catch(() => {});
+
+    // Detect WAF blocks: Cloudflare challenge pages, Akamai, etc.
+    const finalUrl = page.url();
+    const statusCode = response?.status() ?? 200;
+    const isBlocked = await page.evaluate(() => {
+      const title = document.title.toLowerCase();
+      const body = document.body?.innerText?.toLowerCase() || '';
+      return (
+        title.includes('access denied') ||
+        title.includes('attention required') ||
+        title.includes('just a moment') ||
+        title.includes('security check') ||
+        body.includes('enable javascript and cookies') ||
+        body.includes('checking your browser') ||
+        (document.querySelectorAll('*').length < 10 && body.length < 200)
+      );
+    }).catch(() => false);
+
+    if (isBlocked || statusCode === 403 || statusCode === 429) {
+      // Attempt HTTP fallback for WAF-blocked pages
+      await page.close();
+      return await httpFallbackCrawl(item.url, baseUrl, maxDepth);
+    }
+
     await triggerLazyContent(page);
 
     const title = await page.title();
@@ -174,12 +257,12 @@ async function crawlSinglePage(
 
     let screenshot: string | undefined;
     try {
-      const buffer = await page.screenshot({ fullPage: true, type: 'png', timeout: 10000 });
+      const buffer = await page.screenshot({ fullPage: false, type: 'png', timeout: 10000 });
       screenshot = buffer.toString('base64');
     } catch { /* screenshot may fail on very large pages */ }
 
     const pageData: PageData = {
-      url: item.url,
+      url: finalUrl || item.url,
       title: title || 'Untitled Page',
       html,
       screenshot,
@@ -195,8 +278,78 @@ async function crawlSinglePage(
     return { pageData, discoveredLinks };
   } catch (error) {
     await page.close();
-    throw error;
+    // Try HTTP fallback if Playwright navigation fails
+    try {
+      return await httpFallbackCrawl(item.url, baseUrl, maxDepth);
+    } catch {
+      throw error;
+    }
   }
+}
+
+/**
+ * HTTP fallback crawler for WAF-protected sites.
+ * Uses a realistic fetch with headers to retrieve HTML directly.
+ * Cannot run JS, but provides structural HTML for accessibility analysis.
+ */
+async function httpFallbackCrawl(
+  url: string,
+  baseUrl: URL,
+  maxDepth: number
+): Promise<{ pageData: PageData; discoveredLinks: DiscoveredLink[] }> {
+  const userAgent = USER_AGENTS[Math.floor(Math.random() * USER_AGENTS.length)];
+  const res = await fetch(url, {
+    headers: {
+      'User-Agent': userAgent,
+      'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+      'Accept-Language': 'en-US,en;q=0.9',
+      'Accept-Encoding': 'gzip, deflate, br',
+      'Connection': 'keep-alive',
+      'Upgrade-Insecure-Requests': '1',
+      'Cache-Control': 'max-age=0',
+      'Sec-Fetch-Dest': 'document',
+      'Sec-Fetch-Mode': 'navigate',
+      'Sec-Fetch-Site': 'none',
+      'Sec-Fetch-User': '?1',
+    },
+    redirect: 'follow',
+    signal: AbortSignal.timeout(20000),
+  });
+
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  const html = await res.text();
+
+  // Extract title from HTML
+  const titleMatch = html.match(/<title[^>]*>([^<]*)<\/title>/i);
+  const title = titleMatch ? titleMatch[1].trim() : new URL(url).hostname;
+
+  // Extract internal links for discovery
+  const discoveredLinks: DiscoveredLink[] = [];
+  if (maxDepth > 0) {
+    const linkRegex = /href=["']([^"'#?][^"']*)["']/gi;
+    let match;
+    const seen = new Set<string>();
+    while ((match = linkRegex.exec(html)) !== null) {
+      try {
+        const full = new URL(match[1], url).href;
+        if (full.startsWith(baseUrl.origin) && !seen.has(full) && !SKIP_EXTENSIONS.test(full)) {
+          seen.add(full);
+          discoveredLinks.push({ url: full, method: 'internal-links' });
+          if (discoveredLinks.length >= 50) break;
+        }
+      } catch { /* ignore invalid URLs */ }
+    }
+  }
+
+  return {
+    pageData: {
+      url,
+      title: title || 'Page',
+      html,
+      timestamp: new Date().toISOString(),
+    },
+    discoveredLinks,
+  };
 }
 
 async function triggerLazyContent(page: Page): Promise<void> {
