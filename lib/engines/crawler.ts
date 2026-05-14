@@ -218,18 +218,35 @@ async function crawlSinglePage(
   baseUrl: URL,
   maxDepth: number
 ): Promise<{ pageData: PageData; discoveredLinks: DiscoveredLink[] }> {
-  const page = await context.newPage();
 
+  // ── Strategy: Try HTTP fetch first (no browser fingerprint = bypasses most WAFs).
+  // If it fails or returns a bot-challenge page, fall back to stealth Playwright.
   try {
-    // Human-like delay before navigation to avoid rate limiting
-    await page.waitForTimeout(500 + Math.random() * 1000);
+    const httpResult = await httpFallbackCrawl(item.url, baseUrl, maxDepth);
+    // Validate the HTML is a real page (not a Cloudflare/Akamai JS challenge)
+    const lc = httpResult.pageData.html.toLowerCase();
+    const isChallengePage =
+      lc.includes('just a moment') ||
+      lc.includes('enable javascript') ||
+      lc.includes('checking your browser') ||
+      lc.includes('cf-browser-verification') ||
+      lc.includes('_cf_chl_') ||
+      httpResult.pageData.html.length < 2000;
+
+    if (!isChallengePage) return httpResult;
+  } catch { /* HTTP failed — fall through to Playwright */ }
+
+  // ── Playwright fallback: stealth headless browser ──
+  const page = await context.newPage();
+  try {
+    await page.waitForTimeout(500 + Math.random() * 1500);
 
     const response = await page.goto(item.url, { waitUntil: 'domcontentloaded', timeout: 30000 });
     await page.waitForLoadState('networkidle', { timeout: 12000 }).catch(() => {});
 
-    // Detect WAF blocks: Cloudflare challenge pages, Akamai, etc.
     const finalUrl = page.url();
     const statusCode = response?.status() ?? 200;
+
     const isBlocked = await page.evaluate(() => {
       const title = document.title.toLowerCase();
       const body = document.body?.innerText?.toLowerCase() || '';
@@ -245,9 +262,8 @@ async function crawlSinglePage(
     }).catch(() => false);
 
     if (isBlocked || statusCode === 403 || statusCode === 429) {
-      // Attempt HTTP fallback for WAF-blocked pages
       await page.close();
-      return await httpFallbackCrawl(item.url, baseUrl, maxDepth);
+      throw new Error(`WAF blocked: HTTP ${statusCode}`);
     }
 
     await triggerLazyContent(page);
@@ -277,13 +293,8 @@ async function crawlSinglePage(
     await page.close();
     return { pageData, discoveredLinks };
   } catch (error) {
-    await page.close();
-    // Try HTTP fallback if Playwright navigation fails
-    try {
-      return await httpFallbackCrawl(item.url, baseUrl, maxDepth);
-    } catch {
-      throw error;
-    }
+    try { await page.close(); } catch { /* ignore */ }
+    throw error;
   }
 }
 

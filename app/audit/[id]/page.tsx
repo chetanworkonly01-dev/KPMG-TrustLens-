@@ -545,7 +545,7 @@ export default function AuditResultPage() {
       {data.trustScore && (
         <div style={{ marginBottom: 20 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
-            <h3 style={{ fontSize: 14, fontWeight: 700, margin: 0 }}>🛡️ Digital Trust Score</h3>
+            <h3 style={{ fontSize: 14, fontWeight: 700, margin: 0 }}>🛡️ TrustLens Score</h3>
             <span className={`trust-score-badge trust-level-${data.trustScore.trustLevel}`}>
               {data.trustScore.trustLevel === 'trusted' ? '✓ Trusted' : data.trustScore.trustLevel === 'moderate' ? '⚠ Moderate Risk' : data.trustScore.trustLevel === 'at-risk' ? '⚠ At Risk' : '✗ Critical Risk'}
             </span>

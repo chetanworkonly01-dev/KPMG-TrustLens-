@@ -183,7 +183,7 @@ export default function AuditPage() {
       {/* KPMG Header */}
       <div className="page-header">
         <h1 className="page-title">New TrustLens Audit</h1>
-        <p className="page-subtitle">AI-powered 4-pillar digital trust audit: Accessibility · Dark Patterns · Performance · Privacy</p>
+        <p className="page-subtitle">AI-powered 6-pillar digital trust audit: Accessibility · Dark Patterns · Performance · Privacy · Compliance Intelligence · Design Governance</p>
       </div>
 
       {/* TrustLens Pillar Selection */}
@@ -220,8 +220,30 @@ export default function AuditPage() {
             </label>
           ))}
         </div>
+        {/* Coming Soon Pillars */}
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginTop: 10 }}>
+          {[
+            { icon: '⚖️', label: 'Compliance Intelligence', desc: 'CCPA, RBI, SEBI, DPDPA governance mapping', color: '#06B6D4' },
+            { icon: '🎨', label: 'Design Governance', desc: 'Design tokens, CTA hierarchy, brand compliance', color: '#EC4899' },
+          ].map(p => (
+            <div key={p.label} style={{
+              display: 'flex', alignItems: 'center', gap: 10,
+              padding: '12px 14px', borderRadius: 'var(--radius-md)',
+              border: `2px dashed ${p.color}50`,
+              background: `${p.color}06`,
+              opacity: 0.8, position: 'relative',
+            }}>
+              <span style={{ fontSize: 22, flexShrink: 0 }}>{p.icon}</span>
+              <div style={{ flex: 1 }}>
+                <div style={{ fontSize: 12, fontWeight: 700, color: p.color, marginBottom: 2 }}>{p.label}</div>
+                <div style={{ fontSize: 10, color: 'var(--text-muted)' }}>{p.desc}</div>
+              </div>
+              <span style={{ fontSize: 8, fontWeight: 700, padding: '2px 7px', borderRadius: 99, background: `${p.color}20`, color: p.color, border: `1px solid ${p.color}40`, whiteSpace: 'nowrap' }}>COMING SOON</span>
+            </div>
+          ))}
+        </div>
         <div style={{ marginTop: 10, fontSize: 11, color: 'var(--text-muted)' }}>
-          {getEnabledPillars().length} of 4 pillars enabled · Unified Trust Score will be calculated across all selected domains
+          {getEnabledPillars().length} of 4 active pillars enabled · Unified TrustLens Score calculated across all selected domains
         </div>
       </div>
 

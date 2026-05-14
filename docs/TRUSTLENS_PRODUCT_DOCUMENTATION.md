@@ -34,14 +34,16 @@
 
 **KPMG TrustLens** is an AI-powered, multi-pillar digital audit platform that evaluates any website across four dimensions of digital trust in under 10 minutes:
 
-| Pillar | What It Measures |
-|---|---|
-| ♿ **Accessibility** | WCAG 2.2 compliance (Level A / AA / AAA) |
-| 🕵️ **Dark Patterns** | Ethical UX & deceptive interface detection |
-| ⚡ **Performance** | Core Web Vitals & resource optimisation |
-| 🔒 **Privacy** | Tracker detection, cookie audit & GDPR/DPDPA compliance |
+| Pillar | What It Measures | Status |
+|---|---|---|
+| ♿ **Accessibility** | WCAG 2.2 compliance (Level A / AA / AAA) | ✅ Live |
+| 🕵️ **Dark Patterns** | Ethical UX & deceptive interface detection | ✅ Live |
+| ⚡ **Performance** | Core Web Vitals & resource optimisation | ✅ Live |
+| 🔒 **Privacy** | Tracker detection, cookie audit & GDPR/DPDPA compliance | ✅ Live |
+| ⚖️ **Compliance Intelligence** | CCPA, RBI, SEBI, DPDPA governance mapping | 🔜 Coming Soon |
+| 🎨 **Design Governance** | Design tokens, CTA hierarchy, UI pattern audit | 🔜 Coming Soon |
 
-It produces a **Unified Digital Trust Score (0–100)** and generates enterprise-grade reports (PDF, DOCX) exportable for regulatory submissions, board presentations, and developer remediation.
+It produces a **Unified TrustLens Score (0–100)** and generates enterprise-grade reports (PDF, DOCX) exportable for regulatory submissions, board presentations, and developer remediation.
 
 **Key differentiator:** TrustLens goes beyond traditional rule-based scanners by combining browser automation, 57+ structured WCAG tests, axe-core, custom rule engines, and GPT-4o vision AI — reaching ~80%+ WCAG coverage vs. ~35% for standalone tools.
 
@@ -91,7 +93,7 @@ User submits URL  →  TrustLens crawls the site  →  4 pillar engines run in p
 ### Trust Score Formula
 
 ```
-Trust Score = (A11Y × 0.30) + (DarkPatterns × 0.30) + (Performance × 0.20) + (Privacy × 0.20)
+TrustLens Score = (A11Y × 0.30) + (DarkPatterns × 0.30) + (Performance × 0.20) + (Privacy × 0.20)
 
 Trust Levels:
   80–100 → Trusted         ✅
@@ -175,6 +177,44 @@ Weights are fully configurable per engagement type (e.g., BFSI may weight Privac
 | Data Storage | Excessive localStorage / sessionStorage usage |
 
 **Regulations mapped:** GDPR, ePrivacy, CCPA, LGPD, IN-DPDPA 2023, IN-RBI
+
+---
+
+### ⚖️ Pillar 5: Compliance Intelligence *(Coming Soon)*
+
+**Purpose:** Map every TrustLens finding to specific clauses in enterprise governance frameworks and regulatory mandates — providing a direct line from UI finding to legal obligation.
+
+**Planned detection scope:**
+
+| Category | What Is Checked |
+|---|---|
+| CCPA Mapping | Consumer rights, deletion requests, opt-out links |
+| RBI Digital Guidelines | BFSI digital channel consumer protection compliance |
+| SEBI Investor Protection | Securities platform disclosure and UX clarity rules |
+| DPDPA Consent Mapping | Data principal rights, consent log integrity, purpose limitation |
+| Enterprise Governance | SOC2, ISO 27001, internal policy standards alignment |
+| Cross-pillar Evidence | Links accessibility, dark pattern, and privacy findings to regulation |
+
+**Planned outputs:** Regulatory risk matrix with clause-level citations, compliance gap heat map, auto-generated attestation draft documents.
+
+---
+
+### 🎨 Pillar 6: Design Governance *(Coming Soon)*
+
+**Purpose:** Audit the visual design system for brand compliance, accessibility violations embedded in design tokens, and UX anti-patterns that bypass code-level audits.
+
+**Planned detection scope:**
+
+| Category | What Is Checked |
+|---|---|
+| Design Tokens | Colour contrast ratios in brand palette, font size minimums, spacing scale |
+| Component Consistency | Button styles, form field patterns, spacing inconsistencies across pages |
+| CTA Hierarchy | Primary/secondary/tertiary action visual weight and balance |
+| Non-approved UI Patterns | Off-brand components, inconsistent icon usage, pattern library violations |
+| Accessibility Violations | Design-level contrast failures, focus indicator definition in tokens |
+| Brand Compliance | Logo placement, typography stack, colour usage rules |
+
+**Planned outputs:** Design token audit report, component variance matrix, CTA hierarchy score, brand compliance checklist.
 
 ---
 

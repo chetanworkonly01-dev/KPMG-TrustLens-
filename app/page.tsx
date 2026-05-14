@@ -69,7 +69,7 @@ export default function HomePage() {
         {/* Stats strip */}
         <div style={{ display: 'flex', justifyContent: 'center', gap: 40, flexWrap: 'wrap' }}>
           {[
-            { val: '4 Pillars', label: 'Audit Domains',          color: 'var(--accent-blue)' },
+            { val: '6 Pillars', label: 'Audit Domains',          color: 'var(--accent-blue)' },
             { val: '7 Layers', label: 'Per-Engine Depth',        color: '#9B59B6' },
             { val: 'GDPR+DSA', label: 'Regulation Coverage',     color: '#E67E22' },
             { val: 'GPT-4o',   label: 'Vision AI Engine',        color: '#A78BFA' },
@@ -86,13 +86,40 @@ export default function HomePage() {
 
         {/* ══ 4-PILLAR CARDS ════════════════════════════════════════════ */}
         <div style={{ marginBottom: 44 }}>
-          <div style={{ textAlign: 'center', marginBottom: 24 }}>
-            <h2 style={{ fontSize: 22, fontWeight: 700, marginBottom: 6 }}>Four Pillars of Digital Trust</h2>
-            <p style={{ fontSize: 13, color: 'var(--text-secondary)' }}>Each pillar runs independently or combined — scored to a unified Trust Score</p>
+        <div style={{ textAlign: 'center', marginBottom: 24 }}>
+            <h2 style={{ fontSize: 22, fontWeight: 700, marginBottom: 6 }}>TrustLens Audit Pillars</h2>
+            <p style={{ fontSize: 13, color: 'var(--text-secondary)' }}>Each pillar runs independently or combined — scored into a unified TrustLens Score</p>
           </div>
           <div className="grid-4 animate-slide-up stagger-1">
             {Object.entries(PILLAR_META).map(([key, p]) => (
               <div key={key} className="glass-card" style={{ borderTop: `3px solid ${p.color}`, padding: '20px 18px' }}>
+                <div style={{ fontSize: 32, marginBottom: 10 }}>{p.icon}</div>
+                <h3 style={{ fontWeight: 700, fontSize: 14, marginBottom: 6, color: p.color }}>{p.label}</h3>
+                <p style={{ fontSize: 11, color: 'var(--text-secondary)', lineHeight: 1.65, marginBottom: 12 }}>{p.desc}</p>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+                  {p.regs.map(r => (
+                    <span key={r} style={{ fontSize: 8, padding: '2px 6px', borderRadius: 99, background: `${p.color}18`, color: p.color, border: `1px solid ${p.color}35`, fontWeight: 700 }}>{r}</span>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+          {/* Coming Soon Pillars */}
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginTop: 12 }}>
+            {[
+              {
+                icon: '⚖️', label: 'Compliance Intelligence', color: '#06B6D4',
+                desc: 'Map findings against CCPA, RBI principles, SEBI investor protection, DPDP consent, and enterprise governance standards.',
+                regs: ['CCPA', 'RBI', 'SEBI', 'DPDPA', 'Governance'],
+              },
+              {
+                icon: '🎨', label: 'Design Governance', color: '#EC4899',
+                desc: 'Audit design tokens, component consistency, CTA hierarchy, accessibility violations, and non-approved UI patterns.',
+                regs: ['Design Tokens', 'CTA Audit', 'UI Patterns', 'Brand'],
+              },
+            ].map(p => (
+              <div key={p.label} className="glass-card" style={{ borderTop: `3px solid ${p.color}`, padding: '20px 18px', opacity: 0.75, position: 'relative', overflow: 'hidden' }}>
+                <div style={{ position: 'absolute', top: 10, right: 12, fontSize: 9, fontWeight: 700, padding: '2px 8px', borderRadius: 99, background: `${p.color}20`, color: p.color, border: `1px solid ${p.color}40`, letterSpacing: '0.05em' }}>COMING SOON</div>
                 <div style={{ fontSize: 32, marginBottom: 10 }}>{p.icon}</div>
                 <h3 style={{ fontWeight: 700, fontSize: 14, marginBottom: 6, color: p.color }}>{p.label}</h3>
                 <p style={{ fontSize: 11, color: 'var(--text-secondary)', lineHeight: 1.65, marginBottom: 12 }}>{p.desc}</p>
