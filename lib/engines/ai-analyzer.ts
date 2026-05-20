@@ -12,6 +12,12 @@ interface AIAnalysisInput {
   /** Base64-encoded page screenshot for GPT-4o vision analysis */
   pageScreenshot?: string;
   existingIssues: AccessibilityIssue[];
+  /** Site profile context for grounding AI findings */
+  siteContext?: {
+    profile?: string;    // e.g. 'ecommerce', 'saas-subscription'
+    siteName?: string;
+    aiDirection?: string; // auditor's custom instruction
+  };
 }
 
 interface AIIssue {
@@ -24,8 +30,9 @@ interface AIIssue {
   recommendation: string;
   codeFix?: string;
   confidence: 'high' | 'medium' | 'low';
-  reasoning?: string;
   uxCategory?: string;
+  whatISee?: string;       // chain-of-thought: describe before judging
+  canDOMConfirm?: boolean; // true = this should be verifiable in HTML
 }
 
 export async function analyzeWithAI(input: AIAnalysisInput, onProgress?: (msg: string) => void): Promise<AccessibilityIssue[]> {
@@ -36,11 +43,16 @@ export async function analyzeWithAI(input: AIAnalysisInput, onProgress?: (msg: s
 
   onProgress?.(`AI analyzing ${input.pageTitle}...`);
 
-  // Truncate HTML to avoid token limits
   const truncatedHtml = input.htmlSnippet.substring(0, 12000);
-  const existingSummary = input.existingIssues.slice(0, 15).map(i => `- ${i.title} (${i.wcagCriterion})`).join('\n');
+  const existingSummary = input.existingIssues.slice(0, 20).map(i => `- ${i.title} (${i.wcagCriterion})`).join('\n');
 
-  const prompt = `You are an expert WCAG 2.2 accessibility auditor AND UX researcher. Analyze this HTML deeply and find accessibility issues that automated tools miss.
+  const siteCtx = input.siteContext;
+  const siteContextBlock = siteCtx
+    ? `SITE CONTEXT:\n- Business type: ${siteCtx.profile || 'unknown'}\n- Site: ${siteCtx.siteName || input.pageUrl}${siteCtx.aiDirection ? `\n- Auditor direction: "${siteCtx.aiDirection}"` : ''}`
+    : '';
+
+  const prompt = `You are an expert WCAG 2.2 accessibility auditor and UX researcher with 15 years of experience.
+${siteContextBlock}
 
 Page: ${input.pageTitle} (${input.pageUrl})
 
@@ -49,62 +61,51 @@ HTML (truncated):
 ${truncatedHtml}
 \`\`\`
 
-Already detected issues:
+Already detected issues (DO NOT re-flag these):
 ${existingSummary || 'None yet'}
 
-## ANALYSIS REQUIREMENTS
+## CHAIN-OF-THOUGHT REQUIRED
+For each issue: first describe "whatISee" (factual observation), then explain why it is a problem, then rate confidence.
+Only report confidence "high" or "medium". Filter out all "low" confidence findings.
 
-### A. CONTEXTUAL ACCESSIBILITY ISSUES
-Find issues that require human/AI judgment:
-- Misleading or unhelpful alt text (e.g., "image.png", "photo", "IMG_001")
-- Poor button/link labels that technically exist but are confusing
+## FIND ISSUES AUTOMATED TOOLS MISS
+
+### A. CONTEXTUAL ACCESSIBILITY
+- Misleading alt text ("image.png", "photo", "IMG_001")
+- Poor button/link labels that are confusing
 - Missing landmarks for major page sections
-- Form groups without fieldset/legend
 - Complex widgets missing ARIA patterns (tabs, accordions, carousels)
-- Content that relies on visual layout alone
-- Improper use of ARIA (aria-hidden on focusable, conflicting roles)
+- Improper ARIA usage (aria-hidden on focusable elements, conflicting roles)
 
-### B. UX-LEVEL ACCESSIBILITY ANALYSIS
-Detect these UX problems:
-- Buttons with unclear labels ("Click here", "Submit", "Go")
-- Poor CTA visibility (CTAs that blend with surrounding text)
-- Confusing navigation structure (deeply nested nav, inconsistent patterns)
-- Cognitive overload issues (too many links, dense text without structure)
-- Misleading link text that doesn't match destination
+### B. UX-LEVEL ACCESSIBILITY
+- Unclear button labels ("Click here", "Submit", "Go")
+- CTAs that blend with surrounding text (poor visual hierarchy)
+- Cognitive overload (too many links, dense text without structure)
+- Interactive elements that look non-interactive
 - Inconsistent UI patterns (different button styles for same action)
-- Missing visual hierarchy (no clear heading structure)
-- Interactive elements that look non-interactive or vice versa
 
-### C. CONFIDENCE SCORING
-For each issue, assess your confidence:
-- "high": Clear violation that you're very certain about
-- "medium": Likely issue but context might change interpretation
-- "low": Potential issue that needs human verification
-
-Return a JSON object with an "issues" array. Each issue:
+Return a JSON object {"issues": [...]}. Each issue:
 {
+  "whatISee": "One factual observation sentence",
   "title": "Issue title",
-  "description": "Detailed description of the problem",
-  "element": "CSS selector or description of affected element",
+  "description": "Detailed problem description",
+  "element": "CSS selector or element description",
   "wcagCriterion": "X.X.X",
   "wcagName": "Criterion Name",
   "severity": "critical|high|medium|low",
-  "recommendation": "Actionable fix instructions",
-  "codeFix": "Optional HTML/CSS fix snippet",
-  "confidence": "high|medium|low",
-  "uxCategory": "Optional: label-clarity|navigation|cognitive-load|visual-hierarchy|interaction-design|consistency"
+  "recommendation": "Actionable fix",
+  "codeFix": "Optional HTML/CSS snippet",
+  "confidence": "high|medium",
+  "canDOMConfirm": true/false,
+  "uxCategory": "Optional category"
 }
 
-Return at most 8 issues. Only return issues NOT in the existing list. Return {"issues": []} if no additional issues found.
-
-IMPORTANT: Think like a real accessibility expert doing a manual audit. Focus on REAL user problems, not just code issues.${input.pageScreenshot ? '\n\nA screenshot of the rendered page is attached. Use it to detect VISUAL accessibility issues: poor contrast, overlapping elements, truncated text, invisible focus indicators, tiny touch targets, missing visual hierarchy, and layout issues that are not apparent from HTML alone.' : ''}`;
+Return at most 8 issues not already in the existing list. Return {"issues": []} if none found.${input.pageScreenshot ? '\n\nA page screenshot is attached. Use it to detect VISUAL issues: contrast, focus indicators, tiny touch targets, truncated text, layout shifts.' : ''}`;
 
   try {
-    // Build messages — include vision content if screenshot available
     const messages: OpenAI.ChatCompletionMessageParam[] = [];
 
     if (input.pageScreenshot) {
-      // GPT-4o vision: send both text prompt and screenshot
       messages.push({
         role: 'user',
         content: [
@@ -116,14 +117,13 @@ IMPORTANT: Think like a real accessibility expert doing a manual audit. Focus on
       messages.push({ role: 'user', content: prompt });
     }
 
-    // 60s timeout to prevent hanging on slow API responses
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 60000);
 
     const response = await openai.chat.completions.create({
       model: 'gpt-4o',
       messages,
-      temperature: 0.3,
+      temperature: 0.2,
       max_tokens: 3000,
       response_format: { type: 'json_object' }
     }, { signal: controller.signal as any });
@@ -134,15 +134,28 @@ IMPORTANT: Think like a real accessibility expert doing a manual audit. Focus on
     if (!content) return [];
 
     const parsed = JSON.parse(content);
-    const aiIssues: AIIssue[] = parsed.issues || parsed || [];
-
+    const aiIssues: AIIssue[] = parsed.issues || [];
     if (!Array.isArray(aiIssues)) return [];
 
-    const issues: AccessibilityIssue[] = aiIssues.map(ai => ({
+    // Consistency enforcement: filter low confidence + fuzzy dedup against existing issues
+    const existingTitlesLower = input.existingIssues.map(i => i.title.toLowerCase());
+    const filtered = aiIssues.filter(ai => {
+      if (ai.confidence === 'low') return false;
+      const aiTitleLower = ai.title.toLowerCase();
+      if (existingTitlesLower.some(t => {
+        const overlap = aiTitleLower.split(' ').filter(w => w.length > 4 && t.includes(w)).length;
+        return overlap >= 3;
+      })) return false;
+      return true;
+    });
+
+    const issues: AccessibilityIssue[] = filtered.map(ai => ({
       id: uuidv4(),
       testId: `AI-${ai.wcagCriterion?.replace(/\./g, '') || 'GEN'}`,
       title: ai.title,
-      description: ai.description + (ai.uxCategory ? ` [UX: ${ai.uxCategory}]` : '') + (ai.reasoning ? ` [Reasoning: ${ai.reasoning}]` : ''),
+      description: ai.description
+        + (ai.whatISee ? ` [Observed: ${ai.whatISee}]` : '')
+        + (ai.uxCategory ? ` [UX: ${ai.uxCategory}]` : ''),
       element: ai.element,
       pageUrl: input.pageUrl,
       wcagCriterion: ai.wcagCriterion || 'general',
@@ -167,28 +180,89 @@ IMPORTANT: Think like a real accessibility expert doing a manual audit. Focus on
 }
 
 /**
+ * Vision-based dark pattern detection — runs BEFORE DOM scan as primary detection pass.
+ * Returns signals that the DOM engine then confirms or rejects.
+ * Confidence "high" + DOM confirmation = verdict model.
+ * Confidence "medium" + no DOM confirmation = signal model (unverifiable claim).
+ */
+export async function detectDarkPatternsWithVision(
+  screenshot: string,
+  pageUrl: string,
+  siteContext?: { profile?: string; aiDirection?: string }
+): Promise<Array<{
+  signal: string;
+  location: string;
+  severity: 'critical' | 'high' | 'medium';
+  requiresDOMConfirmation: boolean;
+  confidence: 'high' | 'medium';
+  category: string;
+}>> {
+  if (!process.env.OPENAI_API_KEY) return [];
+
+  const directionBlock = siteContext?.aiDirection ? `\nAuditor focus: "${siteContext.aiDirection}"` : '';
+  const profileBlock = siteContext?.profile ? `Site type: ${siteContext.profile}. ` : '';
+
+  const visionPrompt = `You are an expert dark pattern auditor. ${profileBlock}${directionBlock}
+
+Examine this page screenshot and identify OBSERVABLE dark pattern signals.
+
+Check for:
+1. ASYMMETRIC BUTTONS: Accept/agree button larger, brighter, or more prominent than reject/decline
+2. LOW-CONTRAST DECLINE: Reject or close option is grey, small, or visually hidden
+3. CONFIRMSHAMING: Decline uses guilt-tripping language ("No thanks, I hate savings")
+4. COUNTDOWN TIMERS: Urgency indicators ("Offer expires in 00:23:14")
+5. SCARCITY INDICATORS: "Only 2 left", "128 people viewing" — set requiresDOMConfirmation: true
+6. PRE-SELECTED OPTIONS: Checkboxes or radio buttons appear pre-ticked
+7. MISLEADING PRICING: Crossed-out prices, hidden fees in fine print
+8. ROACH MOTEL: Visible asymmetry between subscribe (easy) and cancel (hard)
+
+CHAIN-OF-THOUGHT: For each finding, describe exactly what you see (factual) then explain the pattern.
+
+Return JSON: {"signals": [{"signal": "description", "location": "where on page", "severity": "critical|high|medium", "requiresDOMConfirmation": true/false, "confidence": "high|medium", "category": "pattern-type"}]}
+Return {"signals": []} if none found.`;
+
+  try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 45000);
+
+    const response = await openai.chat.completions.create({
+      model: 'gpt-4o',
+      messages: [{
+        role: 'user',
+        content: [
+          { type: 'text', text: visionPrompt },
+          { type: 'image_url', image_url: { url: `data:image/png;base64,${screenshot}`, detail: 'high' } }
+        ]
+      }],
+      temperature: 0.1,
+      max_tokens: 1500,
+      response_format: { type: 'json_object' }
+    }, { signal: controller.signal as any });
+
+    clearTimeout(timeout);
+
+    const content = response.choices[0]?.message?.content;
+    if (!content) return [];
+    const parsed = JSON.parse(content);
+    return (parsed.signals || []).filter((s: any) => s.confidence === 'high' || s.confidence === 'medium');
+  } catch (error) {
+    console.error('Vision dark pattern detection failed:', error);
+    return [];
+  }
+}
+
+/**
  * Validate and assign confidence to rule-based issues
  */
 export function assignConfidence(issue: AccessibilityIssue): ConfidenceLevel {
-  // axe-core issues are generally high confidence
   if (issue.source === 'axe-core') return 'high';
-
-  // Journey test issues are high confidence (tested interactively)
   if (issue.source === 'journey-test') return 'high';
-
-  // Custom rules: depends on the rule type
   if (issue.source === 'custom-rule') {
-    // Direct DOM checks are high confidence
     if (['P-01', 'P-03', 'U-01', 'O-04', 'O-07'].includes(issue.testId)) return 'high';
-    // Pattern-matching checks are medium
     if (['P-05', 'P-10', 'O-10'].includes(issue.testId)) return 'medium';
     return 'medium';
   }
-
-  // PDF analyzer issues are high confidence
   if (issue.source === 'pdf-analyzer') return 'high';
-
-  // AI issues already have confidence set
   return issue.confidence || 'medium';
 }
 

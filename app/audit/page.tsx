@@ -34,6 +34,13 @@ export default function AuditPage() {
   const [videoFile, setVideoFile] = useState<File | null>(null);
   const [videoProcessing, setVideoProcessing] = useState(false);
 
+  // Scope mode
+  const [scopeMode, setScopeMode] = useState<'general'|'specific'|'predefined'|'director'>('general');
+  const [specificUrls, setSpecificUrls] = useState('');
+  const [selectedJourney, setSelectedJourney] = useState<string|null>(null);
+  const [aiDirection, setAiDirection] = useState('');
+  const [journeySteps, setJourneySteps] = useState<{id:string;label:string;url:string}[]>([]);
+
   // WCAG level selection
   const [wcagLevelA, setWcagLevelA]     = useState(true);
   const [wcagLevelAA, setWcagLevelAA]   = useState(true);
@@ -71,6 +78,9 @@ export default function AuditPage() {
 
   const startWebsiteAudit = async () => {
     if (!url) { setError('Please enter a URL'); return; }
+    if (scopeMode === 'specific' && !specificUrls.trim()) { setError('Please enter at least one page URL'); return; }
+    if (scopeMode === 'predefined' && !selectedJourney) { setError('Please select a journey'); return; }
+    if (scopeMode === 'director' && journeySteps.length === 0) { setError('Add at least one step in Director Mode'); return; }
     const levels = getSelectedLevels();
     if (levels.length === 0) { setError('Select at least one WCAG level'); return; }
     setLoading(true); setError('');
@@ -80,6 +90,12 @@ export default function AuditPage() {
         wcagLevels: levels,
         standard,
         enabledPillars: getEnabledPillars(),
+        // New scope fields
+        scopeMode,
+        specificUrls: scopeMode === 'specific' ? specificUrls.split('\n').map(s => s.trim()).filter(Boolean) : undefined,
+        selectedJourney: scopeMode === 'predefined' ? selectedJourney : undefined,
+        journeySteps: scopeMode === 'director' ? journeySteps : undefined,
+        aiDirection: (scopeMode === 'director' && aiDirection) ? aiDirection : undefined,
       };
       if (showLogin && username && password) {
         body.loginConfig = { loginUrl: loginUrl || url, username, password, usernameSelector, passwordSelector, submitSelector };
@@ -303,48 +319,132 @@ export default function AuditPage() {
 
       {tab === 'website' && (
         <div className="glass-card animate-fade-in">
-          {/* URL Input */}
-          <div className="input-group" style={{ marginBottom: 18 }}>
+          {/* Base URL — always required */}
+          <div className="input-group" style={{ marginBottom: 16 }}>
             <label className="input-label">Website URL *</label>
-            <input
-              className="input-field"
-              type="url"
-              placeholder="https://example.com"
-              value={url}
-              onChange={e => setUrl(e.target.value)}
-            />
+            <input id="website-url" className="input-field" type="url" placeholder="https://example.com" value={url} onChange={e => setUrl(e.target.value)} />
           </div>
 
-          {/* Crawl options */}
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 14, marginBottom: 18 }}>
-            <div className="input-group">
-              <label className="input-label">Crawl Depth</label>
-              <select className="input-field" value={crawlDepth} onChange={e => setCrawlDepth(+e.target.value)}>
-                {[1, 2, 3, 4, 5].map(v => <option key={v} value={v}>{v} level{v > 1 ? 's' : ''}</option>)}
-              </select>
+          {/* ── AUDIT SCOPE — 4-mode selector ── */}
+          <div style={{ marginBottom: 16 }}>
+            <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 10 }}>📋 Audit Scope</div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 12 }}>
+              {([
+                { id: 'general',    icon: '🌐', label: 'General Site Audit',  desc: 'Crawl & audit the full site automatically',    tags: ['URL + crawl depth', 'Max pages', 'Auto-discover'], rec: false },
+                { id: 'specific',   icon: '📄', label: 'Specific Page(s)',     desc: 'Paste exact URLs — deep single-pass per page', tags: ['Named pages', 'Multi-URL input', 'No crawling'],  rec: false },
+                { id: 'predefined', icon: '🗺️', label: 'Predefined Journey',   desc: 'Pick a known user flow — context-aware checks', tags: ['Journey-aware', 'Stage-by-stage', 'Pre-mapped'],  rec: true  },
+                { id: 'director',   icon: '⭐', label: 'Director Mode',        desc: 'Build your own flow + AI direction prompt',    tags: ['Page sequencing', 'AI direction', 'Step notes'],  rec: false },
+              ] as { id: 'general'|'specific'|'predefined'|'director'; icon: string; label: string; desc: string; tags: string[]; rec: boolean }[]).map(m => (
+                <button key={m.id} id={`scope-mode-${m.id}`} onClick={() => setScopeMode(m.id)}
+                  style={{ textAlign: 'left', padding: '12px 14px', borderRadius: 'var(--radius-md)', border: `2px solid ${scopeMode === m.id ? '#9B59B6' : 'var(--border)'}`, background: scopeMode === m.id ? 'rgba(155,89,182,0.08)' : 'transparent', cursor: 'pointer', transition: 'var(--transition)', position: 'relative' }}>
+                  {m.rec && <span style={{ position: 'absolute', top: 8, right: 8, fontSize: 8, padding: '2px 6px', borderRadius: 99, background: '#9B59B620', color: '#9B59B6', border: '1px solid #9B59B640', fontWeight: 700 }}>★ REC</span>}
+                  <div style={{ fontSize: 18, marginBottom: 4 }}>{m.icon}</div>
+                  <div style={{ fontSize: 12, fontWeight: 700, color: scopeMode === m.id ? '#9B59B6' : 'var(--text-primary)', marginBottom: 3 }}>{m.label}</div>
+                  <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 6, lineHeight: 1.4 }}>{m.desc}</div>
+                  <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+                    {m.tags.map(t => <span key={t} style={{ fontSize: 9, padding: '2px 6px', borderRadius: 99, background: 'rgba(255,255,255,0.05)', color: 'var(--text-muted)', border: '1px solid var(--border)' }}>{t}</span>)}
+                  </div>
+                </button>
+              ))}
             </div>
-            <div className="input-group">
-              <label className="input-label">Max Pages</label>
-              <select className="input-field" value={maxPages} onChange={e => setMaxPages(+e.target.value)}>
-                {[1, 3, 5, 10, 20, 30, 50, 100, 200].map(v => <option key={v} value={v}>{v} pages</option>)}
-              </select>
-            </div>
-            <div className="input-group">
-              <label className="input-label">AI Analysis</label>
-              <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', padding: '10px 0' }}>
-                <input
-                  type="checkbox"
-                  checked={includeAI}
-                  onChange={e => setIncludeAI(e.target.checked)}
-                  style={{ width: 16, height: 16, accentColor: 'var(--accent-blue)' }}
-                />
-                <span style={{ fontSize: 13, color: 'var(--text-secondary)' }}>Enable GPT-4o</span>
-              </label>
-            </div>
+
+            {/* MODE 1 — General */}
+            {scopeMode === 'general' && (
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10 }}>
+                <div className="input-group">
+                  <label className="input-label">Crawl Depth</label>
+                  <select className="input-field" value={crawlDepth} onChange={e => setCrawlDepth(+e.target.value)}>
+                    {[1,2,3,4,5].map(v => <option key={v} value={v}>{v} level{v>1?'s':''}</option>)}
+                  </select>
+                </div>
+                <div className="input-group">
+                  <label className="input-label">Max Pages</label>
+                  <select className="input-field" value={maxPages} onChange={e => setMaxPages(+e.target.value)}>
+                    {[1,3,5,10,20,30,50,100,200].map(v => <option key={v} value={v}>{v} pages</option>)}
+                  </select>
+                </div>
+                <div className="input-group">
+                  <label className="input-label">AI Analysis</label>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', padding: '10px 0' }}>
+                    <input type="checkbox" checked={includeAI} onChange={e => setIncludeAI(e.target.checked)} style={{ width: 16, height: 16, accentColor: 'var(--accent-blue)' }} />
+                    <span style={{ fontSize: 13, color: 'var(--text-secondary)' }}>Enable GPT-4o</span>
+                  </label>
+                </div>
+              </div>
+            )}
+
+            {/* MODE 2 — Specific Pages */}
+            {scopeMode === 'specific' && (
+              <div>
+                <div className="input-group" style={{ marginBottom: 8 }}>
+                  <label className="input-label">Page URLs (one per line)</label>
+                  <textarea id="specific-urls" className="input-field" rows={4} placeholder={"https://example.com/checkout\nhttps://example.com/pricing\nhttps://example.com/account/cancel"} value={specificUrls} onChange={e => setSpecificUrls(e.target.value)} style={{ resize: 'vertical', fontFamily: 'monospace', fontSize: 12 }} />
+                </div>
+                <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>No crawling — each URL gets a deep single-pass audit. Best for targeted transactional pages.</div>
+              </div>
+            )}
+
+            {/* MODE 3 — Predefined Journey */}
+            {scopeMode === 'predefined' && (
+              <div>
+                <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-muted)', marginBottom: 8, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Select a Journey</div>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 8, marginBottom: 10 }}>
+                  {([
+                    { id:'login',        icon:'🔐', label:'Login Flow',            flow:'Landing → Login form → Auth → Dashboard',         checks:'Forced continuity, confirmshaming', stages:4 },
+                    { id:'account',      icon:'👤', label:'Account Creation',       flow:'Signup → Verify → Onboarding → Dashboard',         checks:'Trick questions, consent bundling',  stages:4 },
+                    { id:'checkout',     icon:'🛒', label:'Checkout Flow',          flow:'Cart → Shipping → Payment → Confirmation',         checks:'Hidden costs, fake urgency, sneak-in-basket', stages:4 },
+                    { id:'cancel',       icon:'❌', label:'Cancellation',           flow:'Account settings → Cancel → Retention → Done',     checks:'Roach Motel detection',             stages:4 },
+                    { id:'consent',      icon:'🍪', label:'Consent & Cookie Flow',  flow:'Banner → Preference centre → Privacy settings',    checks:'Pre-ticked boxes, reject hiding',    stages:3 },
+                    { id:'subscription', icon:'📈', label:'Subscription Upgrade',   flow:'Plan page → Compare → Payment → Confirm',          checks:'Price anchoring, free trial traps',  stages:4 },
+                    { id:'search',       icon:'🔍', label:'Search & Discovery',     flow:'Search → Filter → Listing → Product Detail',       checks:'Misdirection, fake scarcity',        stages:4 },
+                    { id:'profile',      icon:'⚙️', label:'Profile & Data Settings',flow:'Profile → Data sharing → Notifications → Privacy', checks:'Privacy Zuckering, hard-to-find opt-outs', stages:4 },
+                    { id:'custom',       icon:'➕', label:'Create Custom Journey',   flow:'Define your own flow from scratch',                 checks:'Director Mode unlocked',             stages:0 },
+                  ]).map(j => (
+                    <button key={j.id} id={`journey-${j.id}`} onClick={() => { setSelectedJourney(j.id); if (j.id === 'custom') setScopeMode('director'); }}
+                      style={{ textAlign: 'left', padding: '10px 12px', borderRadius: 'var(--radius-md)', border: `2px solid ${selectedJourney===j.id ? '#9B59B6' : 'var(--border)'}`, background: selectedJourney===j.id ? 'rgba(155,89,182,0.08)' : 'transparent', cursor: 'pointer', transition: 'var(--transition)' }}>
+                      <div style={{ fontSize: 16, marginBottom: 3 }}>{j.icon}</div>
+                      <div style={{ fontSize: 11, fontWeight: 700, color: selectedJourney===j.id ? '#9B59B6' : 'var(--text-primary)', marginBottom: 3 }}>{j.label}</div>
+                      <div style={{ fontSize: 10, color: 'var(--text-muted)', marginBottom: 4, lineHeight: 1.4 }}>{j.flow}</div>
+                      <div style={{ fontSize: 9, color: '#9B59B6', opacity: 0.8 }}>{j.stages > 0 ? `${j.stages} stages` : ''}</div>
+                    </button>
+                  ))}
+                </div>
+                {selectedJourney && selectedJourney !== 'custom' && (
+                  <div style={{ padding: '10px 12px', borderRadius: 'var(--radius-md)', background: 'rgba(155,89,182,0.05)', border: '1px solid rgba(155,89,182,0.2)', fontSize: 11, color: 'var(--text-secondary)' }}>
+                    ✓ Journey selected. The audit engine will navigate these steps in sequence and apply context-aware dark pattern checks at each stage.
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* MODE 4 — Director Mode */}
+            {scopeMode === 'director' && (
+              <div>
+                <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-muted)', marginBottom: 8, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Step-by-Step Page Flow</div>
+                <div style={{ marginBottom: 10 }}>
+                  {journeySteps.map((step, i) => (
+                    <div key={step.id} style={{ display: 'grid', gridTemplateColumns: '24px 1fr 1fr auto', gap: 8, alignItems: 'center', marginBottom: 6 }}>
+                      <span style={{ fontSize: 11, fontWeight: 700, color: '#9B59B6', textAlign: 'center' }}>{i+1}</span>
+                      <input className="input-field" placeholder="Page label (e.g. Checkout)" value={step.label} onChange={e => setJourneySteps(s => s.map(x => x.id===step.id ? {...x,label:e.target.value} : x))} style={{ fontSize: 12 }} />
+                      <input className="input-field" placeholder="https://example.com/checkout" value={step.url} onChange={e => setJourneySteps(s => s.map(x => x.id===step.id ? {...x,url:e.target.value} : x))} style={{ fontSize: 12 }} />
+                      <button onClick={() => setJourneySteps(s => s.filter(x => x.id!==step.id))} style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontSize: 16 }}>×</button>
+                    </div>
+                  ))}
+                  <button id="add-journey-step" onClick={() => setJourneySteps(s => [...s, {id:crypto.randomUUID(),label:'',url:''}])}
+                    style={{ fontSize: 12, color: '#9B59B6', background: 'none', border: '1px dashed rgba(155,89,182,0.4)', borderRadius: 'var(--radius-sm)', padding: '6px 14px', cursor: 'pointer', width: '100%', marginTop: 4 }}>
+                    + Add step
+                  </button>
+                </div>
+                <div className="input-group">
+                  <label className="input-label" style={{ color: '#9B59B6' }}>AI Audit Direction <span style={{ fontWeight: 400, color: 'var(--text-muted)', fontSize: 10 }}>— natural language instruction to the audit engine</span></label>
+                  <textarea id="ai-direction" className="input-field" rows={3} placeholder={'Focus on hidden cost patterns between pricing and checkout. Flag any pre-ticked add-ons, detect urgency signals, and check if the free trial converts silently to paid.'} value={aiDirection} onChange={e => setAiDirection(e.target.value)} style={{ resize: 'vertical', fontSize: 12, fontStyle: aiDirection ? 'normal' : 'italic' }} />
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Login Config */}
-          <div style={{ marginBottom: 20 }}>
+          <div style={{ marginBottom: 16 }}>
             <div className="collapsible-header" onClick={() => setShowLogin(!showLogin)}>
               <span>🔐 Login Configuration (authenticated portals)</span>
               <span style={{ transform: showLogin ? 'rotate(180deg)' : '', transition: 'var(--transition)', fontSize: 12 }}>▼</span>
@@ -352,49 +452,23 @@ export default function AuditPage() {
             {showLogin && (
               <div className="collapsible-body">
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 12 }}>
-                  <div className="input-group">
-                    <label className="input-label">Login URL</label>
-                    <input className="input-field" placeholder="https://example.com/login" value={loginUrl} onChange={e => setLoginUrl(e.target.value)} />
-                  </div>
-                  <div className="input-group">
-                    <label className="input-label">Submit Button Selector</label>
-                    <input className="input-field" placeholder='button[type="submit"]' value={submitSelector} onChange={e => setSubmitSelector(e.target.value)} />
-                  </div>
+                  <div className="input-group"><label className="input-label">Login URL</label><input className="input-field" placeholder="https://example.com/login" value={loginUrl} onChange={e => setLoginUrl(e.target.value)} /></div>
+                  <div className="input-group"><label className="input-label">Submit Selector</label><input className="input-field" placeholder='button[type="submit"]' value={submitSelector} onChange={e => setSubmitSelector(e.target.value)} /></div>
                 </div>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 12 }}>
-                  <div className="input-group">
-                    <label className="input-label">Username</label>
-                    <input className="input-field" placeholder="user@example.com" value={username} onChange={e => setUsername(e.target.value)} />
-                  </div>
-                  <div className="input-group">
-                    <label className="input-label">Password</label>
-                    <input className="input-field" type="password" placeholder="••••••••" value={password} onChange={e => setPassword(e.target.value)} />
-                  </div>
+                  <div className="input-group"><label className="input-label">Username</label><input className="input-field" placeholder="user@example.com" value={username} onChange={e => setUsername(e.target.value)} /></div>
+                  <div className="input-group"><label className="input-label">Password</label><input className="input-field" type="password" placeholder="••••••••" value={password} onChange={e => setPassword(e.target.value)} /></div>
                 </div>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-                  <div className="input-group">
-                    <label className="input-label">Username Field Selector</label>
-                    <input className="input-field" placeholder="#username" value={usernameSelector} onChange={e => setUsernameSelector(e.target.value)} />
-                  </div>
-                  <div className="input-group">
-                    <label className="input-label">Password Field Selector</label>
-                    <input className="input-field" placeholder="#password" value={passwordSelector} onChange={e => setPasswordSelector(e.target.value)} />
-                  </div>
+                  <div className="input-group"><label className="input-label">Username Selector</label><input className="input-field" placeholder="#username" value={usernameSelector} onChange={e => setUsernameSelector(e.target.value)} /></div>
+                  <div className="input-group"><label className="input-label">Password Selector</label><input className="input-field" placeholder="#password" value={passwordSelector} onChange={e => setPasswordSelector(e.target.value)} /></div>
                 </div>
               </div>
             )}
           </div>
 
-          <button
-            className="btn btn-primary btn-lg"
-            style={{ width: '100%' }}
-            onClick={startWebsiteAudit}
-            disabled={loading}
-          >
-            {loading
-              ? <><div className="spinner" style={{ width: 18, height: 18, borderWidth: 2 }} /> Running Audit...</>
-              : `🚀 Start TrustLens Audit (${getEnabledPillars().length} pillars)`
-            }
+          <button id="start-audit-btn" className="btn btn-primary btn-lg" style={{ width: '100%' }} onClick={startWebsiteAudit} disabled={loading}>
+            {loading ? <><div className="spinner" style={{ width: 18, height: 18, borderWidth: 2 }} /> Running Audit...</> : `🚀 Start TrustLens Audit (${getEnabledPillars().length} pillars)`}
           </button>
         </div>
       )}

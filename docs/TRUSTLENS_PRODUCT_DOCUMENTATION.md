@@ -1,5 +1,5 @@
 # KPMG TrustLens — AI-Powered Digital Trust & Compliance Platform
-### Product Documentation v2.0 — May 2026
+### Product Documentation v2.1 — May 2026
 
 > **Audience:** Senior Technology Leaders · Solution Architects · Managing Partners  
 > **Classification:** Internal — Pre-Commercial Demo  
@@ -282,49 +282,52 @@ End with: Dark Pattern Score (0-100, lower is worse), Top 3 most harmful pattern
 ## 5. System Architecture
 
 ```
-┌─────────────────────────────────────────────────┐
-│              CLIENT BROWSER (React 18)           │
-│   Audit Config → Live Progress → Results → Export│
-└──────────────────────┬──────────────────────────┘
+┌─────────────────────────────────────────────────────┐
+│              CLIENT BROWSER (React 18)              │
+│  Scope Selector → Live Progress → Results → Export  │
+│  (General / Specific / Predefined / Director Mode)  │
+└──────────────────────┬──────────────────────────────┘
                        │ HTTP / Fetch API
-┌──────────────────────▼──────────────────────────┐
-│           NEXT.JS 15 API LAYER (Node.js)         │
-│  POST /api/audit/website  — Start website audit  │
-│  POST /api/audit/pdf      — Start PDF audit      │
-│  POST /api/audit/image    — Start image audit    │
-│  POST /api/audit/video    — Start video audit    │
-│  GET  /api/audit/:id      — Poll status          │
-│  GET  /api/audit/list     — Dashboard list       │
-└──────────────────────┬──────────────────────────┘
+┌──────────────────────▼──────────────────────────────┐
+│           NEXT.JS API LAYER (Node.js)               │
+│  POST /api/audit/website  — scopeMode-aware         │
+│  GET  /api/audit/:id      — pillarProgress poll     │
+└──────────────────────┬──────────────────────────────┘
                        │ Fire-and-forget async
-┌──────────────────────▼──────────────────────────┐
-│            AUDIT ORCHESTRATOR                    │
-│         (7-Phase Pipeline Manager)               │
-└──┬──────────┬──────────┬──────────┬─────────────┘
-   │          │          │          │
-   ▼          ▼          ▼          ▼
-Crawler   A11Y Engine  DP Engine  Perf/Privacy
-(Phase 1) (Phase 2-4) (Phase 4c)  (Phase 4c)
+┌──────────────────────▼──────────────────────────────┐
+│       AUDIT ORCHESTRATOR (scopeMode-aware)          │
+│  Site Profiler → Scope Branch → Crawl / Fetch       │
+│  Page Intent Classifier → Transactional Filter      │
+└──┬─────────────────┬──────────────────────┬─────────┘
+   │                 │                      │
+   ▼                 ▼                      ▼
+A11Y Engine    ╔════════════════ PARALLEL ═══════════╗
+(Phase 2-4)   ║ DP Engine   Perf Engine  Privacy    ║
+               ║ + DP Journey Simulation             ║
+               ╚═════════════════════════════════════╝
+                 All via Promise.allSettled()
+                 Crash → auditIntegrity: 'warning'
 ```
 
 ### Component Map
 
 | Component | File | Purpose |
 |---|---|---|
-| Crawler | `engines/crawler.ts` | Stealth Playwright crawler with WAF bypass |
-| Orchestrator | `engines/audit-orchestrator.ts` | 7-phase pipeline manager |
+| Crawler | `engines/crawler.ts` | Stealth Playwright crawler, transactional URL priority |
+| **Site Profiler** | `engines/site-profiler.ts` | **NEW** 12-profile business model classifier |
+| **Page Intent Classifier** | `engines/page-intent-classifier.ts` | **NEW** URL + DOM 0–10 transactional intent scoring |
+| Orchestrator | `engines/audit-orchestrator.ts` | scopeMode-aware pipeline, parallel pillar execution |
 | Test Runner | `engines/test-runner.ts` | 57+ WCAG structured tests |
 | Axe Scanner | `engines/axe-scanner.ts` | axe-core integration |
 | Custom Rules | `engines/custom-rules.ts` | Extended WCAG checks |
-| Deep Auditor | `engines/deep-auditor.ts` | Advanced DOM/CSS inspection |
-| Journey Tester | `engines/journey-tester.ts` | User flow simulation |
-| AI Analyzer | `engines/ai-analyzer.ts` | GPT-4o contextual analysis |
-| Dark Pattern Engine | `engines/darkpattern-engine.ts` | 7-phase ethical UX audit |
+| Journey Tester | `engines/journey-tester.ts` | UX journey simulation + dark pattern journey |
+| AI Analyzer | `engines/ai-analyzer.ts` | GPT-4o + chain-of-thought + site context injection |
+| Dark Pattern Engine | `engines/darkpattern-engine.ts` | 7-phase ethical UX audit (transactional pages only) |
 | Performance Engine | `engines/performance-engine.ts` | CWV + 6-layer analysis |
 | Privacy Engine | `engines/privacy-engine.ts` | Tracker & consent audit |
 | Vision Analyzer | `engines/vision-analyzer.ts` | GPT-4o image/video analysis |
 | Scoring | `engines/scoring.ts` | Weighted deduction model |
-| Trust Scoring | `engines/trust-scoring.ts` | Unified 4-pillar composite |
+| Trust Scoring | `engines/trust-scoring.ts` | Unified 4-pillar composite + integrity check |
 | Report Generator | `engines/report-generator.ts` | Structured report assembly |
 
 ---
@@ -332,13 +335,24 @@ Crawler   A11Y Engine  DP Engine  Perf/Privacy
 ## 6. The 7-Phase AI Pipeline
 
 ```
-Phase 1  DEEP CRAWL          0% → 50%    Playwright + WAF bypass + sitemap
+Phase 0  SITE PROFILER       instant     12-profile business model classification (ecommerce, SaaS, fintech…)
+Phase 1  SCOPE-AWARE CRAWL  0% → 50%    Branches on scopeMode:
+                                          general    → full crawl up to maxPages
+                                          specific   → fetch named URLs only (no crawl)
+                                          predefined → crawl seeded with journey step URLs
+                                          director   → crawl seeded with step builder URLs
 Phase 2  TEST-DRIVEN SCAN   50% → 83%    57 tests + axe-core + custom rules
-Phase 3  JOURNEY TESTING    83% → 86%    Keyboard, forms, modal focus
-Phase 4  AI ANALYSIS        86% → 92%    GPT-4o contextual + vision
-Phase 4c PILLAR ENGINES      ──────────  Dark Patterns + Performance + Privacy
+Phase 3  JOURNEY TESTING    83% → 86%    Keyboard, forms, modal focus, authenticated flows
+Phase 4  AI ANALYSIS        86% → 92%    GPT-4o chain-of-thought + site context + aiDirection
+Phase 4c PILLAR ENGINES     87% → 92%   ╔══ PARALLEL (Promise.allSettled) ══╗
+                                          ║ Dark Patterns (transactional pages) ║
+                                          ║ DP Journey Simulation              ║
+                                          ║ Performance Engine                 ║
+                                          ║ Privacy Engine                     ║
+                                          ╚══════════════════════════════╝
+                                          If any pillar crashes → auditIntegrity: 'warning'
 Phase 5  DEDUPLICATION      92% → 94%    Cross-engine merge & dedup
-Phase 6  SCORING            94% → 96%    Weighted model + Trust Score
+Phase 6  SCORING            94% → 96%    Weighted model + Trust Score + pillarProgress
 Phase 7  REPORT GENERATION  96% → 100%  WCAG map + remediation + export
 ```
 
@@ -402,7 +416,7 @@ with realistic headers — retrieves static HTML for:
 
 ## 8. AI & Detection Methods
 
-### GPT-4o Integration
+### GPT-4o Integration (v2.1 — Chain-of-Thought)
 
 | Attribute | Value |
 |---|---|
@@ -412,6 +426,9 @@ with realistic headers — retrieves static HTML for:
 | Max Tokens | 3,000 per request |
 | HTML Input | Up to 12,000 characters per page |
 | Response Format | `json_object` (strongly typed, machine-parseable) |
+| **Site Context** | **Business profile injected (ecommerce/fintech/SaaS…)** |
+| **AI Direction** | **Custom instruction from Director Mode passed to every AI call** |
+| **Chain-of-Thought** | **`whatISee` factual observation required before any verdict** |
 
 ### What AI Detects (that rules cannot)
 
@@ -424,14 +441,13 @@ with realistic headers — retrieves static HTML for:
 | Fake social proof | "23 people viewing this right now" |
 | Consent asymmetry | Accept button 3× larger than Reject |
 
-### Confidence Scoring
+### Confidence Scoring & Consistency Gating
 
-Every AI finding is rated:
+Every AI finding is rated and deduplicated:
 - **High** — clear, unambiguous violation → full penalty weight
 - **Medium** — probable issue, needs human review → 70% weight
-- **Low** — possible issue, heuristic detection → 40% weight
-
-This prevents uncertain AI findings from unfairly collapsing the score.
+- **Low** — possible issue, heuristic detection → 40% weight, filtered if no DOM evidence
+- **Consistency gate** — AI findings that duplicate axe-core / DOM findings are discarded to prevent double-counting
 
 ### Vision Mode (Image & Video Audit)
 
@@ -473,13 +489,24 @@ Upload a screenshot or screen recording. GPT-4o analyses frames for:
 
 ## 10. Audit Input Modes
 
-| Mode | Input | Best For |
+### Scope Modes (v2.1 — New)
+
+| Mode | Input | What Happens |
 |---|---|---|
-| 🌐 **Website** | Public URL | Full multi-page crawl, all 4 pillars |
-| 🔐 **Portal** | URL + login credentials | Authenticated internal portals |
-| 📄 **PDF** | Upload .pdf | PDF/UA compliance, tagged content |
-| 📸 **Image** | Upload screenshot | Quick AI visual review, ~70% confidence |
-| 🎥 **Video** | Upload screen recording | User journey audit, 8 frames analysed |
+| 🌐 **General Site Audit** | Base URL | Full crawl up to maxPages, all pillars |
+| 📄 **Specific Page(s)** | Paste 1+ URLs | No crawl — each URL fetched directly (deep single-pass) |
+| 🗺️ **Predefined Journey** ★ | Select 1 of 8 flows | Crawl seeded with journey step URLs; context-aware dark pattern checks |
+| ⭐ **Director Mode** | Build step-by-step + AI prompt | Custom URL sequence with AI direction override per audit |
+
+**Predefined journeys available:**
+- 🔑 Login Flow (4 stages: Landing → Login form → Auth → Dashboard)
+- 👤 Account Creation (4 stages)
+- 🛒 Checkout Flow (4 stages: Cart → Shipping → Payment → Confirmation)
+- ✕ Cancellation (4 stages: Account settings → Cancel → Retention → Done)
+- 🍪 Consent & Cookie Flow (3 stages)
+- 📈 Subscription Upgrade (4 stages)
+- 🔍 Search & Discovery (4 stages)
+- ⚙️ Profile & Data Settings (4 stages)
 
 ### Crawl Configuration Options
 
@@ -491,17 +518,29 @@ Upload a screenshot or screen recording. GPT-4o analyses frames for:
 | AI Analysis | On / Off | Off |
 | Pillars | Any combination | All 4 |
 
+### Audit Types
+
+| Type | Input | Best For |
+|---|---|---|
+| 🌐 **Website** | Public URL | Full multi-page crawl, all 4 pillars |
+| 🔐 **Portal** | URL + login credentials | Authenticated internal portals |
+| 📄 **PDF** | Upload .pdf | PDF/UA compliance, tagged content |
+| 📸 **Image** | Upload screenshot | Quick AI visual review, ~70% confidence |
+| 🎥 **Video** | Upload screen recording | User journey audit, 8 frames analysed |
+
 ---
 
 ## 11. Output & Reporting
 
-### Dashboard (Live)
+### Dashboard (v2.1 — Live)
 
 - **Unified Trust Score** gauge (0–100)
-- Per-pillar scores with pass/warning/fail status
+- **Site Profile badge** — detected business model (ecommerce, fintech, SaaS…)
+- **Per-pillar progress rings** — independent 0–100% conic-gradient rings per pillar
+- **Audit Integrity banner** — amber warning when a pillar engine crashed (score shown for completed pillars only)
 - Issue breakdown by severity (Critical / High / Medium / Low)
 - WCAG criterion heatmap (pass / fail / N/A)
-- Full test execution log with timestamps
+- Full test execution log with timestamps and pillar labels
 - Page-by-page breakdown
 
 ### Exports
@@ -720,6 +759,7 @@ A: Docker container on any Linux host (Railway, AWS ECS, Azure Container Apps, G
 
 ---
 
-*Document prepared by: KPMG TrustLens Engineering*  
-*Version: 2.0 | Date: May 2026*  
+*Document prepared by: KPMG TrustLens Engineering*
+*Version: 2.1 | Date: May 2026*
 *Repository: github.com/chetanworkonly01-dev/KPMG-TrustLens-*
+*Changelog v2.1: Parallel pillar execution, scopeMode selector, Site Profiler, Page Intent Classifier, runDarkPatternJourney, chain-of-thought AI, pillarProgress tracking, auditIntegrity banner*

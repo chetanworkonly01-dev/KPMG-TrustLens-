@@ -18,6 +18,10 @@ interface AuditData {
     performance?: { pages: PerfPage[]; overallScore: number; averageVitals: Record<string, number | null>; totalResourceIssues: number; recommendations: string[] };
     privacy?: { findings: PrivFinding[]; overallScore: number; cookies: any[]; trackers: TrackerInfo[]; totalTrackers: number; hasConsentBanner: boolean; hasPrivacyPolicy: boolean; findingsBySeverity: Record<string, number>; regulatoryRisks: string[] };
   };
+  // Phase 2 fields
+  pillarProgress?: { accessibility?: number; darkpatterns?: number; performance?: number; privacy?: number };
+  auditIntegrity?: { status: 'clean' | 'warning' | 'partial'; message?: string; failedPillars?: string[] };
+  siteProfile?: string;
 }
 interface Issue {
   id: string; testId: string; title: string; description: string;
@@ -141,6 +145,7 @@ export default function AuditResultPage() {
   const id = params.id as string;
   const [data, setData] = useState<AuditData | null>(null);
   const [activeTab, setActiveTab] = useState('overview');
+  const [tabInitialized, setTabInitialized] = useState(false);
   const [severityFilter, setSeverityFilter] = useState('all');
   const [categoryFilter, setCategoryFilter] = useState('all');
   const [wcagFilter, setWcagFilter] = useState<'all' | 'fail' | 'pass' | 'not-tested'>('all');
@@ -188,6 +193,16 @@ export default function AuditResultPage() {
   const dpEnabled = enabledPillars.includes('darkpatterns');
   const perfEnabled = enabledPillars.includes('performance');
   const privEnabled = enabledPillars.includes('privacy');
+
+  // Bug 5 fix: set default tab based on primary enabled pillar
+  useEffect(() => {
+    if (data && !tabInitialized && data.status === 'complete') {
+      setTabInitialized(true);
+      if (!a11yEnabled && dpEnabled) setActiveTab('dark-patterns');
+      else if (!a11yEnabled && perfEnabled) setActiveTab('perf');
+      else if (!a11yEnabled && privEnabled) setActiveTab('privacy');
+    }
+  }, [data, tabInitialized, a11yEnabled, dpEnabled, perfEnabled, privEnabled]);
 
   const pillarMeta: Record<string, { icon: string; label: string; color: string }> = {
     accessibility: { icon: '♿', label: 'Accessibility', color: '#0091DA' },
@@ -242,6 +257,47 @@ export default function AuditResultPage() {
               {enabledPillars.length} pillar{enabledPillars.length !== 1 ? 's' : ''} active
             </span>
           </div>
+
+          {/* Per-pillar progress rings — independent 0-100% during live audit */}
+          {data.pillarProgress && (
+            <div style={{ display: 'flex', gap: 14, marginBottom: 12, flexWrap: 'wrap', justifyContent: 'center' }}>
+              {(['accessibility', 'darkpatterns', 'performance', 'privacy'] as const).map(p => {
+                if (!enabledPillars.includes(p)) return null;
+                const pct = data.pillarProgress?.[p];
+                const meta = pillarMeta[p];
+                if (!meta || pct === undefined) return null;
+                const failed = pct === -1;
+                const done = pct === 100;
+                const ringPct = failed ? 100 : Math.max(0, Math.min(100, pct));
+                const circ = 2 * Math.PI * 22;
+                const off = circ - (ringPct / 100) * circ;
+                return (
+                  <div key={p} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4 }}>
+                    <div style={{ position: 'relative', width: 52, height: 52 }}>
+                      <svg width="52" height="52" viewBox="0 0 52 52">
+                        <circle cx="26" cy="26" r="22" fill="none" stroke="rgba(255,255,255,0.06)" strokeWidth="4" />
+                        <circle cx="26" cy="26" r="22" fill="none"
+                          stroke={failed ? '#e74c3c' : done ? meta.color : `${meta.color}aa`}
+                          strokeWidth="4" strokeLinecap="round"
+                          strokeDasharray={circ} strokeDashoffset={off}
+                          style={{ transition: 'stroke-dashoffset 0.8s ease', transform: 'rotate(-90deg)', transformOrigin: 'center' }}
+                        />
+                      </svg>
+                      <span style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16 }}>
+                        {meta.icon}
+                      </span>
+                    </div>
+                    <span style={{ fontSize: 10, fontWeight: 700, color: failed ? '#e74c3c' : done ? meta.color : 'var(--text-muted)' }}>
+                      {failed ? 'Error' : done ? '100%' : `${pct}%`}
+                    </span>
+                    <span style={{ fontSize: 9, color: 'var(--text-muted)', maxWidth: 60, textAlign: 'center', lineHeight: 1.2 }}>
+                      {meta.label}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+          )}
 
           <div className="progress-bar" style={{ marginBottom: 6 }}>
             <div className="progress-fill" style={{ width: `${data.progress}%` }} />
@@ -418,6 +474,24 @@ export default function AuditResultPage() {
 
   return (
     <div className="container" style={{ paddingTop: 28, paddingBottom: 80 }}>
+      {/* ── Integrity Warning Banner ── */}
+      {data.auditIntegrity && data.auditIntegrity.status !== 'clean' && (
+        <div style={{
+          display: 'flex', alignItems: 'flex-start', gap: 12, padding: '12px 16px',
+          background: data.auditIntegrity.status === 'partial' ? 'rgba(231,76,60,0.08)' : 'rgba(243,156,18,0.08)',
+          border: `1px solid ${data.auditIntegrity.status === 'partial' ? 'rgba(231,76,60,0.3)' : 'rgba(243,156,18,0.3)'}`,
+          borderRadius: 'var(--radius-md)', marginBottom: 16
+        }}>
+          <span style={{ fontSize: 18 }}>{data.auditIntegrity.status === 'partial' ? '🔴' : '⚠️'}</span>
+          <div>
+            <div style={{ fontWeight: 700, fontSize: 13, color: data.auditIntegrity.status === 'partial' ? '#e74c3c' : '#f39c12', marginBottom: 2 }}>
+              {data.auditIntegrity.status === 'partial' ? 'Partial Audit' : 'Audit Integrity Warning'}
+            </div>
+            <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>{data.auditIntegrity.message}</div>
+          </div>
+        </div>
+      )}
+
       {/* ── Header ── */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 24 }}>
         <div style={{ flex: 1, minWidth: 0 }}>
@@ -428,7 +502,38 @@ export default function AuditResultPage() {
                 {standard} · Level {testedLevel}
               </span>
             )}
+            {data.siteProfile && (
+              <span style={{ fontSize: 10, padding: '3px 8px', borderRadius: 99, background: 'rgba(155,89,182,0.12)', color: '#9B59B6', border: '1px solid rgba(155,89,182,0.25)', fontWeight: 600 }}>
+                🏭 {data.siteProfile}
+              </span>
+            )}
           </div>
+
+          {/* Per-pillar progress mini indicators */}
+          {data.pillarProgress && (
+            <div style={{ display: 'flex', gap: 10, marginBottom: 6, flexWrap: 'wrap' }}>
+              {(['accessibility','darkpatterns','performance','privacy'] as const).map(p => {
+                if (!enabledPillars.includes(p)) return null;
+                const pct = data.pillarProgress?.[p];
+                const meta = pillarMeta[p];
+                if (!meta) return null;
+                const failed = pct === -1;
+                return (
+                  <div key={p} style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 11 }}>
+                    <div style={{
+                      width: 28, height: 28, borderRadius: '50%',
+                      background: `conic-gradient(${failed ? '#e74c3c' : meta.color} ${(pct ?? 0) * 3.6}deg, rgba(255,255,255,0.05) 0deg)`,
+                      display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 10
+                    }}>{meta.icon}</div>
+                    <span style={{ color: failed ? '#e74c3c' : 'var(--text-secondary)' }}>
+                      {meta.label} {failed ? 'failed' : pct === 100 ? '✓' : `${pct ?? 0}%`}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
           {/* Active pillar badges */}
           <div style={{ display: 'flex', gap: 6, marginBottom: 6, flexWrap: 'wrap' }}>
             {enabledPillars.map(p => {
@@ -553,6 +658,17 @@ export default function AuditResultPage() {
               {data.trustScore.overall}<span style={{ fontSize: 14, color: 'var(--text-muted)' }}>/100</span>
             </span>
           </div>
+          {/* Smart trust score context note — Gap 3 */}
+          {data.auditIntegrity && data.auditIntegrity.status !== 'clean' && data.auditIntegrity.failedPillars ? (
+            <div style={{ fontSize: 11, color: '#f39c12', marginBottom: 8, display: 'flex', alignItems: 'center', gap: 6 }}>
+              <span>⚠️</span>
+              <span>Score based on <strong>{enabledPillars.length - data.auditIntegrity.failedPillars.length}</strong> of {enabledPillars.length} pillars — {data.auditIntegrity.failedPillars.map(p => pillarMeta[p]?.label || p).join(', ')} did not complete</span>
+            </div>
+          ) : (
+            <div style={{ fontSize: 10, color: 'var(--text-muted)', marginBottom: 8 }}>
+              ✓ All {enabledPillars.length} pillar{enabledPillars.length !== 1 ? 's' : ''} reporting
+            </div>
+          )}
           <div className="pillar-scores-grid">
             {Object.entries(data.trustScore.pillarScores).map(([key, ps]) => {
               const icons: Record<string, string> = { accessibility: '♿', darkpatterns: '🕵️', performance: '⚡', privacy: '🔒' };
@@ -1155,8 +1271,30 @@ export default function AuditResultPage() {
                     <span style={{ fontWeight: 700, fontSize: 13 }}>{f.title}</span>
                     <span className={`badge badge-${f.severity}`}>{f.severity}</span>
                     <span className="dp-category-badge">{catIcons[f.category] || '📋'} {f.category}</span>
+                    {/* Signal vs Verdict badge */}
+                    {(f as any).findingVerdict && (
+                      <span style={{
+                        fontSize: 9, padding: '2px 7px', borderRadius: 99, fontWeight: 700, letterSpacing: '0.02em',
+                        background: (f as any).findingVerdict === 'verdict' ? 'rgba(0,186,140,0.12)' : 'rgba(243,156,18,0.12)',
+                        color: (f as any).findingVerdict === 'verdict' ? '#00BA8C' : '#f39c12',
+                        border: `1px solid ${(f as any).findingVerdict === 'verdict' ? 'rgba(0,186,140,0.3)' : 'rgba(243,156,18,0.3)'}`,
+                      }}>
+                        {(f as any).findingVerdict === 'verdict' ? '✓ Verdict' : '⚑ Signal'}
+                      </span>
+                    )}
+                    {(f as any).detectionBasis && (
+                      <span style={{ fontSize: 9, padding: '2px 6px', borderRadius: 99, background: 'rgba(155,89,182,0.1)', color: '#9B59B6', border: '1px solid rgba(155,89,182,0.25)', fontWeight: 600 }}>
+                        {(f as any).detectionBasis}
+                      </span>
+                    )}
                   </div>
                   <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginBottom: 6 }}>{f.description}</div>
+                  {/* Verifiability note */}
+                  {(f as any).verifiabilityNote && (
+                    <div style={{ fontSize: 10, color: (f as any).findingVerdict === 'verdict' ? '#00BA8C' : '#f39c12', marginBottom: 6, fontStyle: 'italic' }}>
+                      {(f as any).verifiabilityNote}
+                    </div>
+                  )}
                   <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginBottom: 8, padding: '6px 10px', background: 'rgba(0,0,0,0.2)', borderRadius: 'var(--radius-sm)' }}>
                     <strong>Evidence:</strong> {f.evidence.summary}
                   </div>

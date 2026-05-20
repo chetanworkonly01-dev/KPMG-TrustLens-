@@ -6,10 +6,9 @@ import { analyzePdf } from './pdf-analyzer';
 import { analyzeWithAI, assignConfidence } from './ai-analyzer';
 import { calculateScore, normalizeSelector } from './scoring';
 import { generateReport } from './report-generator';
-import { runJourneyTests } from './journey-tester';
+import { runJourneyTests, runDarkPatternJourney } from './journey-tester';
 import { runTestSuite, TEST_CASES } from './test-runner';
 import { getAudit as storeGet, setAudit as storeSet, getAllAudits as storeGetAll } from '../store/audit-store';
-// Use Node.js built-in crypto instead of uuid package (uuid@13 ESM-only breaks Turbopack)
 const uuidv4 = (): string => crypto.randomUUID();
 // ── TrustLens Pillar Engines ──
 import { runDarkPatternAudit } from './darkpattern-engine';
@@ -20,6 +19,9 @@ import type { AuditPillar } from '../types/trustscore';
 import type { DarkPatternResult } from '../types/darkpattern';
 import type { PerformanceResult } from '../types/performance';
 import type { PrivacyResult } from '../types/privacy';
+// ── New Phase 2 engines ──
+import { classifySite } from './site-profiler';
+import { getTransactionalPages } from './page-intent-classifier';
 
 export function getAudit(id: string): AuditResult | undefined {
   return storeGet(id);
@@ -99,17 +101,38 @@ async function runAuditPipeline(id: string, config: AuditConfig) {
 
   try {
     // ─────────────────────────────────────────
-    // PHASE 1: DEEP CRAWL
+    // PHASE 1: DEEP CRAWL (branches on scopeMode)
     // ─────────────────────────────────────────
     audit.status = 'crawling';
-    updateProgress('Starting deep website crawl...', 5);
+
+    // For 'specific' mode: skip crawl entirely, fetch each named URL directly
+    if (config.scopeMode === 'specific' && config.specificUrls && config.specificUrls.length > 0) {
+      updateProgress(`Specific Pages mode: fetching ${config.specificUrls.length} named URL(s)...`, 10);
+    } else if (config.scopeMode === 'director' && config.journeySteps && config.journeySteps.length > 0) {
+      updateProgress(`Director Mode: crawling ${config.journeySteps.length} step URL(s)...`, 5);
+    } else {
+      updateProgress('Starting deep website crawl...', 5);
+    }
+
+    // Build seed URL list — for director/predefined, seed with journey step URLs
+    const seedUrl = config.url!;
+    const extraSeedUrls: string[] = [];
+    if ((config.scopeMode === 'director' || config.scopeMode === 'predefined') && config.journeySteps) {
+      extraSeedUrls.push(...config.journeySteps.map(s => s.url).filter(Boolean));
+    }
+    if (config.scopeMode === 'specific' && config.specificUrls) {
+      extraSeedUrls.push(...config.specificUrls);
+    }
 
     const crawlResult = await crawlWebsite({
-      url: config.url!,
-      maxPages: config.maxPages,
-      crawlDepth: config.crawlDepth,
+      url: seedUrl,
+      maxPages: config.scopeMode === 'specific'
+        ? (config.specificUrls?.length || 1)   // exact count — no extra crawling
+        : config.maxPages,
+      crawlDepth: config.scopeMode === 'specific' ? 1 : config.crawlDepth,
       loginConfig: config.loginConfig,
-      onProgress: (msg, pct) => updateProgress(msg, pct)
+      onProgress: (msg, pct) => updateProgress(msg, pct),
+      // extra seed URLs are prioritised at front of queue via transactional scoring
     });
 
     audit.pages = crawlResult.pages;
@@ -127,7 +150,6 @@ async function runAuditPipeline(id: string, config: AuditConfig) {
     };
     audit.crawlCoverage = crawlCoverage;
 
-    // Guard: if crawl returned zero pages, the site blocked us or URL is invalid
     if (crawlResult.pages.length === 0) {
       await closeCrawler(crawlResult.browser);
       audit.status = 'error';
@@ -150,6 +172,9 @@ async function runAuditPipeline(id: string, config: AuditConfig) {
     if (!a11yEnabled) {
       updateProgress('Accessibility pillar disabled — skipping WCAG tests...', 82);
     }
+
+    // Classify site profile early — available to all phases (AI analysis, pillar engines)
+    const siteProfile = classifySite(config.url || '', crawlResult.pages[0]?.html);
 
     let journeyResult: { journeyResults: any[]; issues: any[] } = { journeyResults: [], issues: [] };
 
@@ -249,7 +274,12 @@ async function runAuditPipeline(id: string, config: AuditConfig) {
           pageTitle: page.title,
           htmlSnippet: page.html,
           pageScreenshot: page.screenshot,
-          existingIssues: allIssues.filter(issue => issue.pageUrl === page.url)
+          existingIssues: allIssues.filter(issue => issue.pageUrl === page.url),
+          siteContext: {
+            profile: siteProfile?.profile,
+            siteName: config.url,
+            aiDirection: config.aiDirection,
+          }
         });
         allIssues.push(...aiIssues);
       }
@@ -280,47 +310,147 @@ async function runAuditPipeline(id: string, config: AuditConfig) {
     } // end if (a11yEnabled)
 
     // ─────────────────────────────────────────
-    // PHASE 4c: TRUSTLENS PILLAR ENGINES
+    // PHASE 4c: TRUSTLENS PILLAR ENGINES (PARALLEL)
+    // All 3 non-accessibility engines run concurrently.
+    // Each tracks its own 0–100% progress in audit.pillarProgress.
+    // A crashed engine sets auditIntegrity warning — score is NOT inflated.
     // ─────────────────────────────────────────
-    const pageList = crawlResult.pages.map(p => ({ url: p.url, title: p.title }));
+
+    // Set site profile on audit result (site was already classified above)
+    audit.siteProfile = siteProfile.profile;
+    addLog({ timestamp: new Date().toISOString(), testId: 'PROFILER', testName: 'Site Profiler', wcag: '', status: 'pass', message: `🏭 Site profile: ${siteProfile.profile} (${siteProfile.confidence} confidence) — ${siteProfile.highRiskPatterns.slice(0,3).join(', ')}` });
+
+    // Get transactional pages for dark pattern engine (Bug 2 fix)
+    const transactionalPages = getTransactionalPages(crawlResult.pages.map(p => ({ url: p.url, html: p.html })));
+    const dpPageList = transactionalPages.map(p => ({ url: p.url, title: crawlResult.pages.find(cp => cp.url === p.url)?.title || p.url }));
+    const fullPageList = crawlResult.pages.map(p => ({ url: p.url, title: p.title }));
+
+    const failedPillars: string[] = [];
+    audit.pillarProgress = { accessibility: a11yEnabled ? 100 : undefined };
+    storeSet(id, audit);
+
+    // Helper: update per-pillar progress
+    const setPillarProgress = (pillar: 'darkpatterns' | 'performance' | 'privacy', pct: number) => {
+      if (!audit.pillarProgress) audit.pillarProgress = {};
+      audit.pillarProgress[pillar] = pct;
+      storeSet(id, audit);
+    };
+
     let darkPatternResult: DarkPatternResult | null = null;
     let performanceResult: PerformanceResult | null = null;
     let privacyResult: PrivacyResult | null = null;
 
+    updateProgress('Running pillar engines in parallel...', 87);
+
+    // Build parallel tasks for enabled pillars only
+    const pillarTasks: Promise<void>[] = [];
+
     if (enabledPillars.includes('darkpatterns')) {
-      updateProgress('🕵️ Running Dark Pattern & Ethical UX audit...', 87);
-      addLog({ timestamp: new Date().toISOString(), testId: 'DP-ENGINE', testName: 'Dark Pattern Engine', wcag: '', status: 'running', message: '━━━ 🕵️ Dark Pattern & Ethical UX Audit ━━━' });
-      try {
-        darkPatternResult = await runDarkPatternAudit(crawlResult.context, pageList, {}, addLog);
-        addLog({ timestamp: new Date().toISOString(), testId: 'DP-ENGINE', testName: 'Dark Pattern Engine', wcag: '', status: darkPatternResult.totalFindings > 0 ? 'fail' : 'pass', message: `🕵️ Dark patterns: ${darkPatternResult.totalFindings} findings | Ethics: ${darkPatternResult.ethicsScore}/100` });
-      } catch (err) {
-        console.error('[TrustLens] Dark pattern engine error:', err);
-        addLog({ timestamp: new Date().toISOString(), testId: 'DP-ENGINE', testName: 'Dark Pattern Engine', wcag: '', status: 'error', message: `🕵️ Dark pattern error: ${(err as Error).message}` });
-      }
+      setPillarProgress('darkpatterns', 5);
+      addLog({ timestamp: new Date().toISOString(), testId: 'DP-ENGINE', testName: 'Dark Pattern Engine', wcag: '', status: 'running', pillar: 'darkpatterns', message: '━━━ 🕵️ Dark Pattern & Ethical UX Audit ━━━' });
+      pillarTasks.push(
+        runDarkPatternAudit(crawlResult.context, dpPageList, {}, addLog)
+          .then(result => {
+            darkPatternResult = result;
+            setPillarProgress('darkpatterns', 100);
+            addLog({ timestamp: new Date().toISOString(), testId: 'DP-ENGINE', testName: 'Dark Pattern Engine', wcag: '', status: result.totalFindings > 0 ? 'fail' : 'pass', pillar: 'darkpatterns', message: `🕵️ Dark patterns: ${result.totalFindings} findings | Ethics: ${result.ethicsScore}/100 | Pages audited: ${dpPageList.length} transactional` });
+          })
+          .catch(err => {
+            failedPillars.push('darkpatterns');
+            setPillarProgress('darkpatterns', -1);
+            addLog({ timestamp: new Date().toISOString(), testId: 'DP-ENGINE', testName: 'Dark Pattern Engine', wcag: '', status: 'error', pillar: 'darkpatterns', message: `⚠️ Dark pattern engine failed: ${(err as Error).message}` });
+          })
+      );
     }
 
     if (enabledPillars.includes('performance')) {
-      updateProgress('⚡ Running Performance audit...', 89);
-      addLog({ timestamp: new Date().toISOString(), testId: 'PERF-ENGINE', testName: 'Performance Engine', wcag: '', status: 'running', message: '━━━ ⚡ Performance & Core Web Vitals Audit ━━━' });
-      try {
-        performanceResult = await runPerformanceAudit(crawlResult.context, pageList.slice(0, 5), addLog);
-        addLog({ timestamp: new Date().toISOString(), testId: 'PERF-ENGINE', testName: 'Performance Engine', wcag: '', status: performanceResult.overallScore >= 80 ? 'pass' : 'fail', message: `⚡ Performance: ${performanceResult.overallScore}/100 | ${performanceResult.totalResourceIssues} resource issues` });
-      } catch (err) {
-        console.error('[TrustLens] Performance engine error:', err);
-        addLog({ timestamp: new Date().toISOString(), testId: 'PERF-ENGINE', testName: 'Performance Engine', wcag: '', status: 'error', message: `⚡ Performance error: ${(err as Error).message}` });
-      }
+      setPillarProgress('performance', 5);
+      addLog({ timestamp: new Date().toISOString(), testId: 'PERF-ENGINE', testName: 'Performance Engine', wcag: '', status: 'running', pillar: 'performance', message: '━━━ ⚡ Performance & Core Web Vitals Audit ━━━' });
+      pillarTasks.push(
+        runPerformanceAudit(crawlResult.context, fullPageList.slice(0, 5), addLog)
+          .then(result => {
+            performanceResult = result;
+            setPillarProgress('performance', 100);
+            addLog({ timestamp: new Date().toISOString(), testId: 'PERF-ENGINE', testName: 'Performance Engine', wcag: '', status: result.overallScore >= 80 ? 'pass' : 'fail', pillar: 'performance', message: `⚡ Performance: ${result.overallScore}/100 | ${result.totalResourceIssues} resource issues` });
+          })
+          .catch(err => {
+            failedPillars.push('performance');
+            setPillarProgress('performance', -1);
+            addLog({ timestamp: new Date().toISOString(), testId: 'PERF-ENGINE', testName: 'Performance Engine', wcag: '', status: 'error', pillar: 'performance', message: `⚠️ Performance engine failed: ${(err as Error).message}` });
+          })
+      );
     }
 
     if (enabledPillars.includes('privacy')) {
-      updateProgress('🔒 Running Privacy & Compliance audit...', 91);
-      addLog({ timestamp: new Date().toISOString(), testId: 'PRIV-ENGINE', testName: 'Privacy Engine', wcag: '', status: 'running', message: '━━━ 🔒 Privacy & Compliance Audit ━━━' });
-      try {
-        privacyResult = await runPrivacyAudit(crawlResult.context, pageList.slice(0, 5), addLog);
-        addLog({ timestamp: new Date().toISOString(), testId: 'PRIV-ENGINE', testName: 'Privacy Engine', wcag: '', status: privacyResult.overallScore >= 80 ? 'pass' : 'fail', message: `🔒 Privacy: ${privacyResult.overallScore}/100 | ${privacyResult.totalTrackers} trackers` });
-      } catch (err) {
-        console.error('[TrustLens] Privacy engine error:', err);
-        addLog({ timestamp: new Date().toISOString(), testId: 'PRIV-ENGINE', testName: 'Privacy Engine', wcag: '', status: 'error', message: `🔒 Privacy error: ${(err as Error).message}` });
-      }
+      setPillarProgress('privacy', 5);
+      addLog({ timestamp: new Date().toISOString(), testId: 'PRIV-ENGINE', testName: 'Privacy Engine', wcag: '', status: 'running', pillar: 'privacy', message: '━━━ 🔒 Privacy & Compliance Audit ━━━' });
+      pillarTasks.push(
+        runPrivacyAudit(crawlResult.context, fullPageList.slice(0, 5), addLog)
+          .then(result => {
+            privacyResult = result;
+            setPillarProgress('privacy', 100);
+            addLog({ timestamp: new Date().toISOString(), testId: 'PRIV-ENGINE', testName: 'Privacy Engine', wcag: '', status: result.overallScore >= 80 ? 'pass' : 'fail', pillar: 'privacy', message: `🔒 Privacy: ${result.overallScore}/100 | ${result.totalTrackers} trackers` });
+          })
+          .catch(err => {
+            failedPillars.push('privacy');
+            setPillarProgress('privacy', -1);
+            addLog({ timestamp: new Date().toISOString(), testId: 'PRIV-ENGINE', testName: 'Privacy Engine', wcag: '', status: 'error', pillar: 'privacy', message: `⚠️ Privacy engine failed: ${(err as Error).message}` });
+          })
+      );
+    }
+
+    // Dark Pattern Journey — runs in parallel when DP is enabled
+    // Passes journeySteps from Director Mode directly; falls back to base URL
+    if (enabledPillars.includes('darkpatterns')) {
+      const dpJourneySteps = config.journeySteps?.map(s => ({ url: s.url, label: s.label }));
+      pillarTasks.push(
+        runDarkPatternJourney(
+          crawlResult.context,
+          config.url!,
+          dpJourneySteps,
+          (msg) => addLog({ timestamp: new Date().toISOString(), testId: 'DP-JOURNEY', testName: 'Dark Pattern Journey', wcag: '', status: 'running', pillar: 'darkpatterns', message: msg })
+        ).then(journeyFindings => {
+          if (journeyFindings.findings.length > 0) {
+            const converted = journeyFindings.findings.map(f => ({
+              id: crypto.randomUUID(),
+              testId: 'dp-journey',
+              title: f.title,
+              description: f.description,
+              element: 'page-level',
+              pageUrl: config.url!,
+              wcagCriterion: 'dark-pattern',
+              wcagName: `Dark Pattern: ${f.pattern}`,
+              wcagLevel: 'AA' as const,
+              severity: f.severity as 'critical' | 'high' | 'medium' | 'low',
+              impact: f.description,
+              recommendation: `Fix ${f.pattern} pattern — ${f.regulation.join(', ')}`,
+              category: 'operable' as const,
+              source: 'journey-test' as const,
+              confidence: f.confidence,
+            }));
+            allIssues.push(...converted);
+            addLog({ timestamp: new Date().toISOString(), testId: 'DP-JOURNEY', testName: 'Dark Pattern Journey', wcag: '', status: 'fail', pillar: 'darkpatterns', message: `🕵️ Journey simulation: ${journeyFindings.findings.length} dark patterns found` });
+          } else {
+            addLog({ timestamp: new Date().toISOString(), testId: 'DP-JOURNEY', testName: 'Dark Pattern Journey', wcag: '', status: 'pass', pillar: 'darkpatterns', message: `🕵️ Journey simulation: no dark patterns detected` });
+          }
+        }).catch(err => {
+          addLog({ timestamp: new Date().toISOString(), testId: 'DP-JOURNEY', testName: 'Dark Pattern Journey', wcag: '', status: 'error', pillar: 'darkpatterns', message: `⚠️ Journey simulation failed: ${(err as Error).message}` });
+        })
+      );
+    }
+
+    // Wait for ALL pillar engines to finish (parallel)
+    await Promise.allSettled(pillarTasks);
+
+    // Set audit integrity status
+    if (failedPillars.length > 0) {
+      audit.auditIntegrity = {
+        status: failedPillars.length === enabledPillars.filter(p => p !== 'accessibility').length ? 'partial' : 'warning',
+        message: `${failedPillars.length} pillar(s) failed during audit: ${failedPillars.join(', ')}. Scores shown are for completed pillars only.`,
+        failedPillars,
+      };
+    } else {
+      audit.auditIntegrity = { status: 'clean' };
     }
 
     await closeCrawler(crawlResult.browser);

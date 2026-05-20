@@ -6,13 +6,25 @@ export const dynamic = 'force-dynamic';
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { url, loginConfig, crawlDepth = 2, maxPages = 5, includeAI = false, wcagLevels = ['A', 'AA'], standard = 'WCAG 2.2', enabledPillars } = body;
+    const {
+      url, loginConfig,
+      crawlDepth = 2, maxPages = 5,
+      includeAI = false,
+      wcagLevels = ['A', 'AA'],
+      standard = 'WCAG 2.2',
+      enabledPillars,
+      // New scope fields from UI
+      scopeMode = 'general',
+      specificUrls,
+      selectedJourney,
+      journeySteps,
+      aiDirection,
+    } = body;
 
     if (!url) {
       return NextResponse.json({ error: 'URL is required' }, { status: 400 });
     }
 
-    // Validate URL
     try { new URL(url); } catch {
       return NextResponse.json({ error: 'Invalid URL format' }, { status: 400 });
     }
@@ -27,6 +39,12 @@ export async function POST(request: NextRequest) {
       wcagLevels,
       standard,
       enabledPillars: enabledPillars || ['accessibility', 'darkpatterns', 'performance', 'privacy'],
+      // Scope fields
+      scopeMode,
+      specificUrls: Array.isArray(specificUrls) ? specificUrls : undefined,
+      selectedJourney: selectedJourney || undefined,
+      journeySteps: Array.isArray(journeySteps) ? journeySteps : undefined,
+      aiDirection: aiDirection || undefined,
     });
 
     return NextResponse.json({ auditId, status: 'started' });

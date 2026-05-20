@@ -86,6 +86,10 @@ export type DarkPatternRegulation =
   | 'IN-SEBI'         // Securities and Exchange Board of India
   | 'UK-CPR';         // UK Consumer Protection Regulations
 
+// ── Finding Verifiability (Signal vs Verdict model) ──
+export type FindingVerdict = 'verdict' | 'signal';
+export type DetectionBasis = 'visual' | 'structural' | 'textual';
+
 // ── Individual Dark Pattern Finding ──
 export interface DarkPatternFinding {
   id: string;
@@ -104,6 +108,10 @@ export interface DarkPatternFinding {
   userImpact: string;                       // How this harms real users
   evidence: DarkPatternEvidence;
   source: 'rule' | 'ai' | 'journey';       // Detection method
+  // Signal vs Verdict model (Plan B3)
+  detectionBasis?: DetectionBasis;          // How the finding was detected: visual/structural/textual
+  verifiabilityNote?: string;               // Explains if DOM-provable (verdict) or content-only (signal)
+  findingVerdict?: FindingVerdict;          // 'verdict' = DOM-proven, 'signal' = unverifiable claim
 }
 
 export interface DarkPatternEvidence {

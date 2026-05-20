@@ -66,6 +66,227 @@ export async function runJourneyTests(
 }
 
 /**
+ * Dark Pattern Journey Tester
+ * Simulates transactional user flows to catch patterns invisible to static DOM analysis:
+ * - Sneak into basket (items added without explicit user action)
+ * - Pre-ticked add-ons that appear during checkout
+ * - Roach Motel (cancel requires more steps than subscribe)
+ */
+export async function runDarkPatternJourney(
+  context: BrowserContext,
+  baseUrl: string,
+  journeySteps?: { url: string; label: string }[],
+  onProgress?: (msg: string) => void
+): Promise<{ journeyName: string; findings: DarkPatternJourneyFinding[] }> {
+  const findings: DarkPatternJourneyFinding[] = [];
+  const page = await context.newPage();
+
+  try {
+    // Step 1: Load the base/product page and record initial cart state
+    onProgress?.('Dark pattern journey: loading product page...');
+    await page.goto(baseUrl, { waitUntil: 'domcontentloaded', timeout: 30000 });
+    await page.waitForLoadState('networkidle', { timeout: 10000 }).catch(() => {});
+
+    const initialCartState = await page.evaluate(() => {
+      const cartIndicators = document.querySelectorAll(
+        '[class*="cart"], [class*="basket"], [class*="bag"], [aria-label*="cart"], [aria-label*="basket"]'
+      );
+      const counts: string[] = [];
+      cartIndicators.forEach(el => {
+        const text = el.textContent?.trim();
+        if (text) counts.push(text);
+      });
+      return counts;
+    });
+
+    // Step 2: Click Add to Cart / Buy if present and record what changed
+    onProgress?.('Dark pattern journey: interacting with add-to-cart...');
+    const addToCartClicked = await page.evaluate(async () => {
+      const selectors = [
+        'button[id*="add-to-cart"]', 'button[name*="add-to-cart"]',
+        'button[class*="add-to-cart"]', 'button[class*="addToCart"]',
+        '[data-action="add-to-cart"]', 'input[value*="Add to Cart"]',
+        'button:has-text("Add to Cart")', 'button:has-text("Add to Bag")',
+        'button:has-text("Add to Basket")',
+      ];
+      for (const sel of selectors) {
+        const btn = document.querySelector(sel) as HTMLElement | null;
+        if (btn) { btn.click(); return true; }
+      }
+      return false;
+    });
+
+    if (addToCartClicked) {
+      await page.waitForTimeout(2000);
+
+      // Check if additional items were silently added
+      const postCartState = await page.evaluate(() => {
+        const preChecked = document.querySelectorAll(
+          'input[type="checkbox"]:checked, input[type="radio"]:checked'
+        );
+        const preCheckedItems: { label: string; value: string }[] = [];
+        preChecked.forEach(el => {
+          const input = el as HTMLInputElement;
+          const label = document.querySelector(`label[for="${input.id}"]`)?.textContent?.trim()
+            || input.closest('label')?.textContent?.trim()
+            || input.name || '';
+          if (label) preCheckedItems.push({ label, value: input.value || '' });
+        });
+
+        // Look for upsell/add-on items that appeared
+        const upsells = document.querySelectorAll(
+          '[class*="upsell"], [class*="cross-sell"], [class*="addon"], [class*="add-on"], [class*="protection"]'
+        );
+        const upsellTexts: string[] = [];
+        upsells.forEach(el => {
+          const text = el.textContent?.trim().substring(0, 100);
+          if (text) upsellTexts.push(text);
+        });
+
+        return { preCheckedItems, upsellTexts };
+      });
+
+      // Flag pre-ticked add-ons (sneak into basket variant)
+      if (postCartState.preCheckedItems.length > 0) {
+        findings.push({
+          pattern: 'sneak-into-basket',
+          severity: 'critical',
+          title: 'Pre-selected add-ons after Add to Cart',
+          description: `After clicking Add to Cart, ${postCartState.preCheckedItems.length} item(s) were found pre-selected: ${postCartState.preCheckedItems.map(i => i.label).join(', ')}`,
+          evidence: postCartState.preCheckedItems.map(i => i.label),
+          detectionMethod: 'journey-simulation',
+          regulation: ['EU DSA Art. 25', 'FTC Act §5', 'Consumer Protection Act'],
+          confidence: 'high',
+        });
+      }
+    }
+
+    // Step 3: If explicit journey steps provided, walk through them
+    if (journeySteps && journeySteps.length > 0) {
+      onProgress?.('Dark pattern journey: walking predefined steps...');
+      let stepCount = 0;
+      for (const step of journeySteps) {
+        stepCount++;
+        try {
+          await page.goto(step.url, { waitUntil: 'domcontentloaded', timeout: 25000 });
+          await page.waitForTimeout(1500);
+
+          const stepFindings = await page.evaluate((stepLabel: string) => {
+            const results: { pattern: string; title: string; description: string; evidence: string[] }[] = [];
+
+            // Check pre-ticked checkboxes
+            const preChecked = document.querySelectorAll('input[type="checkbox"]:checked');
+            preChecked.forEach(el => {
+              const input = el as HTMLInputElement;
+              const label = document.querySelector(`label[for="${input.id}"]`)?.textContent?.trim()
+                || input.closest('label')?.textContent?.trim() || input.name || 'Unknown';
+              results.push({
+                pattern: 'pre-ticked-checkbox',
+                title: `Pre-ticked checkbox on ${stepLabel}`,
+                description: `Checkbox "${label}" is pre-selected by default. User must actively opt out.`,
+                evidence: [label],
+              });
+            });
+
+            // Check for urgency signals
+            const urgencyWords = ['limited time', 'expires', 'only left', 'hurry', 'last chance', 'selling fast'];
+            const allText = document.body.innerText?.toLowerCase() || '';
+            for (const word of urgencyWords) {
+              if (allText.includes(word)) {
+                const snippet = allText.substring(allText.indexOf(word) - 20, allText.indexOf(word) + 60).trim();
+                results.push({
+                  pattern: 'false-urgency',
+                  title: `Urgency signal on ${stepLabel}`,
+                  description: `Urgency language detected: "...${snippet}..."`,
+                  evidence: [snippet],
+                });
+                break;
+              }
+            }
+
+            // Count cancel vs subscribe steps
+            const cancelLinks = document.querySelectorAll('a, button');
+            let cancelStepCount = 0;
+            cancelLinks.forEach(el => {
+              const text = (el.textContent || '').toLowerCase();
+              if (text.includes('cancel') || text.includes('unsubscribe') || text.includes('delete')) {
+                cancelStepCount++;
+              }
+            });
+
+            return results;
+          }, step.label);
+
+          for (const f of stepFindings) {
+            findings.push({
+              pattern: f.pattern as any,
+              severity: 'high',
+              title: f.title,
+              description: f.description,
+              evidence: f.evidence,
+              detectionMethod: 'journey-simulation',
+              regulation: ['EU DSA Art. 25', 'FTC Act §5'],
+              confidence: 'high',
+            });
+          }
+        } catch {
+          // Step navigation failed, skip
+        }
+      }
+    }
+
+    // Step 4: Roach Motel — count clicks needed to cancel vs subscribe
+    onProgress?.('Dark pattern journey: checking roach motel...');
+    const subscribeButtons = await page.evaluate(() => {
+      const btns = Array.from(document.querySelectorAll('a, button'));
+      return btns.filter(b => {
+        const t = (b.textContent || '').toLowerCase();
+        return t.includes('subscribe') || t.includes('sign up') || t.includes('get started') || t.includes('start free');
+      }).length;
+    });
+
+    const cancelButtons = await page.evaluate(() => {
+      const btns = Array.from(document.querySelectorAll('a, button'));
+      return btns.filter(b => {
+        const t = (b.textContent || '').toLowerCase();
+        return t.includes('cancel') || t.includes('unsubscribe') || t.includes('delete account');
+      }).length;
+    });
+
+    if (subscribeButtons > 0 && cancelButtons === 0) {
+      findings.push({
+        pattern: 'roach-motel',
+        severity: 'high',
+        title: 'Roach Motel: Subscribe visible, Cancel hidden',
+        description: `Found ${subscribeButtons} subscribe CTA(s) but 0 cancel/unsubscribe options on this page. Classic asymmetry — easy to enter, hard to exit.`,
+        evidence: [`${subscribeButtons} subscribe buttons found`, '0 cancel/unsubscribe options visible'],
+        detectionMethod: 'journey-simulation',
+        regulation: ['EU DSA Art. 25', 'CMA Subscription Trap Guidelines', 'FTC Click-to-Cancel Rule'],
+        confidence: 'medium',
+      });
+    }
+
+  } catch (error) {
+    console.error('Dark pattern journey error:', error);
+  } finally {
+    await page.close();
+  }
+
+  return { journeyName: 'Dark Pattern Journey', findings };
+}
+
+export interface DarkPatternJourneyFinding {
+  pattern: 'sneak-into-basket' | 'pre-ticked-checkbox' | 'roach-motel' | 'false-urgency' | 'hidden-cost';
+  severity: 'critical' | 'high' | 'medium';
+  title: string;
+  description: string;
+  evidence: string[];
+  detectionMethod: 'journey-simulation';
+  regulation: string[];
+  confidence: 'high' | 'medium';
+}
+
+/**
  * Test keyboard navigation: tab through all elements, check for traps
  */
 async function testKeyboardNavigation(context: BrowserContext, url: string): Promise<JourneyTestResult> {

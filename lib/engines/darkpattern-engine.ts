@@ -606,6 +606,15 @@ function makeFinding(
 ): DarkPatternFinding {
   const rule = DARK_PATTERN_RULES.find(r => r.id === ruleId);
   if (!rule) throw new Error(`Unknown dark pattern rule: ${ruleId}`);
+
+  // Signal vs Verdict model — DOM/visual = verdict (provable), AI/text = signal (needs review)
+  const detectToBasis: Record<string, 'structural' | 'visual' | 'textual'> = {
+    dom: 'structural', visual: 'visual', journey: 'structural',
+    ai: 'textual', flow: 'structural',
+  };
+  const detectionBasis = detectToBasis[rule.detect] || 'textual';
+  const isVerdict = detectionBasis === 'structural' || detectionBasis === 'visual';
+
   return {
     id: '',  // assigned by caller
     ruleId,
@@ -623,6 +632,11 @@ function makeFinding(
     userImpact: getUserImpact(rule.principle),
     evidence,
     source: rule.detect === 'ai' ? 'ai' : rule.detect === 'journey' ? 'journey' : 'rule',
+    detectionBasis,
+    findingVerdict: isVerdict ? 'verdict' : 'signal',
+    verifiabilityNote: isVerdict
+      ? 'DOM-proven: element structure or computed style confirms this pattern'
+      : 'Content-based signal: flagged by text/AI analysis — manual review recommended',
   };
 }
 

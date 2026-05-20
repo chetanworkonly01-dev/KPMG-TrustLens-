@@ -22,15 +22,16 @@ export interface AuditConfig {
   crawlDepth: number;
   maxPages: number;
   includeAI: boolean;
-  /** WCAG conformance levels to test against — drives axe tag selection and reporting */
   wcagLevels: ('A' | 'AA' | 'AAA')[];
-  /** Optional: which standard to reference (e.g. 'WCAG 2.2', 'EN 301 549', 'Section 508') */
   standard?: string;
-  // ── TrustLens Pillar Configuration ──
-  /** Which audit pillars to run (default: all enabled) */
   enabledPillars?: AuditPillar[];
-  /** Custom pillar weight overrides */
   pillarConfig?: Partial<PillarConfig>;
+  // ── New scope fields from Director Mode UI ──
+  scopeMode?: 'general' | 'specific' | 'predefined' | 'director';
+  specificUrls?: string[];
+  selectedJourney?: string;
+  journeySteps?: { id: string; label: string; url: string }[];
+  aiDirection?: string;
 }
 
 export interface PageData {
@@ -54,16 +55,28 @@ export interface AuditResult {
   crawlCoverage?: CrawlCoverage;
   testResults: TestResult[];
   testLog: TestLogEntry[];
-  /** Criteria that were N/A for the audited content */
   inapplicableCriteria: string[];
   startedAt: string;
   completedAt?: string;
   error?: string;
   // ── TrustLens Multi-Pillar Results ──
-  /** Unified trust score across all enabled pillars */
   trustScore?: TrustScore;
-  /** Per-pillar detailed results */
   pillarResults?: PillarResults;
+  // ── Per-pillar independent progress (0-100 each) ──
+  pillarProgress?: {
+    accessibility?: number;
+    darkpatterns?: number;
+    performance?: number;
+    privacy?: number;
+  };
+  // ── Audit integrity warning (amber banner trigger) ──
+  auditIntegrity?: {
+    status: 'clean' | 'warning' | 'partial';
+    message?: string;
+    failedPillars?: string[];
+  };
+  // ── Site classification from profiler ──
+  siteProfile?: string;
 }
 
 export type ConfidenceLevel = 'high' | 'medium' | 'low';

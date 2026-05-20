@@ -28,6 +28,25 @@ const SKIP_PATTERNS = [
   /#$/,
 ];
 
+// ── Transactional URL patterns — dark patterns live here ──
+// Higher score = higher crawl priority for dark pattern auditing
+const TRANSACTIONAL_PATTERNS: [RegExp, number][] = [
+  [/\/(checkout|cart|basket|bag|order|purchase|buy)/i, 10],
+  [/\/(pricing|plans?|subscribe|subscription|upgrade|downgrade)/i, 9],
+  [/\/(cancel|cancell?ation|unsubscribe|delete-account|close-account)/i, 9],
+  [/\/(payment|billing|invoice)/i, 8],
+  [/\/(account|settings|profile|preferences)/i, 7],
+  [/\/(consent|cookie|privacy-settings|gdpr)/i, 6],
+  [/\/(signup|register|join|onboarding)/i, 5],
+];
+
+export function getTransactionalScore(url: string): number {
+  for (const [pattern, score] of TRANSACTIONAL_PATTERNS) {
+    if (pattern.test(url)) return score;
+  }
+  return 0;
+}
+
 // ── Realistic browser user-agents (rotated to avoid detection) ──
 const USER_AGENTS = [
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
@@ -136,8 +155,15 @@ export async function crawlWebsite(options: CrawlOptions): Promise<CrawlResult> 
   }
 
   while (urlQueue.length > 0 && pages.length < maxPages) {
+    // Sort queue: transactional pages first (better dark pattern coverage)
+    if (pages.length === 0 || pages.length % 5 === 0) {
+      urlQueue.sort((a, b) => getTransactionalScore(b.url) - getTransactionalScore(a.url));
+    }
+
     const batch: { url: string; depth: number; method: string }[] = [];
 
+    // FIX Bug 4: Pull enough candidates to fill a batch of CONCURRENCY
+    // We pull more than CONCURRENCY to account for skipped URLs
     while (batch.length < CONCURRENCY && urlQueue.length > 0 && (pages.length + batch.length) < maxPages) {
       const current = urlQueue.shift()!;
       const normalizedUrl = normalizeUrl(current.url);
@@ -148,8 +174,10 @@ export async function crawlWebsite(options: CrawlOptions): Promise<CrawlResult> 
       if (current.depth > 0) {
         const skipReason = shouldSkipUrl(current.url, baseUrl.origin);
         if (skipReason) {
+          // Skipped URLs do NOT count against maxPages — only add to skipped list
           skippedPages.push({ url: current.url, reason: skipReason });
           visitedUrls.add(normalizedUrl);
+          allDiscoveredUrls.add(normalizedUrl);
           continue;
         }
       }
@@ -180,13 +208,15 @@ export async function crawlWebsite(options: CrawlOptions): Promise<CrawlResult> 
         if (item.depth < crawlDepth) {
           for (const link of discoveredLinks) {
             const norm = normalizeUrl(link.url);
-            allDiscoveredUrls.add(norm);   // ← always track even if we won't crawl it
+            allDiscoveredUrls.add(norm);
             if (!visitedUrls.has(norm)) {
               urlQueue.push({ url: link.url, depth: item.depth + 1, method: link.method });
             }
           }
         }
       } else {
+        // FIX Bug 4: Failed pages go to skippedPages but do NOT reduce maxPages cap
+        // The while loop continues until pages.length === maxPages or queue is empty
         const errorMsg = result.status === 'rejected' ? result.reason?.message : 'Unknown error';
         skippedPages.push({ url: item.url, reason: `Crawl failed: ${errorMsg}` });
       }
@@ -334,22 +364,34 @@ async function httpFallbackCrawl(
   const titleMatch = html.match(/<title[^>]*>([^<]*)<\/title>/i);
   const title = titleMatch ? titleMatch[1].trim() : new URL(url).hostname;
 
-  // Extract internal links for discovery
+  // Extract internal links — enhanced to find nav, footer, and transactional links
   const discoveredLinks: DiscoveredLink[] = [];
   if (maxDepth > 0) {
-    const linkRegex = /href=["']([^"'#?][^"']*)["']/gi;
-    let match;
     const seen = new Set<string>();
-    while ((match = linkRegex.exec(html)) !== null) {
+    const addLink = (rawHref: string, method: string) => {
       try {
-        const full = new URL(match[1], url).href;
+        const full = new URL(rawHref, url).href;
         if (full.startsWith(baseUrl.origin) && !seen.has(full) && !SKIP_EXTENSIONS.test(full)) {
           seen.add(full);
-          discoveredLinks.push({ url: full, method: 'internal-links' });
-          if (discoveredLinks.length >= 50) break;
+          // Transactional pages go first in discovered list
+          if (getTransactionalScore(full) > 0) {
+            discoveredLinks.unshift({ url: full, method });
+          } else {
+            discoveredLinks.push({ url: full, method });
+          }
         }
-      } catch { /* ignore invalid URLs */ }
+      } catch { /* ignore */ }
+    };
+    // href attributes (standard links)
+    const hrefRegex = /href=["']([^"']+)["']/gi;
+    let match;
+    while ((match = hrefRegex.exec(html)) !== null) {
+      addLink(match[1], 'internal-links');
+      if (discoveredLinks.length >= 150) break;
     }
+    // data-href / data-url / data-link attributes (SPA-style)
+    const dataHrefRegex = /data-(?:href|url|link)=["']([^"']+)["']/gi;
+    while ((match = dataHrefRegex.exec(html)) !== null) addLink(match[1], 'button-links');
   }
 
   return {
