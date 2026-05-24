@@ -7,6 +7,7 @@ export interface CrawlOptions {
   crawlDepth: number;
   loginConfig?: LoginConfig;
   onProgress?: (message: string, percent: number) => void;
+  extraSeedUrls?: string[];
 }
 
 export interface CrawlResult {
@@ -82,20 +83,29 @@ export async function crawlWebsite(options: CrawlOptions): Promise<CrawlResult> 
 
   const userAgent = USER_AGENTS[Math.floor(Math.random() * USER_AGENTS.length)];
 
-  const browser = await chromium.launch({
-    headless: true,
-    args: [
-      '--no-sandbox',
-      '--disable-setuid-sandbox',
-      '--disable-dev-shm-usage',
-      '--disable-blink-features=AutomationControlled',
-      '--disable-infobars',
-      '--disable-extensions',
-      '--no-first-run',
-      '--no-default-browser-check',
-      '--window-size=1280,720',
-    ]
-  });
+  let browser;
+  try {
+    browser = await chromium.launch({
+      headless: true,
+      args: [
+        '--no-sandbox',
+        '--disable-setuid-sandbox',
+        '--disable-dev-shm-usage',
+        '--disable-blink-features=AutomationControlled',
+        '--disable-infobars',
+        '--disable-extensions',
+        '--no-first-run',
+        '--no-default-browser-check',
+        '--window-size=1280,720',
+      ]
+    });
+  } catch (err) {
+    const msg = (err as Error).message || '';
+    if (msg.includes('executable') || msg.includes('download') || msg.includes('playwright install')) {
+      throw new Error('Playwright Chromium binaries not found. Please run "npx playwright install chromium" in your terminal to provision the browser.');
+    }
+    throw new Error(`Failed to launch browser: ${msg}`);
+  }
 
   const context = await browser.newContext({
     viewport: { width: 1280, height: 720 },
@@ -138,6 +148,21 @@ export async function crawlWebsite(options: CrawlOptions): Promise<CrawlResult> 
 
   // Track everything we've ever seen (seed URL too)
   allDiscoveredUrls.add(normalizeUrl(url));
+
+  if (options.extraSeedUrls) {
+    for (const extraUrl of options.extraSeedUrls) {
+      try {
+        const absoluteUrl = new URL(extraUrl, url).href;
+        const norm = normalizeUrl(absoluteUrl);
+        allDiscoveredUrls.add(norm);
+        if (!visitedUrls.has(norm)) {
+          urlQueue.push({ url: absoluteUrl, depth: 0, method: 'seed-url' });
+        }
+      } catch (err) {
+        console.warn('Invalid extra seed URL:', extraUrl, err);
+      }
+    }
+  }
 
   onProgress?.('Starting deep crawl...', 12);
 

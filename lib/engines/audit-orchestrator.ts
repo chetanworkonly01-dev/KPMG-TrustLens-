@@ -118,7 +118,14 @@ async function runAuditPipeline(id: string, config: AuditConfig) {
     const seedUrl = config.url!;
     const extraSeedUrls: string[] = [];
     if ((config.scopeMode === 'director' || config.scopeMode === 'predefined') && config.journeySteps) {
-      extraSeedUrls.push(...config.journeySteps.map(s => s.url).filter(Boolean));
+      const resolvedUrls = config.journeySteps.map(s => {
+        try {
+          return new URL(s.url, seedUrl).href;
+        } catch {
+          return s.url;
+        }
+      }).filter(Boolean);
+      extraSeedUrls.push(...resolvedUrls);
     }
     if (config.scopeMode === 'specific' && config.specificUrls) {
       extraSeedUrls.push(...config.specificUrls);
@@ -132,7 +139,7 @@ async function runAuditPipeline(id: string, config: AuditConfig) {
       crawlDepth: config.scopeMode === 'specific' ? 1 : config.crawlDepth,
       loginConfig: config.loginConfig,
       onProgress: (msg, pct) => updateProgress(msg, pct),
-      // extra seed URLs are prioritised at front of queue via transactional scoring
+      extraSeedUrls,
     });
 
     audit.pages = crawlResult.pages;
@@ -349,7 +356,7 @@ async function runAuditPipeline(id: string, config: AuditConfig) {
       setPillarProgress('darkpatterns', 5);
       addLog({ timestamp: new Date().toISOString(), testId: 'DP-ENGINE', testName: 'Dark Pattern Engine', wcag: '', status: 'running', pillar: 'darkpatterns', message: '━━━ 🕵️ Dark Pattern & Ethical UX Audit ━━━' });
       pillarTasks.push(
-        runDarkPatternAudit(crawlResult.context, dpPageList, {}, addLog)
+        runDarkPatternAudit(crawlResult.context, dpPageList, { aiClassification: config.includeAI }, addLog)
           .then(result => {
             darkPatternResult = result;
             setPillarProgress('darkpatterns', 100);
@@ -402,7 +409,13 @@ async function runAuditPipeline(id: string, config: AuditConfig) {
     // Dark Pattern Journey — runs in parallel when DP is enabled
     // Passes journeySteps from Director Mode directly; falls back to base URL
     if (enabledPillars.includes('darkpatterns')) {
-      const dpJourneySteps = config.journeySteps?.map(s => ({ url: s.url, label: s.label }));
+      const dpJourneySteps = config.journeySteps?.map(s => {
+        try {
+          return { url: new URL(s.url, config.url!).href, label: s.label };
+        } catch {
+          return { url: s.url, label: s.label };
+        }
+      });
       pillarTasks.push(
         runDarkPatternJourney(
           crawlResult.context,

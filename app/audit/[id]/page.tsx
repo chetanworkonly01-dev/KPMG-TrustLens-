@@ -97,8 +97,8 @@ interface Report {
   pageBreakdown: { url: string; title: string; score: number; issueCount: number; criticalCount: number; highCount: number; mediumCount: number; lowCount: number }[];
 }
 
-// ===== KPMG COLOURS =====
-const sevColors: Record<string, string>  = { critical: '#FF3356', high: '#FF8533', medium: '#F0AB00', low: '#0091DA' };
+// ===== COLOURS =====
+const sevColors: Record<string, string>  = { critical: '#E8002D', high: '#FE7141', medium: '#D97706', low: '#0091DA' };
 const catLabels: Record<string, string>  = { perceivable: 'Perceivable', operable: 'Operable', understandable: 'Understandable', robust: 'Robust', pdf: 'PDF' };
 const compLabels: Record<string, string> = {
   'non-compliant': 'Non-Compliant',
@@ -112,9 +112,9 @@ const compBadge: Record<string, string> = {
   'aa-compliant': 'badge-pass',
   'aaa-compliant': 'badge-info'
 };
-const confColors: Record<string, string> = { high: '#00BA8C', medium: '#F0AB00', low: '#FF8533' };
-const statusIcons: Record<string, string>  = { pass: '✔', fail: '✗', error: '⚠', running: '⏳', pending: '⏸', 'needs-review': '?' };
-const statusColors: Record<string, string> = { pass: '#00BA8C', fail: '#FF3356', error: '#FF8533', running: '#0091DA', pending: '#5B7198' };
+const confColors: Record<string, string> = { high: '#00BA8C', medium: '#D97706', low: '#FE7141' };
+const statusIcons: Record<string, string>  = { pass: '✔', fail: '✗', error: '⚠', running: '⏳', pending: '⏸', 'needs-review': '?', warn: '⚠' };
+const statusColors: Record<string, string> = { pass: '#00BA8C', fail: '#E8002D', error: '#FE7141', running: '#FE7141', pending: '#5B7198', warn: '#D97706' };
 
 // N/A status display
 const wcagStatusConfig: Record<string, { label: string; badgeClass: string; icon: string }> = {
@@ -205,10 +205,26 @@ export default function AuditResultPage() {
   }, [data, tabInitialized, a11yEnabled, dpEnabled, perfEnabled, privEnabled]);
 
   const pillarMeta: Record<string, { icon: string; label: string; color: string }> = {
-    accessibility: { icon: '♿', label: 'Accessibility', color: '#0091DA' },
-    darkpatterns: { icon: '🕵️', label: 'Dark Patterns', color: '#9B59B6' },
-    performance: { icon: '⚡', label: 'Performance', color: '#00BA8C' },
-    privacy: { icon: '🔒', label: 'Privacy', color: '#E67E22' },
+    accessibility: { icon: '♿', label: 'Accessibility', color: 'var(--pillar-a11y)' },
+    darkpatterns: { icon: '🕵️', label: 'Dark Patterns', color: 'var(--pillar-dp)' },
+    performance: { icon: '⚡', label: 'Performance', color: 'var(--pillar-perf)' },
+    privacy: { icon: '🔒', label: 'Privacy', color: 'var(--pillar-priv)' },
+  };
+
+  // ── Helper: extract current phase label for a pillar from testLog ──
+  const getPillarPhase = (pillar: string): string | null => {
+    if (!data?.testLog) return null;
+    const logs = data.testLog.filter((l: TestLogEntry) => l.pillar === pillar && l.phase);
+    if (logs.length === 0) return null;
+    return logs[logs.length - 1].phase || null;
+  };
+
+  const getPillarStatus = (pillar: string): 'running' | 'complete' | 'error' | 'queued' => {
+    const pct = data?.pillarProgress?.[pillar as keyof typeof data.pillarProgress];
+    if (pct === undefined) return 'queued';
+    if (pct === -1) return 'error';
+    if (pct === 100) return 'complete';
+    return 'running';
   };
 
   if (!data) return <div className="container" style={{ paddingTop: 80, textAlign: 'center' }}><div className="spinner" style={{ margin: '0 auto' }} /></div>;
@@ -233,7 +249,7 @@ export default function AuditResultPage() {
               </div>
               <p style={{ color: 'var(--text-secondary)', margin: 0, fontSize: 12, wordBreak: 'break-all', overflowWrap: 'anywhere', maxWidth: '100%' }}>{data.config?.url}</p>
             </div>
-            <div style={{ fontSize: 22, fontWeight: 300, color: 'var(--accent-blue)', letterSpacing: '-0.02em' }}>{data.progress}%</div>
+            <div style={{ fontSize: 22, fontWeight: 300, color: 'var(--accent-primary)', letterSpacing: '-0.02em', fontFamily: 'Geist Mono, monospace' }}>{data.progress}%</div>
           </div>
 
           {/* Active Pillars */}
@@ -258,46 +274,40 @@ export default function AuditResultPage() {
             </span>
           </div>
 
-          {/* Per-pillar progress rings — independent 0-100% during live audit */}
-          {data.pillarProgress && (
-            <div style={{ display: 'flex', gap: 14, marginBottom: 12, flexWrap: 'wrap', justifyContent: 'center' }}>
-              {(['accessibility', 'darkpatterns', 'performance', 'privacy'] as const).map(p => {
-                if (!enabledPillars.includes(p)) return null;
-                const pct = data.pillarProgress?.[p];
-                const meta = pillarMeta[p];
-                if (!meta || pct === undefined) return null;
-                const failed = pct === -1;
-                const done = pct === 100;
-                const ringPct = failed ? 100 : Math.max(0, Math.min(100, pct));
-                const circ = 2 * Math.PI * 22;
-                const off = circ - (ringPct / 100) * circ;
-                return (
-                  <div key={p} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4 }}>
-                    <div style={{ position: 'relative', width: 52, height: 52 }}>
-                      <svg width="52" height="52" viewBox="0 0 52 52">
-                        <circle cx="26" cy="26" r="22" fill="none" stroke="rgba(255,255,255,0.06)" strokeWidth="4" />
-                        <circle cx="26" cy="26" r="22" fill="none"
-                          stroke={failed ? '#e74c3c' : done ? meta.color : `${meta.color}aa`}
-                          strokeWidth="4" strokeLinecap="round"
-                          strokeDasharray={circ} strokeDashoffset={off}
-                          style={{ transition: 'stroke-dashoffset 0.8s ease', transform: 'rotate(-90deg)', transformOrigin: 'center' }}
-                        />
-                      </svg>
-                      <span style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16 }}>
-                        {meta.icon}
-                      </span>
-                    </div>
-                    <span style={{ fontSize: 10, fontWeight: 700, color: failed ? '#e74c3c' : done ? meta.color : 'var(--text-muted)' }}>
-                      {failed ? 'Error' : done ? '100%' : `${pct}%`}
-                    </span>
-                    <span style={{ fontSize: 9, color: 'var(--text-muted)', maxWidth: 60, textAlign: 'center', lineHeight: 1.2 }}>
-                      {meta.label}
-                    </span>
+          {/* ── Pillar Pipeline — Real-time per-pillar status with phase labels ── */}
+          <div className="pillar-pipeline">
+            {(['accessibility', 'darkpatterns', 'performance', 'privacy'] as const).map(p => {
+              if (!enabledPillars.includes(p)) return null;
+              const meta = pillarMeta[p];
+              if (!meta) return null;
+              const pct = data.pillarProgress?.[p];
+              const status = getPillarStatus(p);
+              const phase = getPillarPhase(p);
+              const ringPct = pct === undefined ? 0 : pct === -1 ? 100 : Math.max(0, Math.min(100, pct));
+              const statusLabel = { running: 'Running', complete: 'Done', error: 'Error', queued: 'Queued' }[status];
+              const statusClass = { running: 'status-running', complete: 'status-complete', error: 'status-error', queued: 'status-queued' }[status];
+              return (
+                <div key={p} className={`pipeline-pillar ${statusClass}`}>
+                  <div className="pipeline-pillar-icon">{meta.icon}</div>
+                  <div className="pipeline-pillar-name">{meta.label}</div>
+                  <div className="pipeline-pillar-bar">
+                    <div className="pipeline-pillar-fill" style={{
+                      width: `${ringPct}%`,
+                      background: status === 'error' ? '#E8002D' : status === 'complete' ? '#00BA8C' : 'var(--gradient-primary)',
+                    }} />
                   </div>
-                );
-              })}
-            </div>
-          )}
+                  <div className={`pipeline-pillar-status pipeline-status-${status === 'complete' ? 'done' : status}`}>
+                    {statusLabel} {pct !== undefined && pct >= 0 && pct < 100 ? `${pct}%` : ''}
+                  </div>
+                  {phase && status === 'running' && (
+                    <div style={{ fontSize: 8, color: 'var(--text-muted)', marginTop: 2, fontFamily: 'Geist Mono, monospace', lineHeight: 1.3, maxWidth: 120, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {phase}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
 
           <div className="progress-bar" style={{ marginBottom: 6 }}>
             <div className="progress-fill" style={{ width: `${data.progress}%` }} />
@@ -315,7 +325,7 @@ export default function AuditResultPage() {
                 {(['darkpatterns', 'performance', 'privacy', 'accessibility'] as const).filter(p =>
                   data.testLog.some((l: TestLogEntry) => l.pillar === p)
                 ).map(p => {
-                  const pc: Record<string, string> = { accessibility: '#0091DA', darkpatterns: '#9B59B6', performance: '#00BA8C', privacy: '#E67E22' };
+                  const pc: Record<string, string> = { accessibility: '#0091DA', darkpatterns: '#CDABFE', performance: '#00BA8C', privacy: '#FE7141' };
                   const pi: Record<string, string> = { accessibility: '♿', darkpatterns: '🕵️', performance: '⚡', privacy: '🔒' };
                   const pl: Record<string, string> = { accessibility: 'A11Y', darkpatterns: 'Dark Patterns', performance: 'Performance', privacy: 'Privacy' };
                   return (
@@ -332,7 +342,7 @@ export default function AuditResultPage() {
             </div>
 
             {/* ── Log Entries ── */}
-            <div style={{ maxHeight: 520, overflowY: 'auto', padding: '4px 0', fontFamily: "'Cascadia Code', 'Fira Code', monospace", fontSize: 11 }}>
+            <div style={{ maxHeight: 520, overflowY: 'auto', padding: '4px 0', fontFamily: "'Geist Mono', 'Cascadia Code', 'Fira Code', monospace", fontSize: 11 }}>
               {data.testLog.map((entry: TestLogEntry, i: number) => {
                 const pillarColor: Record<string, string> = { accessibility: '#0091DA', darkpatterns: '#9B59B6', performance: '#00BA8C', privacy: '#E67E22' };
                 const borderColor = entry.pillar ? pillarColor[entry.pillar] : (statusColors[entry.status] || '#5B7198');

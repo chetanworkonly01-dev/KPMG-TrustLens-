@@ -328,6 +328,59 @@ export const DARK_PATTERN_RULES: DarkPatternRule[] = [
   },
 ];
 
+// ── Visual AI Rules (Phase 8 — GPT-4o Screenshot Analysis) ──
+// These rules catch design-level manipulation invisible to DOM scanners.
+export const VISUAL_AI_RULES: DarkPatternRule[] = [
+  {
+    id: 'DP-VIS-AI-01', category: 'interface-interference', principle: 'symmetry-of-choice',
+    title: 'Graphical Consent Asymmetry — Accept vs Reject Visual Weight',
+    description: 'The overall visual composition creates a strong imbalance: Accept is visually dominant (larger, bolder, brighter) while Reject is suppressed through design — colour, size, position, whitespace — in ways not detectable from DOM structure alone.',
+    severity: 'critical', regulation: ['EU-DSA', 'EU-GDPR', 'IN-DPDPA'], detect: 'visual',
+  },
+  {
+    id: 'DP-VIS-AI-02', category: 'scarcity-urgency', principle: 'user-autonomy',
+    title: 'Image-Based Countdown Timer or Urgency Graphic',
+    description: 'A countdown timer, urgency badge, or scarcity indicator is rendered as an image, SVG, or canvas element — invisible to DOM text scanners but visually pressuring users to act immediately.',
+    severity: 'high', regulation: ['US-FTC', 'EU-DSA', 'IN-CCPA'], detect: 'visual',
+  },
+  {
+    id: 'DP-VIS-AI-03', category: 'misdirection', principle: 'symmetry-of-choice',
+    title: 'Visual Hierarchy Manipulation — Premium Option Dominance',
+    description: 'Page layout uses visual size, glow effects, or highlighted borders to make the most expensive or data-sharing option appear as the default choice, guiding the eye away from basic or free options.',
+    severity: 'high', regulation: ['EU-DSA', 'US-FTC'], detect: 'visual',
+  },
+  {
+    id: 'DP-VIS-AI-04', category: 'social-pressure', principle: 'user-autonomy',
+    title: 'Emotional Imagery Creating Fear or FOMO',
+    description: 'Background images or photography create anxiety, fear of missing out, or social exclusion to pressure subscription or purchase decisions.',
+    severity: 'medium', regulation: ['EU-DSA'], detect: 'visual',
+  },
+  {
+    id: 'DP-VIS-AI-05', category: 'interface-interference', principle: 'informed-consent',
+    title: 'Disguised CTA — Advertising Blends with Organic Content',
+    description: 'Sponsored content is designed to visually blend with organic content — same card style, typography — with "Sponsored" label reduced to near-invisible size or contrast.',
+    severity: 'high', regulation: ['US-FTC', 'EU-DSA', 'IN-CCPA'], detect: 'visual',
+  },
+  {
+    id: 'DP-VIS-AI-06', category: 'obstruction', principle: 'symmetry-of-choice',
+    title: 'Reject Option Placed Outside Natural Visual Scan Path',
+    description: 'The reject or opt-out option is positioned in the lower-left or below-fold area — outside the natural F-pattern or Z-pattern scan path — ensuring most users never see it without conscious effort.',
+    severity: 'high', regulation: ['EU-DSA', 'EU-GDPR'], detect: 'visual',
+  },
+  {
+    id: 'DP-VIS-AI-07', category: 'sneaking', principle: 'transparency',
+    title: 'Hidden or Camouflaged Price or Additional Charge',
+    description: 'A price increase or additional fee is presented in an element that blends into the page background — light grey on white, or a de-emphasised font weight — making the cost easy to miss.',
+    severity: 'critical', regulation: ['US-FTC', 'EU-DSA', 'IN-CCPA'], detect: 'visual',
+  },
+  {
+    id: 'DP-VIS-AI-08', category: 'confirmshaming', principle: 'user-autonomy',
+    title: 'Confirmshaming via Visual Design — Decline Option Visually Shamed',
+    description: 'The decline option is styled to look broken, greyed out, or paired with a sad/disappointed icon — creating visual shame without using guilt-language that NLP can detect.',
+    severity: 'high', regulation: ['EU-DSA', 'US-FTC'], detect: 'visual',
+  },
+];
+
 // ── Urgency/scarcity language patterns ──
 export const URGENCY_PATTERNS = [
   /only\s+\d+\s+(left|remaining|available)/i,

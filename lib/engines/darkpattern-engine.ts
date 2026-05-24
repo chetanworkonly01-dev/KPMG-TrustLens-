@@ -5,7 +5,7 @@ import type {
 } from '../types/darkpattern';
 import { PRINCIPLE_WEIGHTS } from '../types/darkpattern';
 import {
-  DARK_PATTERN_RULES, URGENCY_PATTERNS, SOCIAL_PRESSURE_PATTERNS,
+  DARK_PATTERN_RULES, VISUAL_AI_RULES, URGENCY_PATTERNS, SOCIAL_PRESSURE_PATTERNS,
   CONFIRMSHAMING_PATTERNS, FEAR_LANGUAGE_PATTERNS, TRICK_QUESTION_PATTERNS,
 } from './darkpattern-rules';
 import type { TestLogEntry } from '../types/audit';
@@ -95,6 +95,26 @@ export async function runDarkPatternAudit(
       const flowFindings = await runInteractionFlowAnalysis(page, pageData.url);
       for (const f of flowFindings) { f.id = `dp-${++findingId}`; findings.push(f); }
       log('DP-FLOW', flowFindings.length > 0 ? 'fail' : 'pass', `  ✓ Phase 6 complete — ${flowFindings.length} finding(s) detected`, 'Ethical Friction Score', 'Phase 6: Flow Analysis');
+
+      // ── Phase 8: Visual AI Dark Pattern Analysis (GPT-4o Vision) ──
+      if (options.aiClassification) {
+        log('DP-VISAI', 'running', '━━━ Phase 8: Visual AI Dark Pattern Analysis', 'GPT-4o Vision — Visual Design Exploitation Detection', 'Phase 8: Visual AI Scan');
+        log('DP-VISAI-CA', 'running', '  → Consent Asymmetry (DP-VIS-AI-01): Graphical Accept vs Reject visual weight imbalance', 'GPT-4o Vision', 'Phase 8: Visual AI Scan');
+        log('DP-VISAI-UG', 'running', '  → Image-Based Urgency (DP-VIS-AI-02): Countdown graphics, scarcity badges rendered as images', 'GPT-4o Vision', 'Phase 8: Visual AI Scan');
+        log('DP-VISAI-VH', 'running', '  → Visual Hierarchy Manipulation (DP-VIS-AI-03): Premium option dominance via design', 'GPT-4o Vision', 'Phase 8: Visual AI Scan');
+        log('DP-VISAI-EM', 'running', '  → Emotional Imagery (DP-VIS-AI-04): Fear/FOMO photography as persuasion tool', 'GPT-4o Vision', 'Phase 8: Visual AI Scan');
+        log('DP-VISAI-DC', 'running', '  → Disguised CTA (DP-VIS-AI-05): Sponsored content camouflaged as organic', 'GPT-4o Vision', 'Phase 8: Visual AI Scan');
+        log('DP-VISAI-DZ', 'running', '  → Dead Zone Placement (DP-VIS-AI-06): Reject in F/Z-pattern blind spot', 'GPT-4o Vision', 'Phase 8: Visual AI Scan');
+        log('DP-VISAI-HC', 'running', '  → Hidden Charges (DP-VIS-AI-07): Camouflaged price elements via colour/weight', 'GPT-4o Vision', 'Phase 8: Visual AI Scan');
+        log('DP-VISAI-CS', 'running', '  → Visual Confirmshaming (DP-VIS-AI-08): Decline option styled as broken/ashamed', 'GPT-4o Vision', 'Phase 8: Visual AI Scan');
+        try {
+          const visAiFindings = await runVisualAIDarkPatternPhase8(page, pageData.url);
+          for (const f of visAiFindings) { f.id = `dp-${++findingId}`; findings.push(f); }
+          log('DP-VISAI', visAiFindings.length > 0 ? 'fail' : 'pass', `  ✓ Phase 8 complete — ${visAiFindings.length} visual AI finding(s) detected`, 'GPT-4o Vision', 'Phase 8: Visual AI Scan');
+        } catch (visErr) {
+          log('DP-VISAI', 'warn', `  ⚠ Phase 8 skipped — ${visErr instanceof Error ? visErr.message : 'Vision API unavailable'}`, 'GPT-4o Vision', 'Phase 8: Visual AI Scan');
+        }
+      }
 
     } catch (err) {
       console.error(`[TrustLens:DarkPattern] Error scanning ${pageData.url}:`, err);
@@ -994,6 +1014,130 @@ async function runInteractionFlowAnalysis(page: Page, pageUrl: string): Promise<
         measurements: { entryCount: frictionAnalysis.entryCount, exitCount: frictionAnalysis.exitCount, confirmDialogs },
       }));
     }
+  }
+
+  return findings;
+}
+
+// ═══════════════════════════════════════════════════════════
+// PHASE 8: Visual AI Dark Pattern Analysis (GPT-4o Vision)
+// Screenshots are captured via Playwright and sent to GPT-4o
+// for design-level dark pattern detection that DOM scanning
+// cannot catch (colour asymmetry, visual hierarchy, etc.)
+// ═══════════════════════════════════════════════════════════
+async function runVisualAIDarkPatternPhase8(page: Page, pageUrl: string): Promise<DarkPatternFinding[]> {
+  const findings: DarkPatternFinding[] = [];
+
+  // 1. Guard: require OPENAI_API_KEY
+  if (!process.env.OPENAI_API_KEY) {
+    throw new Error('OPENAI_API_KEY not configured — visual AI analysis unavailable');
+  }
+
+  // 2. Capture full-page screenshot as base64
+  let screenshotB64: string;
+  try {
+    const buf = await page.screenshot({ fullPage: true, type: 'jpeg', quality: 75 });
+    screenshotB64 = buf.toString('base64');
+  } catch (ssErr) {
+    throw new Error(`Screenshot capture failed: ${ssErr instanceof Error ? ssErr.message : 'unknown'}`);
+  }
+
+  // 3. Build the structured prompt from VISUAL_AI_RULES
+  const ruleDescriptions = VISUAL_AI_RULES.map((r, i) =>
+    `${i + 1}. [${r.id}] ${r.title}\n   Category: ${r.category} | Severity: ${r.severity}\n   Description: ${r.description}`
+  ).join('\n\n');
+
+  const prompt = `You are an expert UX auditor and dark pattern analyst. Examine this screenshot of a web page and identify any VISUAL dark patterns from the following rules. These are patterns that can ONLY be detected visually — they are invisible to DOM/code scanners.
+
+## Rules to check:
+${ruleDescriptions}
+
+## Instructions:
+- Only flag issues you can clearly see in the screenshot.
+- For each detected issue, return a JSON object.
+- If no issues are found for a rule, skip it.
+- Return a JSON array of findings (or empty array []).
+- Each finding must have these fields:
+  {
+    "ruleId": "DP-VIS-AI-XX",
+    "title": "Short descriptive title",
+    "description": "What you see in the screenshot that constitutes this pattern",
+    "severity": "critical" | "high" | "medium" | "low",
+    "element": "CSS-style description of the element location (e.g. 'cookie banner at bottom')",
+    "confidence": "high" | "medium" | "low",
+    "recommendation": "Specific actionable fix"
+  }
+
+## Important:
+- Do NOT hallucinate patterns. Only flag what is clearly visible.
+- Provide specific visual evidence in the description (colors, sizes, positions).
+- Return ONLY the JSON array, no markdown or explanation.`;
+
+  // 4. Call GPT-4o Vision
+  const { default: OpenAI } = await import('openai');
+  const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+
+  const response = await client.chat.completions.create({
+    model: 'gpt-4o',
+    max_tokens: 2000,
+    messages: [{
+      role: 'user',
+      content: [
+        { type: 'text', text: prompt },
+        { type: 'image_url', image_url: { url: `data:image/jpeg;base64,${screenshotB64}`, detail: 'high' } },
+      ],
+    }],
+  });
+
+  const raw = response.choices[0]?.message?.content || '[]';
+
+  // 5. Parse the JSON response
+  const jsonMatch = raw.match(/\[[\s\S]*\]/);
+  if (!jsonMatch) return findings;
+
+  let parsed: any[];
+  try {
+    parsed = JSON.parse(jsonMatch[0]);
+  } catch {
+    console.warn('[TrustLens:DP-Phase8] Failed to parse GPT-4o response as JSON');
+    return findings;
+  }
+
+  // 6. Convert each parsed item into a DarkPatternFinding
+  for (const item of parsed) {
+    const matchedRule = VISUAL_AI_RULES.find(r => r.id === item.ruleId);
+    if (!matchedRule) continue;
+
+    findings.push({
+      id: '', // assigned by caller
+      ruleId: item.ruleId,
+      category: matchedRule.category,
+      principle: matchedRule.principle,
+      title: item.title || matchedRule.title,
+      description: item.description || matchedRule.description,
+      element: item.element || '',
+      elementHtml: undefined,
+      pageUrl,
+      severity: item.severity || matchedRule.severity,
+      regulation: matchedRule.regulation,
+      confidence: item.confidence || 'medium',
+      recommendation: item.recommendation || getRecommendation(matchedRule.category),
+      userImpact: getUserImpact(matchedRule.principle),
+      evidence: {
+        summary: `Visual AI Detection (GPT-4o Vision): ${item.description || matchedRule.description}`,
+        details: [
+          `Rule: ${matchedRule.id} — ${matchedRule.title}`,
+          `Visual evidence: ${item.description || 'See screenshot'}`,
+          `Element location: ${item.element || 'Full page'}`,
+          `Detection method: Phase 8 — Screenshot-based GPT-4o analysis`,
+        ],
+      },
+      source: 'ai-vision',
+      detectionBasis: 'visual-ai',
+      findingVerdict: 'signal',
+      verifiabilityNote: 'Visual AI signal: flagged by GPT-4o screenshot analysis — manual design review recommended',
+      visualAnalysisPhase: 'Phase 8: Visual AI Dark Pattern Analysis',
+    });
   }
 
   return findings;

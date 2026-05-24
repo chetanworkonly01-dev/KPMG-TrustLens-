@@ -88,12 +88,12 @@ export type DarkPatternRegulation =
 
 // ── Finding Verifiability (Signal vs Verdict model) ──
 export type FindingVerdict = 'verdict' | 'signal';
-export type DetectionBasis = 'visual' | 'structural' | 'textual';
+export type DetectionBasis = 'visual' | 'structural' | 'textual' | 'visual-ai';
 
 // ── Individual Dark Pattern Finding ──
 export interface DarkPatternFinding {
   id: string;
-  ruleId: string;                          // e.g. DP-IF-01
+  ruleId: string;                          // e.g. DP-IF-01 or DP-VIS-AI-01
   category: DarkPatternCategory;
   principle: EthicalPrinciple;
   title: string;
@@ -107,11 +107,14 @@ export interface DarkPatternFinding {
   recommendation: string;
   userImpact: string;                       // How this harms real users
   evidence: DarkPatternEvidence;
-  source: 'rule' | 'ai' | 'journey';       // Detection method
+  source: 'rule' | 'ai' | 'journey' | 'ai-vision'; // Detection method
   // Signal vs Verdict model (Plan B3)
-  detectionBasis?: DetectionBasis;          // How the finding was detected: visual/structural/textual
+  detectionBasis?: DetectionBasis;          // How the finding was detected: visual/structural/textual/visual-ai
   verifiabilityNote?: string;               // Explains if DOM-provable (verdict) or content-only (signal)
   findingVerdict?: FindingVerdict;          // 'verdict' = DOM-proven, 'signal' = unverifiable claim
+  // Visual AI fields (Phase 8)
+  screenshotEvidence?: string;              // Base64 screenshot used as evidence
+  visualAnalysisPhase?: 'Phase 8: Visual AI Dark Pattern Analysis';
 }
 
 export interface DarkPatternEvidence {
