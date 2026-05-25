@@ -22,6 +22,12 @@ interface PredefinedJourneyTemplate {
   label: string;
   description: string;
   checksFocus: string;
+  primaryPillar: 'accessibility' | 'darkpatterns' | 'privacy' | 'performance';
+  secondaryPillars: string[];
+  brignullPatterns: string[];
+  effortAsymmetry?: { entryLabel: string; exitLabel: string; entrySteps: number; exitSteps: number };
+  regulationFocus: string[];
+  expectedFindings: string[];
   stages: JourneyStep[];
 }
 
@@ -33,6 +39,11 @@ const PREDEFINED_JOURNEYS: PredefinedJourneyTemplate[] = [
     label: 'Login Flow',
     description: 'Checks the full authentication journey for dark patterns in access control',
     checksFocus: 'Forced continuity, confirmshaming, account lockout friction',
+    primaryPillar: 'darkpatterns',
+    secondaryPillars: ['accessibility', 'privacy'],
+    brignullPatterns: ['Confirmshaming', 'Forced Continuity', 'Privacy Zuckering'],
+    regulationFocus: ['EU DSA Art. 25', 'GDPR Art. 7', 'WCAG 2.1 AA'],
+    expectedFindings: ['Pre-ticked newsletter opt-in on login form', 'Guilt-based messaging if login fails', 'No visible "forgot password" link', 'Missing WCAG labels on form fields'],
     stages: [
       { id: crypto.randomUUID(), label: 'Landing Page', url: '/', action: 'Observe primary CTA and login prompt prominence' },
       { id: crypto.randomUUID(), label: 'Login Form', url: '/login', action: 'Check for pre-filled checkboxes, newsletter opt-ins, and dark patterns on the login form' },
@@ -45,6 +56,11 @@ const PREDEFINED_JOURNEYS: PredefinedJourneyTemplate[] = [
     label: 'Account Creation',
     description: 'Signup flow analysis for consent bundling and trick questions',
     checksFocus: 'Trick questions, consent bundling, excessive data collection',
+    primaryPillar: 'darkpatterns',
+    secondaryPillars: ['privacy', 'accessibility'],
+    brignullPatterns: ['Trick Questions', 'Privacy Zuckering', 'Confirmshaming', 'Interface Interference'],
+    regulationFocus: ['GDPR Art. 7', 'EU DSA Art. 25', 'FTC Act §5'],
+    expectedFindings: ['Pre-ticked marketing consent checkbox', 'Double-negative opt-out language', 'Forced data sharing to proceed', 'Bundled consent for multiple purposes'],
     stages: [
       { id: crypto.randomUUID(), label: 'Landing / Homepage', url: '/', action: 'Scan for signup CTAs and their visual prominence' },
       { id: crypto.randomUUID(), label: 'Sign Up Page', url: '/signup', action: 'Check for pre-ticked checkboxes, forced marketing consent, and double-negatives' },
@@ -58,6 +74,12 @@ const PREDEFINED_JOURNEYS: PredefinedJourneyTemplate[] = [
     label: 'Checkout Flow',
     description: 'E-commerce purchase funnel for hidden costs and urgency manipulation',
     checksFocus: 'Hidden costs, fake urgency, sneak-into-basket, pre-ticked add-ons',
+    primaryPillar: 'darkpatterns',
+    secondaryPillars: ['performance', 'privacy'],
+    brignullPatterns: ['Hidden Costs', 'Sneak Into Basket', 'False Urgency', 'Scarcity Manipulation', 'Forced Continuity'],
+    effortAsymmetry: { entryLabel: 'Buy Now', exitLabel: 'Remove item', entrySteps: 2, exitSteps: 5 },
+    regulationFocus: ['EU Consumer Rights Directive Art. 22', 'FTC Act §5', 'EU DSA Art. 25'],
+    expectedFindings: ['Auto-added insurance/add-ons in cart', 'Price revealed only at payment step', 'Fake "X left in stock" counter', 'Urgency timer on checkout page'],
     stages: [
       { id: crypto.randomUUID(), label: 'Product / Listing Page', url: '/products', action: 'Look for fake scarcity messaging (Only X left!) and urgency banners' },
       { id: crypto.randomUUID(), label: 'Shopping Cart', url: '/cart', action: 'Check for auto-added items, hidden fees, and pre-ticked insurance/add-ons' },
@@ -72,6 +94,12 @@ const PREDEFINED_JOURNEYS: PredefinedJourneyTemplate[] = [
     label: 'Cancellation Flow',
     description: 'Subscription or account cancellation path — Roach Motel detection',
     checksFocus: 'Roach Motel, multi-step friction, emotional retention tactics',
+    primaryPillar: 'darkpatterns',
+    secondaryPillars: ['privacy'],
+    brignullPatterns: ['Roach Motel', 'Confirmshaming', 'Interface Interference', 'Visual Misdirection'],
+    effortAsymmetry: { entryLabel: 'Subscribe', exitLabel: 'Cancel', entrySteps: 1, exitSteps: 6 },
+    regulationFocus: ['FTC Click-to-Cancel Rule', 'EU DSA Art. 25', 'CMA Subscription Guidelines'],
+    expectedFindings: ['Cancel option buried 4+ clicks deep', 'Emotional retention copy ("We\'ll miss you!")', 'Pause option visually dominant over cancel', 'Confirmation-shaming on final cancel screen'],
     stages: [
       { id: crypto.randomUUID(), label: 'Account Settings', url: '/account/settings', action: 'Find the cancel/unsubscribe option — measure how many clicks from landing' },
       { id: crypto.randomUUID(), label: 'Cancel Confirmation', url: '/account/cancel', action: 'Check for guilt-based retention copy and confirmshaming language' },
@@ -84,6 +112,12 @@ const PREDEFINED_JOURNEYS: PredefinedJourneyTemplate[] = [
     label: 'Consent & Cookie Flow',
     description: 'Cookie consent and privacy settings for GDPR/DSA compliance',
     checksFocus: 'Pre-ticked consent boxes, reject button hiding, consent wall',
+    primaryPillar: 'privacy',
+    secondaryPillars: ['darkpatterns'],
+    brignullPatterns: ['Interface Interference', 'Privacy Zuckering', 'Trick Questions'],
+    effortAsymmetry: { entryLabel: 'Accept All', exitLabel: 'Reject All', entrySteps: 1, exitSteps: 3 },
+    regulationFocus: ['GDPR Art. 7', 'ePrivacy Directive', 'EU DSA Art. 25', 'ICO Guidance'],
+    expectedFindings: ['Accept button 3× larger than Reject', 'Reject buried below the fold', 'Pre-ticked analytics/marketing cookies', 'Consent wall blocking page access'],
     stages: [
       { id: crypto.randomUUID(), label: 'Homepage (First Visit)', url: '/', action: 'Assess cookie banner: is Reject as prominent as Accept? Any consent wall?' },
       { id: crypto.randomUUID(), label: 'Cookie Preference Centre', url: '/cookie-settings', action: 'Check for pre-enabled marketing/analytics cookies and toggle asymmetry' },
@@ -96,6 +130,11 @@ const PREDEFINED_JOURNEYS: PredefinedJourneyTemplate[] = [
     label: 'Subscription Upgrade',
     description: 'Plan comparison and upgrade flow for pricing anchoring tactics',
     checksFocus: 'Price anchoring, free trial traps, forced continuity, bait-and-switch',
+    primaryPillar: 'darkpatterns',
+    secondaryPillars: ['performance'],
+    brignullPatterns: ['Hidden Costs', 'Forced Continuity', 'Interface Interference', 'False Urgency'],
+    regulationFocus: ['FTC Click-to-Cancel Rule', 'EU Consumer Rights Directive', 'EU DSA Art. 25'],
+    expectedFindings: ['Most expensive plan highlighted as "Recommended"', 'Free trial auto-converts without clear notice', 'Auto-renewal not disclosed at purchase', 'Post-purchase upsell banner'],
     stages: [
       { id: crypto.randomUUID(), label: 'Pricing Page', url: '/pricing', action: 'Analyze visual hierarchy — is the most expensive plan falsely highlighted as recommended?' },
       { id: crypto.randomUUID(), label: 'Plan Comparison', url: '/pricing/compare', action: 'Check for dark feature strikethrough tactics and fake value anchoring' },
@@ -109,6 +148,11 @@ const PREDEFINED_JOURNEYS: PredefinedJourneyTemplate[] = [
     label: 'Search & Discovery',
     description: 'Search and product discovery flow for misdirection and fake scarcity',
     checksFocus: 'Misdirection, fake scarcity, sponsored content masking, filter manipulation',
+    primaryPillar: 'darkpatterns',
+    secondaryPillars: ['performance', 'accessibility'],
+    brignullPatterns: ['Disguised Ads', 'Scarcity Manipulation', 'Visual Misdirection', 'Social Proof Inflation'],
+    regulationFocus: ['FTC Native Advertising Guidelines', 'EU DSA Art. 26', 'EU DSA Art. 25'],
+    expectedFindings: ['Sponsored results styled identically to organic', 'Fake scarcity on search result cards', '"Best Seller" badge with no source', 'Filter reset manipulates results order'],
     stages: [
       { id: crypto.randomUUID(), label: 'Homepage / Entry', url: '/', action: 'Assess search prominence and any forced journey prompts' },
       { id: crypto.randomUUID(), label: 'Search Results', url: '/search', action: 'Search for a product (e.g. "shoes"). Check sponsored vs organic visual distinction' },
@@ -122,6 +166,11 @@ const PREDEFINED_JOURNEYS: PredefinedJourneyTemplate[] = [
     label: 'Profile & Data Settings',
     description: 'Privacy settings and data management for Privacy Zuckering detection',
     checksFocus: 'Privacy Zuckering, hard-to-find opt-outs, data sharing defaults',
+    primaryPillar: 'privacy',
+    secondaryPillars: ['darkpatterns', 'accessibility'],
+    brignullPatterns: ['Privacy Zuckering', 'Interface Interference', 'Trick Questions'],
+    regulationFocus: ['GDPR Art. 17', 'GDPR Art. 20', 'CCPA', 'DPDPA 2023'],
+    expectedFindings: ['Data sharing defaults to ON', 'Right to erasure buried 5+ clicks deep', 'Notification opt-outs harder than opt-ins', 'Data export requires contacting support'],
     stages: [
       { id: crypto.randomUUID(), label: 'Profile Page', url: '/profile', action: 'Assess data sharing defaults and how visible privacy controls are' },
       { id: crypto.randomUUID(), label: 'Data Sharing Settings', url: '/profile/data-sharing', action: 'Check default states — are data sharing toggles pre-enabled?' },
@@ -130,6 +179,7 @@ const PREDEFINED_JOURNEYS: PredefinedJourneyTemplate[] = [
     ],
   },
 ];
+
 
 export default function AuditPage() {
   const router = useRouter();
@@ -540,88 +590,258 @@ export default function AuditPage() {
             {/* MODE 3 — Predefined Journey */}
             {scopeMode === 'predefined' && (
               <div>
-                {/* Journey Template Picker */}
-                <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-muted)', marginBottom: 8, textTransform: 'uppercase', letterSpacing: '0.06em', fontFamily: 'Geist Mono, monospace' }}>Select a Journey Template</div>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8, marginBottom: 14 }}>
-                  {PREDEFINED_JOURNEYS.map(j => (
-                    <button key={j.id} id={`journey-${j.id}`} onClick={() => selectPredefinedJourney(j.id)}
-                      style={{ textAlign: 'left', padding: '10px 12px', borderRadius: 'var(--radius-md)', border: `2px solid ${selectedJourney === j.id ? 'var(--accent-primary)' : 'var(--border)'}`, background: selectedJourney === j.id ? 'rgba(254,113,65,0.06)' : 'transparent', cursor: 'pointer', transition: 'var(--transition)' }}>
-                      <div style={{ fontSize: 16, marginBottom: 3 }}>{j.icon}</div>
-                      <div style={{ fontSize: 11, fontWeight: 700, color: selectedJourney === j.id ? 'var(--accent-primary)' : 'var(--text-primary)', marginBottom: 3 }}>{j.label}</div>
-                      <div style={{ fontSize: 10, color: 'var(--text-muted)', lineHeight: 1.4, marginBottom: 4 }}>{j.description}</div>
-                      <div style={{ fontSize: 9, fontFamily: 'Geist Mono, monospace', color: selectedJourney === j.id ? 'var(--accent-primary)' : 'var(--text-muted)', opacity: 0.9 }}>{j.stages.length} stages</div>
-                    </button>
+                {/* Journey Template Picker — V2 Rich Cards */}
+                <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-muted)', marginBottom: 10, textTransform: 'uppercase', letterSpacing: '0.06em', fontFamily: 'Geist Mono, monospace' }}>
+                  Select a Journey Template
+                </div>
+
+                {/* Pillar legend */}
+                <div style={{ display: 'flex', gap: 8, marginBottom: 12, flexWrap: 'wrap' }}>
+                  {[
+                    { key: 'darkpatterns', label: 'Dark Patterns', color: 'var(--pillar-dp)', icon: '🕵️' },
+                    { key: 'privacy', label: 'Privacy', color: 'var(--pillar-priv)', icon: '🔒' },
+                    { key: 'accessibility', label: 'Accessibility', color: 'var(--pillar-a11y)', icon: '♿' },
+                    { key: 'performance', label: 'Performance', color: 'var(--pillar-perf)', icon: '⚡' },
+                  ].map(p => (
+                    <span key={p.key} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 9, fontWeight: 700, padding: '2px 8px', borderRadius: 99, background: `${p.color}15`, color: p.color, border: `1px solid ${p.color}35`, fontFamily: 'Geist Mono, monospace' }}>
+                      {p.icon} {p.label}
+                    </span>
                   ))}
-                  {/* Custom */}
+                  <span style={{ fontSize: 9, color: 'var(--text-muted)', alignSelf: 'center', fontFamily: 'Geist Mono, monospace' }}>= primary pillar this journey tests most heavily</span>
+                </div>
+
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 10, marginBottom: 14 }}>
+                  {PREDEFINED_JOURNEYS.map(j => {
+                    const pillarColors: Record<string, string> = { darkpatterns: 'var(--pillar-dp)', privacy: 'var(--pillar-priv)', accessibility: 'var(--pillar-a11y)', performance: 'var(--pillar-perf)' };
+                    const pillarIcons: Record<string, string> = { darkpatterns: '🕵️', privacy: '🔒', accessibility: '♿', performance: '⚡' };
+                    const pillarColor = pillarColors[j.primaryPillar] || 'var(--accent-primary)';
+                    const isSelected = selectedJourney === j.id;
+                    return (
+                      <button key={j.id} id={`journey-${j.id}`} onClick={() => selectPredefinedJourney(j.id)}
+                        style={{ textAlign: 'left', borderRadius: 'var(--radius-md)', border: `2px solid ${isSelected ? pillarColor : 'var(--border)'}`, background: isSelected ? `${pillarColor}08` : 'var(--bg-secondary)', cursor: 'pointer', transition: 'all 0.2s ease', overflow: 'hidden', position: 'relative' }}>
+                        {/* Pillar colour strip */}
+                        <div style={{ height: 3, background: pillarColor, width: '100%' }} />
+                        <div style={{ padding: '10px 12px' }}>
+                          {/* Row 1: icon + name + stage count */}
+                          <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 6 }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
+                              <span style={{ fontSize: 18 }}>{j.icon}</span>
+                              <span style={{ fontSize: 12, fontWeight: 700, color: isSelected ? pillarColor : 'var(--text-primary)' }}>{j.label}</span>
+                            </div>
+                            <span style={{ fontSize: 9, fontWeight: 700, padding: '2px 7px', borderRadius: 99, background: `${pillarColor}18`, color: pillarColor, fontFamily: 'Geist Mono, monospace', flexShrink: 0 }}>
+                              {j.stages.length} STAGES
+                            </span>
+                          </div>
+
+                          {/* Description */}
+                          <div style={{ fontSize: 10, color: 'var(--text-muted)', lineHeight: 1.5, marginBottom: 8 }}>{j.description}</div>
+
+                          {/* Primary pillar badge */}
+                          <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap', marginBottom: 7 }}>
+                            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3, fontSize: 9, fontWeight: 700, padding: '2px 7px', borderRadius: 99, background: `${pillarColor}18`, color: pillarColor, border: `1px solid ${pillarColor}35`, fontFamily: 'Geist Mono, monospace' }}>
+                              {pillarIcons[j.primaryPillar]} PRIMARY: {j.primaryPillar.toUpperCase()}
+                            </span>
+                            {j.secondaryPillars.map(sp => (
+                              <span key={sp} style={{ display: 'inline-flex', alignItems: 'center', gap: 3, fontSize: 9, fontWeight: 600, padding: '2px 6px', borderRadius: 99, background: `${pillarColors[sp]}12`, color: pillarColors[sp], fontFamily: 'Geist Mono, monospace' }}>
+                                {pillarIcons[sp]}
+                              </span>
+                            ))}
+                          </div>
+
+                          {/* Brignull patterns targeted */}
+                          <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', marginBottom: 7 }}>
+                            {j.brignullPatterns.slice(0, 3).map(bp => (
+                              <span key={bp} style={{ fontSize: 8, fontWeight: 700, padding: '1px 6px', borderRadius: 99, background: 'rgba(205,171,254,0.12)', color: 'var(--pillar-dp)', border: '1px solid rgba(205,171,254,0.25)', fontFamily: 'Geist Mono, monospace' }}>
+                                {bp}
+                              </span>
+                            ))}
+                            {j.brignullPatterns.length > 3 && (
+                              <span style={{ fontSize: 8, color: 'var(--text-muted)', fontFamily: 'Geist Mono, monospace', padding: '1px 4px' }}>+{j.brignullPatterns.length - 3} more</span>
+                            )}
+                          </div>
+
+                          {/* Regulation hook */}
+                          <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', marginBottom: j.effortAsymmetry ? 8 : 0 }}>
+                            {j.regulationFocus.slice(0, 2).map(reg => (
+                              <span key={reg} style={{ fontSize: 8, fontWeight: 700, padding: '1px 6px', borderRadius: 99, background: 'rgba(254,113,65,0.1)', color: '#FE7141', fontFamily: 'Geist Mono, monospace' }}>
+                                {reg}
+                              </span>
+                            ))}
+                          </div>
+
+                          {/* Effort asymmetry callout */}
+                          {j.effortAsymmetry && (
+                            <div style={{ marginTop: 8, padding: '6px 8px', borderRadius: 6, background: 'rgba(232,0,45,0.06)', border: '1px solid rgba(232,0,45,0.2)' }}>
+                              <div style={{ fontSize: 8, fontWeight: 700, color: '#E8002D', marginBottom: 3, fontFamily: 'Geist Mono, monospace', textTransform: 'uppercase', letterSpacing: '0.04em' }}>⚖ Effort Asymmetry</div>
+                              <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                                <div style={{ textAlign: 'center' }}>
+                                  <div style={{ fontSize: 14, fontWeight: 700, color: '#00BA8C', fontFamily: 'Geist Mono, monospace' }}>{j.effortAsymmetry.entrySteps}</div>
+                                  <div style={{ fontSize: 8, color: 'var(--text-muted)' }}>{j.effortAsymmetry.entryLabel}</div>
+                                </div>
+                                <div style={{ fontSize: 10, color: 'var(--text-muted)' }}>vs</div>
+                                <div style={{ textAlign: 'center' }}>
+                                  <div style={{ fontSize: 14, fontWeight: 700, color: '#E8002D', fontFamily: 'Geist Mono, monospace' }}>{j.effortAsymmetry.exitSteps}</div>
+                                  <div style={{ fontSize: 8, color: 'var(--text-muted)' }}>{j.effortAsymmetry.exitLabel}</div>
+                                </div>
+                                <div style={{ fontSize: 8, color: '#E8002D', fontWeight: 700, marginLeft: 4 }}>
+                                  {j.effortAsymmetry.exitSteps}× harder to exit
+                                </div>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      </button>
+                    );
+                  })}
+                  {/* Custom Journey Card */}
                   <button id="journey-custom" onClick={() => selectPredefinedJourney('custom')}
-                    style={{ textAlign: 'left', padding: '10px 12px', borderRadius: 'var(--radius-md)', border: '2px dashed var(--border)', background: 'transparent', cursor: 'pointer', transition: 'var(--transition)' }}>
-                    <div style={{ fontSize: 16, marginBottom: 3 }}>➕</div>
-                    <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-primary)', marginBottom: 3 }}>Create Custom Journey</div>
-                    <div style={{ fontSize: 10, color: 'var(--text-muted)', lineHeight: 1.4 }}>Define your own flow from scratch</div>
-                    <div style={{ fontSize: 9, fontFamily: 'Geist Mono, monospace', color: 'var(--text-muted)' }}>Director Mode →</div>
+                    style={{ textAlign: 'left', borderRadius: 'var(--radius-md)', border: '2px dashed var(--border)', background: 'transparent', cursor: 'pointer', transition: 'all 0.2s ease', overflow: 'hidden' }}>
+                    <div style={{ height: 3, background: 'var(--border)', width: '100%' }} />
+                    <div style={{ padding: '10px 12px', display: 'flex', flexDirection: 'column', gap: 4, height: '100%', justifyContent: 'center' }}>
+                      <div style={{ fontSize: 20 }}>➕</div>
+                      <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-primary)' }}>Create Custom Journey</div>
+                      <div style={{ fontSize: 10, color: 'var(--text-muted)', lineHeight: 1.4 }}>Define your own page flow, URLs, and action instructions from scratch</div>
+                      <div style={{ fontSize: 9, fontFamily: 'Geist Mono, monospace', color: 'var(--accent-primary)', marginTop: 4 }}>Director Mode →</div>
+                    </div>
                   </button>
                 </div>
 
-                {/* Selected template info + editable steps */}
-                {selectedTemplate && journeySteps.length > 0 && (
-                  <div style={{ padding: '12px 14px', borderRadius: 'var(--radius-md)', background: 'rgba(254,113,65,0.04)', border: '1px solid rgba(254,113,65,0.2)', marginBottom: 12 }}>
-                    {/* Header */}
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
-                      <div>
-                        <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 2 }}>
-                          {selectedTemplate.icon} {selectedTemplate.label} — <span style={{ color: 'var(--accent-primary)' }}>{journeySteps.length} stages</span>
-                        </div>
-                        <div style={{ fontSize: 11, color: 'var(--text-muted)', fontStyle: 'italic' }}>Focus: {selectedTemplate.checksFocus}</div>
-                      </div>
-                      <span style={{ fontSize: 9, fontWeight: 700, padding: '3px 8px', borderRadius: 99, background: 'rgba(254,113,65,0.15)', color: 'var(--accent-primary)', fontFamily: 'Geist Mono, monospace' }}>
-                        {journeySteps.length} PAGES
-                      </span>
-                    </div>
 
-                    {/* Predefined flow visual */}
-                    <div className="journey-predefined-flow" style={{ marginBottom: 12 }}>
-                      {journeySteps.map((step, i) => (
-                        <div key={step.id} className="journey-flow-step">
-                          <div className="journey-flow-node active-node">{step.label}</div>
-                          {i < journeySteps.length - 1 && <div className="journey-flow-arrow">→</div>}
-                        </div>
-                      ))}
-                    </div>
-
-                    {/* Editable Steps */}
-                    <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 8, fontFamily: 'Geist Mono, monospace' }}>
-                      ✏️ Edit Steps — Customize URLs & Add Action Instructions
-                    </div>
-                    <div className="journey-step-builder">
-                      {journeySteps.map((step, i) => (
-                        <div key={step.id} style={{ display: 'grid', gridTemplateColumns: '28px 1fr 1fr auto', gap: 6, alignItems: 'start', padding: '8px 10px', borderRadius: 'var(--radius-md)', background: 'var(--bg-secondary)', border: '1px solid var(--border)' }}>
-                          <span className="journey-step-num">{i + 1}</span>
-                          <input className="input-field" placeholder="Page label" value={step.label} onChange={e => updateStep(step.id, 'label', e.target.value)} style={{ fontSize: 12, padding: '7px 10px' }} />
-                          <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                            <input className="input-field" placeholder="/relative-url or https://..." value={step.url} onChange={e => updateStep(step.id, 'url', e.target.value)} style={{ fontSize: 11, padding: '7px 10px', fontFamily: 'Geist Mono, monospace' }} />
-                            <input className="input-field" placeholder='Action: e.g. "search for shoes" or "click add to cart"' value={step.action || ''} onChange={e => updateStep(step.id, 'action', e.target.value)} style={{ fontSize: 11, padding: '6px 10px', color: 'var(--accent-primary)', background: 'rgba(254,113,65,0.04)', borderColor: 'rgba(254,113,65,0.2)' }} />
+                {selectedTemplate && journeySteps.length > 0 && (() => {
+                  const pillarColors: Record<string, string> = { darkpatterns: 'var(--pillar-dp)', privacy: 'var(--pillar-priv)', accessibility: 'var(--pillar-a11y)', performance: 'var(--pillar-perf)' };
+                  const pillarColor = pillarColors[selectedTemplate.primaryPillar] || 'var(--accent-primary)';
+                  return (
+                    <div style={{ borderRadius: 'var(--radius-md)', border: `1px solid ${pillarColor}40`, background: `${pillarColor}06`, marginBottom: 12, overflow: 'hidden', animation: 'fadeIn 0.3s ease' }}>
+                      {/* Panel header */}
+                      <div style={{ padding: '10px 14px', borderBottom: `1px solid ${pillarColor}25`, display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                          <span style={{ fontSize: 20 }}>{selectedTemplate.icon}</span>
+                          <div>
+                            <div style={{ fontWeight: 700, fontSize: 13, color: pillarColor }}>{selectedTemplate.label}</div>
+                            <div style={{ fontSize: 10, color: 'var(--text-muted)' }}>{selectedTemplate.stages.length} stages · {selectedTemplate.brignullPatterns.length} Brignull patterns targeted</div>
                           </div>
-                          <button onClick={() => setJourneySteps(steps => steps.filter(s => s.id !== step.id))} style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontSize: 18, lineHeight: 1, padding: '6px 4px', marginTop: 2 }}>×</button>
                         </div>
-                      ))}
-                    </div>
-                    <button id="add-journey-step-predefined" onClick={() => setJourneySteps(s => [...s, { id: crypto.randomUUID(), label: '', url: '', action: '' }])}
-                      style={{ fontSize: 12, color: 'var(--accent-primary)', background: 'none', border: '1px dashed rgba(254,113,65,0.4)', borderRadius: 'var(--radius-sm)', padding: '6px 14px', cursor: 'pointer', width: '100%', marginTop: 8 }}>
-                      + Add Step
-                    </button>
+                        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                          {selectedTemplate.regulationFocus.map(reg => (
+                            <span key={reg} style={{ fontSize: 8, fontWeight: 700, padding: '2px 7px', borderRadius: 99, background: 'rgba(254,113,65,0.12)', color: '#FE7141', fontFamily: 'Geist Mono, monospace' }}>{reg}</span>
+                          ))}
+                        </div>
+                      </div>
 
-                    {/* Page count info */}
-                    <div style={{ marginTop: 10, padding: '8px 12px', borderRadius: 'var(--radius-sm)', background: 'rgba(254,113,65,0.06)', border: '1px solid rgba(254,113,65,0.15)', display: 'flex', alignItems: 'center', gap: 8 }}>
-                      <span style={{ fontSize: 14 }}>📊</span>
-                      <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
-                        <strong style={{ color: 'var(--accent-primary)', fontFamily: 'Geist Mono, monospace' }}>{journeySteps.length}</strong> pages will be audited — one per journey stage.
-                        <span style={{ color: 'var(--text-muted)', marginLeft: 6 }}>Page count is automatically set from your flow steps.</span>
-                      </span>
+                      <div style={{ padding: '12px 14px', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+                        {/* Left: Vertical stage timeline */}
+                        <div>
+                          <div style={{ fontSize: 9, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 10, fontFamily: 'Geist Mono, monospace' }}>Stage Timeline</div>
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
+                            {journeySteps.map((step, i) => (
+                              <div key={step.id} style={{ display: 'flex', gap: 10, alignItems: 'flex-start' }}>
+                                {/* Timeline line + dot */}
+                                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', flexShrink: 0 }}>
+                                  <div style={{ width: 22, height: 22, borderRadius: '50%', background: `${pillarColor}20`, border: `2px solid ${pillarColor}`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 9, fontWeight: 700, color: pillarColor, fontFamily: 'Geist Mono, monospace' }}>{i + 1}</div>
+                                  {i < journeySteps.length - 1 && <div style={{ width: 2, height: 20, background: `${pillarColor}30`, margin: '1px 0' }} />}
+                                </div>
+                                {/* Stage info */}
+                                <div style={{ paddingBottom: i < journeySteps.length - 1 ? 4 : 0, flex: 1, minWidth: 0 }}>
+                                  <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-primary)', marginBottom: 1 }}>{step.label}</div>
+                                  <div style={{ fontSize: 9, color: 'var(--text-muted)', fontFamily: 'Geist Mono, monospace', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{step.url}</div>
+                                  {step.action && <div style={{ fontSize: 9, color: pillarColor, marginTop: 2, lineHeight: 1.4 }}>→ {step.action}</div>}
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+
+                        {/* Right: What this tests + Brignull coverage */}
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                          {/* Expected findings */}
+                          <div>
+                            <div style={{ fontSize: 9, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 8, fontFamily: 'Geist Mono, monospace' }}>Expected Findings</div>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
+                              {selectedTemplate.expectedFindings.map((f, i) => (
+                                <div key={i} style={{ display: 'flex', gap: 6, alignItems: 'flex-start' }}>
+                                  <span style={{ fontSize: 9, color: '#E8002D', marginTop: 1, flexShrink: 0 }}>●</span>
+                                  <span style={{ fontSize: 10, color: 'var(--text-secondary)', lineHeight: 1.4 }}>{f}</span>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+
+                          {/* Brignull patterns targeted */}
+                          <div>
+                            <div style={{ fontSize: 9, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 8, fontFamily: 'Geist Mono, monospace' }}>Brignull Patterns Scanned</div>
+                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+                              {selectedTemplate.brignullPatterns.map(bp => (
+                                <span key={bp} style={{ fontSize: 8, fontWeight: 700, padding: '2px 7px', borderRadius: 99, background: 'rgba(205,171,254,0.12)', color: 'var(--pillar-dp)', border: '1px solid rgba(205,171,254,0.3)', fontFamily: 'Geist Mono, monospace' }}>{bp}</span>
+                              ))}
+                            </div>
+                          </div>
+
+                          {/* Effort asymmetry (expanded) */}
+                          {selectedTemplate.effortAsymmetry && (
+                            <div style={{ padding: '8px 10px', borderRadius: 8, background: 'rgba(232,0,45,0.05)', border: '1px solid rgba(232,0,45,0.2)' }}>
+                              <div style={{ fontSize: 9, fontWeight: 700, color: '#E8002D', marginBottom: 6, fontFamily: 'Geist Mono, monospace', textTransform: 'uppercase' }}>⚖ Effort Asymmetry — this journey measures:</div>
+                              <div style={{ display: 'flex', gap: 0, alignItems: 'center' }}>
+                                <div style={{ flex: 1, textAlign: 'center', padding: '6px 8px', borderRadius: 6, background: 'rgba(0,186,140,0.1)', border: '1px solid rgba(0,186,140,0.25)' }}>
+                                  <div style={{ fontSize: 18, fontWeight: 700, color: '#00BA8C', fontFamily: 'Geist Mono, monospace' }}>{selectedTemplate.effortAsymmetry.entrySteps}</div>
+                                  <div style={{ fontSize: 9, color: 'var(--text-muted)', fontWeight: 600 }}>clicks to {selectedTemplate.effortAsymmetry.entryLabel}</div>
+                                </div>
+                                <div style={{ padding: '0 10px', fontSize: 16, color: 'var(--text-muted)' }}>⟷</div>
+                                <div style={{ flex: 1, textAlign: 'center', padding: '6px 8px', borderRadius: 6, background: 'rgba(232,0,45,0.08)', border: '1px solid rgba(232,0,45,0.25)' }}>
+                                  <div style={{ fontSize: 18, fontWeight: 700, color: '#E8002D', fontFamily: 'Geist Mono, monospace' }}>{selectedTemplate.effortAsymmetry.exitSteps}</div>
+                                  <div style={{ fontSize: 9, color: 'var(--text-muted)', fontWeight: 600 }}>clicks to {selectedTemplate.effortAsymmetry.exitLabel}</div>
+                                </div>
+                              </div>
+                              <div style={{ marginTop: 6, fontSize: 9, color: '#E8002D', fontWeight: 600, textAlign: 'center' }}>
+                                {selectedTemplate.effortAsymmetry.exitSteps}× more friction to exit than to enter — Roach Motel signal
+                              </div>
+                            </div>
+                          )}
+
+                          {/* Pillar auto-enable nudge */}
+                          <div style={{ padding: '7px 10px', borderRadius: 8, background: `${pillarColor}10`, border: `1px solid ${pillarColor}30`, fontSize: 10, color: 'var(--text-secondary)', lineHeight: 1.5 }}>
+                            <span style={{ fontWeight: 700, color: pillarColor }}>💡 Auto-enabled:</span> Selecting this journey activates the <strong>{selectedTemplate.primaryPillar}</strong> pillar automatically.
+                            {selectedTemplate.secondaryPillars.length > 0 && <span> Also recommended: <strong>{selectedTemplate.secondaryPillars.join(', ')}</strong>.</span>}
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Editable steps section */}
+                      <div style={{ padding: '10px 14px', borderTop: `1px solid ${pillarColor}20` }}>
+                        <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 8, fontFamily: 'Geist Mono, monospace' }}>
+                          ✏️ Customize URLs &amp; Action Instructions
+                        </div>
+                        <div className="journey-step-builder">
+                          {journeySteps.map((step, i) => (
+                            <div key={step.id} style={{ display: 'grid', gridTemplateColumns: '28px 1fr 1fr auto', gap: 6, alignItems: 'start', padding: '8px 10px', borderRadius: 'var(--radius-md)', background: 'var(--bg-secondary)', border: '1px solid var(--border)' }}>
+                              <span className="journey-step-num">{i + 1}</span>
+                              <input className="input-field" placeholder="Page label" value={step.label} onChange={e => updateStep(step.id, 'label', e.target.value)} style={{ fontSize: 12, padding: '7px 10px' }} />
+                              <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                                <input className="input-field" placeholder="/relative-url or https://..." value={step.url} onChange={e => updateStep(step.id, 'url', e.target.value)} style={{ fontSize: 11, padding: '7px 10px', fontFamily: 'Geist Mono, monospace' }} />
+                                <input className="input-field" placeholder='Action: e.g. "search for shoes" or "click add to cart"' value={step.action || ''} onChange={e => updateStep(step.id, 'action', e.target.value)} style={{ fontSize: 11, padding: '6px 10px', color: pillarColor, background: `${pillarColor}04`, borderColor: `${pillarColor}30` }} />
+                              </div>
+                              <button onClick={() => setJourneySteps(steps => steps.filter(s => s.id !== step.id))} style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontSize: 18, lineHeight: 1, padding: '6px 4px', marginTop: 2 }}>×</button>
+                            </div>
+                          ))}
+                        </div>
+                        <button id="add-journey-step-predefined" onClick={() => setJourneySteps(s => [...s, { id: crypto.randomUUID(), label: '', url: '', action: '' }])}
+                          style={{ fontSize: 12, color: pillarColor, background: 'none', border: `1px dashed ${pillarColor}50`, borderRadius: 'var(--radius-sm)', padding: '6px 14px', cursor: 'pointer', width: '100%', marginTop: 8 }}>
+                          + Add Step
+                        </button>
+                        <div style={{ marginTop: 10, padding: '8px 12px', borderRadius: 'var(--radius-sm)', background: `${pillarColor}08`, border: `1px solid ${pillarColor}20`, display: 'flex', alignItems: 'center', gap: 8 }}>
+                          <span style={{ fontSize: 14 }}>📊</span>
+                          <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
+                            <strong style={{ color: pillarColor, fontFamily: 'Geist Mono, monospace' }}>{journeySteps.length}</strong> pages will be audited — one deep pass per stage.
+                            <span style={{ color: 'var(--text-muted)', marginLeft: 6 }}>Modify URLs above to match the target site&apos;s actual paths.</span>
+                          </span>
+                        </div>
+                      </div>
                     </div>
-                  </div>
-                )}
+                  );
+                })()}
               </div>
             )}
+
+
 
             {/* MODE 4 — Director Mode */}
             {scopeMode === 'director' && (

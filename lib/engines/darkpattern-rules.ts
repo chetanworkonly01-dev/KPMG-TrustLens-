@@ -1,221 +1,40 @@
 // ============================================================
-// KPMG TrustLens — Dark Pattern Detection Rules (30+ rules)
+// KPMG TrustLens — Dark Pattern Detection Rules (60+ rules)
+// Comprehensive coverage: visual, DOM, NLP, behavioural, AI
+// Mapped to: EU DSA Art.25, GDPR, FTC, CCPA, DPDPA, WCAG 2.2
 // ============================================================
 
 import type { DarkPatternRule } from '../types/darkpattern';
 
 export const DARK_PATTERN_RULES: DarkPatternRule[] = [
-  // ═══════════════════════════════════════════════════
+
+  // ═══════════════════════════════════════════════════════════
   // INTERFACE INTERFERENCE (DP-IF) — UI visually biases decisions
-  // ═══════════════════════════════════════════════════
+  // ═══════════════════════════════════════════════════════════
   {
     id: 'DP-IF-01', category: 'interface-interference', principle: 'symmetry-of-choice',
     title: 'Cookie Accept Button Disproportionately Larger',
-    description: 'The "Accept" button on a cookie/consent banner is significantly larger than the "Reject" or "Manage" option, visually biasing users toward acceptance.',
+    description: 'The "Accept" button on a cookie/consent banner is significantly larger than the "Reject" or "Manage" option, visually biasing users toward acceptance. EU DSA Art. 25(1)(a) prohibits this asymmetric framing.',
     severity: 'high', regulation: ['EU-DSA', 'EU-GDPR'], detect: 'visual',
   },
   {
     id: 'DP-IF-02', category: 'interface-interference', principle: 'symmetry-of-choice',
     title: 'Accept Button Uses High-Contrast Color While Reject Is Muted',
-    description: 'Accept/agree uses a vibrant color while reject/decline uses a muted, transparent, or hard-to-see color, creating visual asymmetry.',
+    description: 'Accept/agree uses a vibrant color while reject/decline uses a muted, transparent, or hard-to-see color. This colour weaponisation is prohibited under EU DSA Art. 25(1)(a) and ICO cookie guidance.',
     severity: 'high', regulation: ['EU-DSA', 'EU-GDPR'], detect: 'visual',
   },
   {
     id: 'DP-IF-03', category: 'interface-interference', principle: 'symmetry-of-choice',
     title: 'Reject Option Hidden Below Fold or in Settings',
-    description: 'The reject/decline option is not visible without scrolling or requires navigating to a sub-menu, while accept is immediately visible.',
+    description: 'The reject/decline option is not visible without scrolling or requires navigating to a sub-menu, while accept is immediately visible. Critical violation of EU DSA Art. 25(1)(a) and GDPR consent requirements.',
     severity: 'critical', regulation: ['EU-DSA', 'EU-GDPR'], detect: 'visual',
   },
   {
     id: 'DP-IF-04', category: 'interface-interference', principle: 'informed-consent',
     title: 'Dismiss Button Is Unusually Small or Hard to Target',
-    description: 'A close/dismiss button (e.g., on a modal or banner) is extremely small (<24px), making it difficult to interact with, especially on touch devices.',
+    description: 'A close/dismiss button is extremely small (<24px), making it difficult to interact with, especially on touch devices. Violates WCAG 2.5.8 and EU DSA Art. 25(1)(a).',
     severity: 'medium', regulation: ['EU-DSA'], detect: 'visual',
   },
-
-  // ═══════════════════════════════════════════════════
-  // OBSTRUCTION (DP-OB) — Makes unwanted actions hard
-  // ═══════════════════════════════════════════════════
-  {
-    id: 'DP-OB-01', category: 'obstruction', principle: 'symmetry-of-choice',
-    title: 'No Visible Unsubscribe or Cancel Option',
-    description: 'The page/app has subscribe/sign-up options but no visible path to unsubscribe or cancel.',
-    severity: 'critical', regulation: ['US-FTC', 'EU-DSA'], detect: 'dom',
-  },
-  {
-    id: 'DP-OB-02', category: 'obstruction', principle: 'symmetry-of-choice',
-    title: 'Account Deletion Not Accessible',
-    description: 'No visible "delete account" or "close account" link/button found in account settings or profile areas.',
-    severity: 'high', regulation: ['EU-GDPR', 'US-CCPA'], detect: 'dom',
-  },
-  {
-    id: 'DP-OB-03', category: 'obstruction', principle: 'user-autonomy',
-    title: 'Multi-Step Confirmation to Decline',
-    description: 'Declining an offer requires multiple confirmation steps (e.g., "Are you sure?" dialogs) while accepting is one-click.',
-    severity: 'high', regulation: ['EU-DSA', 'US-FTC'], detect: 'journey',
-  },
-
-  // ═══════════════════════════════════════════════════
-  // SNEAKING (DP-SN) — Hidden actions/costs
-  // ═══════════════════════════════════════════════════
-  {
-    id: 'DP-SN-01', category: 'sneaking', principle: 'informed-consent',
-    title: 'Preselected Opt-In Checkboxes',
-    description: 'Checkboxes for newsletters, marketing emails, or data sharing are pre-checked by default, requiring users to actively opt-out.',
-    severity: 'critical', regulation: ['EU-GDPR', 'EU-DSA'], detect: 'dom',
-  },
-  {
-    id: 'DP-SN-02', category: 'sneaking', principle: 'transparency',
-    title: 'Hidden Preselected Add-Ons',
-    description: 'Additional products, services, or insurance options are preselected in forms or checkout flows without explicit user action.',
-    severity: 'critical', regulation: ['US-FTC', 'EU-DSA', 'IN-CCPA'], detect: 'dom',
-  },
-  {
-    id: 'DP-SN-03', category: 'sneaking', principle: 'transparency',
-    title: 'Price Not Visible Until Late in Flow',
-    description: 'The full cost/price is not displayed upfront but only revealed in later checkout steps (drip pricing).',
-    severity: 'high', regulation: ['US-FTC', 'EU-DSA'], detect: 'dom',
-  },
-  {
-    id: 'DP-SN-04', category: 'sneaking', principle: 'informed-consent',
-    title: 'Hidden Input Fields with Default Values',
-    description: 'Hidden form fields (type="hidden") carry default values that the user cannot see or modify, potentially submitting data without consent.',
-    severity: 'medium', regulation: ['EU-GDPR'], detect: 'dom',
-  },
-
-  // ═══════════════════════════════════════════════════
-  // FORCED ACTION (DP-FA) — Requires unrelated actions
-  // ═══════════════════════════════════════════════════
-  {
-    id: 'DP-FA-01', category: 'forced-action', principle: 'user-autonomy',
-    title: 'Forced Account Creation to View Content',
-    description: 'Content is blocked by a login/registration wall that forces users to create an account before accessing publicly available information.',
-    severity: 'high', regulation: ['EU-DSA'], detect: 'dom',
-  },
-  {
-    id: 'DP-FA-02', category: 'forced-action', principle: 'informed-consent',
-    title: 'Forced Newsletter Signup During Checkout',
-    description: 'The checkout or registration flow requires subscribing to newsletters or marketing with no opt-out option.',
-    severity: 'high', regulation: ['EU-GDPR', 'US-FTC'], detect: 'dom',
-  },
-  {
-    id: 'DP-FA-03', category: 'forced-action', principle: 'user-autonomy',
-    title: 'App Install Prompt Blocking Content',
-    description: 'A full-screen or blocking prompt forces users to install a mobile app to access content available on the web.',
-    severity: 'medium', regulation: ['EU-DSA'], detect: 'dom',
-  },
-
-  // ═══════════════════════════════════════════════════
-  // NAGGING (DP-NG) — Repeated interruptions
-  // ═══════════════════════════════════════════════════
-  {
-    id: 'DP-NG-01', category: 'nagging', principle: 'user-autonomy',
-    title: 'Multiple Overlapping Modals or Popups',
-    description: 'The page shows multiple overlapping modal dialogs, popups, or banners simultaneously, creating excessive interruption.',
-    severity: 'medium', regulation: ['EU-DSA'], detect: 'dom',
-  },
-  {
-    id: 'DP-NG-02', category: 'nagging', principle: 'user-autonomy',
-    title: 'Notification Permission Prompt on First Visit',
-    description: 'The site requests browser notification permissions immediately on first visit before any user engagement.',
-    severity: 'medium', regulation: ['EU-DSA'], detect: 'dom',
-  },
-
-  // ═══════════════════════════════════════════════════
-  // SCARCITY & URGENCY (DP-SU) — Fake time/stock pressure
-  // ═══════════════════════════════════════════════════
-  {
-    id: 'DP-SU-01', category: 'scarcity-urgency', principle: 'user-autonomy',
-    title: 'Countdown Timer Creating False Urgency',
-    description: 'A countdown timer is displayed suggesting limited time for an offer, which may create artificial urgency.',
-    severity: 'high', regulation: ['US-FTC', 'EU-DSA', 'IN-CCPA'], detect: 'dom',
-  },
-  {
-    id: 'DP-SU-02', category: 'scarcity-urgency', principle: 'transparency',
-    title: 'Fake Scarcity Messaging ("Only X Left!")',
-    description: 'Messages suggesting limited availability (e.g., "Only 2 left!", "Selling fast!") that may not reflect actual stock levels.',
-    severity: 'high', regulation: ['US-FTC', 'IN-CCPA'], detect: 'dom',
-  },
-  {
-    id: 'DP-SU-03', category: 'scarcity-urgency', principle: 'user-autonomy',
-    title: 'Urgency Language in CTA Text',
-    description: 'Call-to-action buttons or banners use urgency language like "Act now!", "Limited time!", "Hurry!" to pressure decisions.',
-    severity: 'medium', regulation: ['EU-DSA'], detect: 'dom',
-  },
-
-  // ═══════════════════════════════════════════════════
-  // SOCIAL PRESSURE (DP-SP) — Emotional manipulation
-  // ═══════════════════════════════════════════════════
-  {
-    id: 'DP-SP-01', category: 'social-pressure', principle: 'user-autonomy',
-    title: 'Real-Time Viewer Count Displayed',
-    description: 'Messages like "X people are viewing this right now" or "X people bought this today" create social pressure to act quickly.',
-    severity: 'medium', regulation: ['EU-DSA', 'IN-CCPA'], detect: 'dom',
-  },
-  {
-    id: 'DP-SP-02', category: 'social-pressure', principle: 'user-autonomy',
-    title: 'Activity Notifications Creating FOMO',
-    description: 'Popup notifications showing other users\' actions (e.g., "John just purchased...") designed to create fear of missing out.',
-    severity: 'medium', regulation: ['EU-DSA'], detect: 'dom',
-  },
-
-  // ═══════════════════════════════════════════════════
-  // PRIVACY ZUCKERING (DP-PZ) — Oversharing encouragement
-  // ═══════════════════════════════════════════════════
-  {
-    id: 'DP-PZ-01', category: 'privacy-zuckering', principle: 'informed-consent',
-    title: 'Form Collects Excessive Personal Data',
-    description: 'A form collects significantly more personal data fields than necessary for its stated purpose (e.g., phone number for a newsletter).',
-    severity: 'high', regulation: ['EU-GDPR', 'US-CCPA'], detect: 'dom',
-  },
-  {
-    id: 'DP-PZ-02', category: 'privacy-zuckering', principle: 'transparency',
-    title: 'Share Buttons More Prominent Than Content',
-    description: 'Social sharing buttons are disproportionately prominent compared to the actual content, encouraging data sharing over consumption.',
-    severity: 'low', regulation: ['EU-DSA'], detect: 'visual',
-  },
-
-  // ═══════════════════════════════════════════════════
-  // CONFIRMSHAMING (DP-CS) — Guilt-based rejection
-  // ═══════════════════════════════════════════════════
-  {
-    id: 'DP-CS-01', category: 'confirmshaming', principle: 'user-autonomy',
-    title: 'Guilt Language on Decline/Reject Option',
-    description: 'The reject/decline option uses emotionally manipulative text like "No thanks, I don\'t want to save money" or "I prefer to pay full price".',
-    severity: 'critical', regulation: ['EU-DSA', 'US-FTC'], detect: 'ai',
-  },
-  {
-    id: 'DP-CS-02', category: 'confirmshaming', principle: 'user-autonomy',
-    title: 'Negative Framing on Opt-Out Choice',
-    description: 'Opt-out text uses negative framing (e.g., "No, I hate discounts") designed to shame users into opting in.',
-    severity: 'high', regulation: ['EU-DSA'], detect: 'ai',
-  },
-
-  // ═══════════════════════════════════════════════════
-  // MISDIRECTION (DP-MD) — Visual steering
-  // ═══════════════════════════════════════════════════
-  {
-    id: 'DP-MD-01', category: 'misdirection', principle: 'symmetry-of-choice',
-    title: 'Premium Option Visually Highlighted Over Basic',
-    description: 'In a pricing/plan comparison, the most expensive option is disproportionately highlighted with badges, colors, or size while the basic/free option is de-emphasized.',
-    severity: 'medium', regulation: ['EU-DSA'], detect: 'visual',
-  },
-  {
-    id: 'DP-MD-02', category: 'misdirection', principle: 'informed-consent',
-    title: 'Misleading Button Labels',
-    description: 'Buttons use ambiguous or misleading labels where the action performed does not match reasonable user expectations.',
-    severity: 'high', regulation: ['EU-DSA', 'US-FTC'], detect: 'ai',
-  },
-  {
-    id: 'DP-MD-03', category: 'misdirection', principle: 'transparency',
-    title: 'Close Button Triggers Unexpected Action',
-    description: 'Clicking a close/dismiss button on a modal or banner triggers an unexpected action like a redirect or subscription.',
-    severity: 'critical', regulation: ['US-FTC', 'EU-DSA'], detect: 'journey',
-  },
-
-  // ═══════════════════════════════════════════════════
-  // EXPANDED RULES — Interface Interference
-  // ═══════════════════════════════════════════════════
   {
     id: 'DP-IF-05', category: 'interface-interference', principle: 'transparency',
     title: 'Fake Disabled UI State',
@@ -231,66 +50,310 @@ export const DARK_PATTERN_RULES: DarkPatternRule[] = [
   {
     id: 'DP-IF-07', category: 'interface-interference', principle: 'informed-consent',
     title: 'Dark CSS Overlay Trap',
-    description: 'An invisible or semi-transparent overlay covers content, intercepting clicks intended for underlying elements.',
+    description: 'An invisible or semi-transparent overlay covers content, intercepting clicks intended for underlying elements. Violates EU DSA Art. 25(1)(b) and FTC deceptive practices.',
     severity: 'critical', regulation: ['EU-DSA', 'US-FTC', 'IN-DPDPA'], detect: 'dom',
   },
+  {
+    id: 'DP-IF-08', category: 'interface-interference', principle: 'symmetry-of-choice',
+    title: 'No Visual Distinction Between Paid and Free Options',
+    description: 'Paid tiers are presented with identical visual weight to free tiers, obscuring the cost difference and biasing users toward accidental purchase.',
+    severity: 'high', regulation: ['EU-DSA', 'US-FTC'], detect: 'visual',
+  },
+  {
+    id: 'DP-IF-09', category: 'interface-interference', principle: 'symmetry-of-choice',
+    title: 'Pre-selected Most Expensive Plan as "Recommended"',
+    description: 'In pricing/plan comparisons, the most expensive plan is pre-selected or highlighted as "Best Value" or "Recommended" using a visual badge, border glow, or scale transformation — biasing the user toward the highest cost option.',
+    severity: 'high', regulation: ['EU-DSA', 'US-FTC', 'IN-CCPA'], detect: 'visual',
+  },
+  {
+    id: 'DP-IF-10', category: 'interface-interference', principle: 'informed-consent',
+    title: 'Contrast Weaponisation — Low Contrast Reject in Consent Banner',
+    description: 'The Reject/No Thanks button in a consent or cookie banner has a contrast ratio below WCAG minimum (4.5:1), making it effectively invisible to users with low vision while Accept is high-contrast.',
+    severity: 'critical', regulation: ['EU-DSA', 'EU-GDPR', 'IN-DPDPA'], detect: 'visual',
+  },
 
-  // ═══════════════════════════════════════════════════
-  // EXPANDED RULES — Obstruction (Interaction Flow)
-  // ═══════════════════════════════════════════════════
+  // ═══════════════════════════════════════════════════════════
+  // OBSTRUCTION (DP-OB) — Makes unwanted actions hard
+  // ═══════════════════════════════════════════════════════════
+  {
+    id: 'DP-OB-01', category: 'obstruction', principle: 'symmetry-of-choice',
+    title: 'No Visible Unsubscribe or Cancel Option',
+    description: 'The page/app has subscribe/sign-up options but no visible path to unsubscribe or cancel. Violates FTC Click-to-Cancel Rule 2024 and EU DSA Art. 25(1)(d).',
+    severity: 'critical', regulation: ['US-FTC', 'EU-DSA'], detect: 'dom',
+  },
+  {
+    id: 'DP-OB-02', category: 'obstruction', principle: 'symmetry-of-choice',
+    title: 'Account Deletion Not Accessible',
+    description: 'No visible "delete account" or "close account" link/button found in account settings or profile areas. Violates GDPR Art. 17 right to erasure.',
+    severity: 'high', regulation: ['EU-GDPR', 'US-CCPA', 'IN-DPDPA'], detect: 'dom',
+  },
+  {
+    id: 'DP-OB-03', category: 'obstruction', principle: 'user-autonomy',
+    title: 'Multi-Step Confirmation to Decline',
+    description: 'Declining an offer requires multiple confirmation steps (e.g., "Are you sure?" dialogs) while accepting is one-click. Creates asymmetric friction prohibited by EU DSA Art. 25(1)(d).',
+    severity: 'high', regulation: ['EU-DSA', 'US-FTC'], detect: 'journey',
+  },
   {
     id: 'DP-OB-04', category: 'obstruction', principle: 'symmetry-of-choice',
     title: 'Cancel Flow Has More Friction Than Subscribe (EFS > 2.0)',
-    description: 'The cancellation or opt-out flow requires significantly more steps/clicks than the subscription or opt-in flow, creating asymmetric friction.',
+    description: 'The cancellation or opt-out flow requires significantly more steps/clicks than the subscription or opt-in flow, creating asymmetric friction (Roach Motel pattern). Violates FTC Click-to-Cancel Rule 2024 and EU DSA Art. 25.',
     severity: 'critical', regulation: ['EU-DSA', 'US-FTC', 'IN-CCPA', 'IN-DPDPA'], detect: 'flow',
   },
   {
     id: 'DP-OB-05', category: 'obstruction', principle: 'symmetry-of-choice',
     title: 'Unsubscribe Link Buried in Deep Navigation',
-    description: 'The unsubscribe or account deletion option requires navigating through 3+ levels of menus or settings, making it difficult to find.',
+    description: 'The unsubscribe or account deletion option requires navigating through 3+ levels of menus or settings. Violates FTC Click-to-Cancel Rule and GDPR Art. 17.',
     severity: 'high', regulation: ['EU-GDPR', 'US-FTC', 'IN-DPDPA'], detect: 'dom',
   },
+  {
+    id: 'DP-OB-06', category: 'obstruction', principle: 'user-autonomy',
+    title: 'Cancellation Requires Phone Call or Email',
+    description: 'The only method to cancel a subscription is to call a phone number or send an email, creating friction unavailable online. Violates FTC Click-to-Cancel Rule 2024 which mandates online cancellation if online signup is offered.',
+    severity: 'critical', regulation: ['US-FTC', 'EU-DSA', 'UK-CPR'], detect: 'dom',
+  },
+  {
+    id: 'DP-OB-07', category: 'obstruction', principle: 'user-autonomy',
+    title: 'Data Export Not Available or Hard to Find',
+    description: 'Right to data portability (GDPR Art. 20 / DPDPA) is not easily accessible. No visible "Download my data" or "Export data" option in account settings.',
+    severity: 'high', regulation: ['EU-GDPR', 'IN-DPDPA', 'US-CCPA'], detect: 'dom',
+  },
 
-  // ═══════════════════════════════════════════════════
-  // EXPANDED RULES — Sneaking (Deep Code Inspection)
-  // ═══════════════════════════════════════════════════
+  // ═══════════════════════════════════════════════════════════
+  // SNEAKING (DP-SN) — Hidden actions/costs
+  // ═══════════════════════════════════════════════════════════
+  {
+    id: 'DP-SN-01', category: 'sneaking', principle: 'informed-consent',
+    title: 'Preselected Opt-In Checkboxes',
+    description: 'Checkboxes for newsletters, marketing emails, or data sharing are pre-checked by default, requiring users to actively opt-out. Violates GDPR Art. 7(2) — consent must be active, not passive.',
+    severity: 'critical', regulation: ['EU-GDPR', 'EU-DSA', 'IN-DPDPA'], detect: 'dom',
+  },
+  {
+    id: 'DP-SN-02', category: 'sneaking', principle: 'transparency',
+    title: 'Hidden Preselected Add-Ons',
+    description: 'Additional products, services, or insurance options are preselected in forms or checkout flows without explicit user action. Violates EU Consumer Rights Directive Art. 22.',
+    severity: 'critical', regulation: ['US-FTC', 'EU-DSA', 'IN-CCPA'], detect: 'dom',
+  },
+  {
+    id: 'DP-SN-03', category: 'sneaking', principle: 'transparency',
+    title: 'Price Not Visible Until Late in Flow (Drip Pricing)',
+    description: 'The full cost/price is not displayed upfront but only revealed in later checkout steps. Violates EU Consumer Rights Directive Art. 6(1)(e) and FTC Act §5.',
+    severity: 'high', regulation: ['US-FTC', 'EU-DSA', 'UK-CPR'], detect: 'dom',
+  },
+  {
+    id: 'DP-SN-04', category: 'sneaking', principle: 'informed-consent',
+    title: 'Hidden Input Fields with Default Values',
+    description: 'Hidden form fields (type="hidden") carry default values for consent/marketing purposes that the user cannot see or modify, potentially submitting data without consent.',
+    severity: 'medium', regulation: ['EU-GDPR', 'IN-DPDPA'], detect: 'dom',
+  },
   {
     id: 'DP-SN-05', category: 'sneaking', principle: 'informed-consent',
     title: 'Tracking Scripts Fire Before Consent',
-    description: 'Analytics or advertising scripts execute before the user interacts with the consent banner, collecting data without explicit permission.',
+    description: 'Analytics or advertising scripts execute before the user interacts with the consent banner, collecting data without explicit permission. Clear violation of GDPR Art. 6 and ePrivacy Directive.',
     severity: 'critical', regulation: ['EU-GDPR', 'IN-DPDPA', 'US-CCPA'], detect: 'dom',
   },
   {
     id: 'DP-SN-06', category: 'sneaking', principle: 'transparency',
     title: 'Auto-Added Items in Cart/Checkout',
-    description: 'Products, services, insurance, or add-ons are automatically added to the shopping cart without explicit user action.',
-    severity: 'critical', regulation: ['US-FTC', 'IN-CCPA', 'EU-DSA'], detect: 'dom',
+    description: 'Products, services, insurance, or add-ons are automatically added to the shopping cart without explicit user action. Violates EU Consumer Rights Directive Art. 22.',
+    severity: 'critical', regulation: ['US-FTC', 'IN-CCPA', 'EU-DSA', 'UK-CPR'], detect: 'dom',
+  },
+  {
+    id: 'DP-SN-07', category: 'sneaking', principle: 'transparency',
+    title: 'Hidden Fees Disclosed Only at Final Step',
+    description: 'Service fees, booking fees, processing charges, or taxes are revealed only at the final payment step — after the user has invested time in the checkout process. Classic drip pricing.',
+    severity: 'critical', regulation: ['EU-DSA', 'US-FTC', 'UK-CPR', 'IN-CCPA'], detect: 'dom',
+  },
+  {
+    id: 'DP-SN-08', category: 'sneaking', principle: 'informed-consent',
+    title: 'Bundled Consent — Multiple Purposes in One Checkbox',
+    description: 'A single checkbox bundles consent for multiple distinct purposes (e.g., marketing + analytics + third-party sharing). GDPR Art. 7(2) requires separate consent per purpose.',
+    severity: 'critical', regulation: ['EU-GDPR', 'IN-DPDPA'], detect: 'dom',
+  },
+  {
+    id: 'DP-SN-09', category: 'sneaking', principle: 'transparency',
+    title: 'Free Trial Converts to Paid Without Clear Warning',
+    description: 'A free trial automatically converts to a paid subscription without a clear pre-expiry warning email or on-page disclosure. Violates FTC Click-to-Cancel Rule and EU Consumer Rights Directive.',
+    severity: 'critical', regulation: ['US-FTC', 'EU-DSA', 'UK-CPR'], detect: 'dom',
+  },
+
+  // ═══════════════════════════════════════════════════════════
+  // FORCED ACTION (DP-FA) — Requires unrelated actions
+  // ═══════════════════════════════════════════════════════════
+  {
+    id: 'DP-FA-01', category: 'forced-action', principle: 'user-autonomy',
+    title: 'Forced Account Creation to View Content',
+    description: 'Content is blocked by a login/registration wall that forces users to create an account before accessing publicly available information. Violates EU DSA Art. 25(1)(c) — obstruction pattern.',
+    severity: 'high', regulation: ['EU-DSA'], detect: 'dom',
+  },
+  {
+    id: 'DP-FA-02', category: 'forced-action', principle: 'informed-consent',
+    title: 'Forced Newsletter Signup During Checkout',
+    description: 'The checkout or registration flow requires subscribing to newsletters or marketing with no opt-out option. Violates GDPR Art. 7 — consent cannot be a condition of a contract.',
+    severity: 'high', regulation: ['EU-GDPR', 'US-FTC', 'IN-DPDPA'], detect: 'dom',
+  },
+  {
+    id: 'DP-FA-03', category: 'forced-action', principle: 'user-autonomy',
+    title: 'App Install Prompt Blocking Content',
+    description: 'A full-screen or blocking prompt forces users to install a mobile app to access content available on the web.',
+    severity: 'medium', regulation: ['EU-DSA'], detect: 'dom',
+  },
+  {
+    id: 'DP-FA-04', category: 'forced-action', principle: 'transparency',
+    title: 'Hidden Auto-Renewal / Forced Continuity',
+    description: 'A subscription or trial automatically renews without clear disclosure of recurring charges or an easy cancellation path. Violates FTC Click-to-Cancel Rule 2024.',
+    severity: 'critical', regulation: ['US-FTC', 'IN-CCPA', 'IN-RBI', 'EU-DSA', 'UK-CPR'], detect: 'dom',
+  },
+  {
+    id: 'DP-FA-05', category: 'forced-action', principle: 'user-autonomy',
+    title: 'Consent Wall — Deny Consent, Deny Access',
+    description: 'The website blocks all access (or significantly degrades experience) if the user declines data processing consent. Violates GDPR Art. 7 — consent cannot be coerced through denial of service.',
+    severity: 'critical', regulation: ['EU-GDPR', 'EU-DSA', 'IN-DPDPA'], detect: 'dom',
+  },
+  {
+    id: 'DP-FA-06', category: 'forced-action', principle: 'informed-consent',
+    title: 'Forced Social Login Without Alternative',
+    description: 'Users are forced to log in via Facebook, Google, or Apple with no email/password alternative, requiring third-party data sharing as a condition of use.',
+    severity: 'high', regulation: ['EU-GDPR', 'EU-DSA', 'IN-DPDPA'], detect: 'dom',
+  },
+
+  // ═══════════════════════════════════════════════════════════
+  // NAGGING (DP-NG) — Repeated interruptions
+  // ═══════════════════════════════════════════════════════════
+  {
+    id: 'DP-NG-01', category: 'nagging', principle: 'user-autonomy',
+    title: 'Multiple Overlapping Modals or Popups',
+    description: 'The page shows multiple overlapping modal dialogs, popups, or banners simultaneously, creating excessive interruption violating EU DSA Art. 25(1)(c) — obstruction/nagging.',
+    severity: 'medium', regulation: ['EU-DSA'], detect: 'dom',
+  },
+  {
+    id: 'DP-NG-02', category: 'nagging', principle: 'user-autonomy',
+    title: 'Notification Permission Prompt on First Visit',
+    description: 'The site requests browser notification permissions immediately on first visit before any user engagement.',
+    severity: 'medium', regulation: ['EU-DSA'], detect: 'dom',
+  },
+  {
+    id: 'DP-NG-03', category: 'nagging', principle: 'user-autonomy',
+    title: 'Persistent Cookie Banner Reappears After Rejection',
+    description: 'Cookie/consent banner reappears on subsequent visits even after user explicitly rejected or dismissed it, nagging users into accepting.',
+    severity: 'critical', regulation: ['EU-GDPR', 'EU-DSA', 'IN-DPDPA'], detect: 'dom',
+  },
+  {
+    id: 'DP-NG-04', category: 'nagging', principle: 'user-autonomy',
+    title: 'Exit-Intent Popup with Urgency Messaging',
+    description: 'A popup triggered on exit intent uses urgency or guilt language to pressure the user from leaving. Combines nagging and confirmshaming patterns.',
+    severity: 'medium', regulation: ['EU-DSA', 'US-FTC'], detect: 'dom',
+  },
+
+  // ═══════════════════════════════════════════════════════════
+  // SCARCITY & URGENCY (DP-SU) — Fake time/stock pressure
+  // ═══════════════════════════════════════════════════════════
+  {
+    id: 'DP-SU-01', category: 'scarcity-urgency', principle: 'user-autonomy',
+    title: 'Countdown Timer Creating False Urgency',
+    description: 'A countdown timer is displayed suggesting limited time for an offer, which may create artificial urgency. Violates EU DSA Art. 25(1)(d) when not tied to a genuine, verifiable deadline.',
+    severity: 'high', regulation: ['US-FTC', 'EU-DSA', 'IN-CCPA'], detect: 'dom',
+  },
+  {
+    id: 'DP-SU-02', category: 'scarcity-urgency', principle: 'transparency',
+    title: 'Fake Scarcity Messaging ("Only X Left!")',
+    description: 'Messages suggesting limited availability (e.g., "Only 2 left!", "Selling fast!") that may not reflect actual stock levels. Violates FTC Act §5 deceptive practices.',
+    severity: 'high', regulation: ['US-FTC', 'IN-CCPA', 'UK-CPR'], detect: 'dom',
+  },
+  {
+    id: 'DP-SU-03', category: 'scarcity-urgency', principle: 'user-autonomy',
+    title: 'Urgency Language in CTA Text',
+    description: 'Call-to-action buttons or banners use urgency language like "Act now!", "Limited time!", "Hurry!" to pressure decisions.',
+    severity: 'medium', regulation: ['EU-DSA', 'UK-CPR'], detect: 'dom',
   },
   {
     id: 'DP-SU-04', category: 'scarcity-urgency', principle: 'transparency',
     title: 'Fake Countdown Timer (JavaScript-Resetting)',
-    description: 'A countdown timer that resets on page refresh, indicating the urgency is artificial and not tied to a real deadline.',
+    description: 'A countdown timer that resets on page refresh, indicating the urgency is artificial and not tied to a real deadline. Clear FTC Act §5 deceptive practice.',
     severity: 'high', regulation: ['US-FTC', 'IN-CCPA', 'EU-DSA'], detect: 'dom',
   },
-
-  // ═══════════════════════════════════════════════════
-  // EXPANDED RULES — Forced Action
-  // ═══════════════════════════════════════════════════
   {
-    id: 'DP-FA-04', category: 'forced-action', principle: 'transparency',
-    title: 'Hidden Auto-Renewal / Forced Continuity',
-    description: 'A subscription or trial automatically renews without clear disclosure of recurring charges or an easy cancellation path.',
-    severity: 'critical', regulation: ['US-FTC', 'IN-CCPA', 'IN-RBI', 'EU-DSA'], detect: 'dom',
+    id: 'DP-SU-05', category: 'scarcity-urgency', principle: 'transparency',
+    title: 'Flash Sale with Unverifiable End Time',
+    description: 'A "flash sale" or time-limited deal is displayed but the end time is not clearly stated or verifiable, or the same deal reappears repeatedly.',
+    severity: 'medium', regulation: ['US-FTC', 'EU-DSA', 'UK-CPR'], detect: 'dom',
+  },
+  {
+    id: 'DP-SU-06', category: 'scarcity-urgency', principle: 'user-autonomy',
+    title: 'Fake "X People Viewing" or "X in Cart" Counter',
+    description: 'Dynamic counters like "5 people are viewing this!" or "3 items left in cart" are used to create artificial social scarcity. These are provably fake when the counter increments even when no other users are active.',
+    severity: 'critical', regulation: ['US-FTC', 'EU-DSA', 'UK-CPR', 'IN-CCPA'], detect: 'dom',
   },
 
-  // ═══════════════════════════════════════════════════
-  // EXPANDED RULES — Misdirection / Trick Questions
-  // ═══════════════════════════════════════════════════
+  // ═══════════════════════════════════════════════════════════
+  // SOCIAL PRESSURE (DP-SP) — Emotional manipulation
+  // ═══════════════════════════════════════════════════════════
   {
-    id: 'DP-MD-04', category: 'misdirection', principle: 'informed-consent',
-    title: 'Trick Question (Confusing Checkbox Wording)',
-    description: 'A checkbox or toggle uses double-negative or confusing wording that makes it unclear whether checking means opting in or out.',
-    severity: 'high', regulation: ['EU-DSA', 'US-FTC', 'IN-CCPA'], detect: 'ai',
+    id: 'DP-SP-01', category: 'social-pressure', principle: 'user-autonomy',
+    title: 'Real-Time Viewer/Buyer Count Displayed',
+    description: 'Messages like "X people are viewing this right now" or "X people bought this today" create social pressure to act quickly. Often fabricated.',
+    severity: 'medium', regulation: ['EU-DSA', 'IN-CCPA', 'UK-CPR'], detect: 'dom',
+  },
+  {
+    id: 'DP-SP-02', category: 'social-pressure', principle: 'user-autonomy',
+    title: 'Activity Notifications Creating FOMO',
+    description: 'Popup notifications showing other users\' actions (e.g., "John from London just purchased...") designed to create fear of missing out. Frequently fabricated.',
+    severity: 'medium', regulation: ['EU-DSA', 'UK-CPR'], detect: 'dom',
+  },
+  {
+    id: 'DP-SP-03', category: 'social-pressure', principle: 'transparency',
+    title: 'Unverifiable "Best Seller" or "#1 Choice" Badge',
+    description: '"Best Seller", "Editor\'s Choice", "#1 Rated" or similar badges displayed without a verifiable source, certification body, or methodology. Violates FTC Endorsement Guides 16 CFR Part 255.',
+    severity: 'medium', regulation: ['US-FTC', 'EU-DSA', 'UK-CPR'], detect: 'dom',
+  },
+  {
+    id: 'DP-SP-04', category: 'social-pressure', principle: 'transparency',
+    title: 'Review Count Displayed Without Verification Source',
+    description: 'Star ratings or review counts displayed without attribution to a verified platform (e.g., "4.9 stars — 12,847 reviews" with no source link). May violate FTC Endorsement Guides and EU DSA Art. 31.',
+    severity: 'medium', regulation: ['US-FTC', 'EU-DSA', 'UK-CPR'], detect: 'dom',
+  },
+
+  // ═══════════════════════════════════════════════════════════
+  // PRIVACY ZUCKERING (DP-PZ) — Oversharing encouragement
+  // ═══════════════════════════════════════════════════════════
+  {
+    id: 'DP-PZ-01', category: 'privacy-zuckering', principle: 'informed-consent',
+    title: 'Form Collects Excessive Personal Data',
+    description: 'A form collects significantly more personal data fields than necessary for its stated purpose (e.g., phone number for a newsletter). Violates GDPR Art. 5(1)(c) data minimisation principle.',
+    severity: 'high', regulation: ['EU-GDPR', 'US-CCPA', 'IN-DPDPA'], detect: 'dom',
+  },
+  {
+    id: 'DP-PZ-02', category: 'privacy-zuckering', principle: 'transparency',
+    title: 'Social Share Buttons More Prominent Than Content',
+    description: 'Social sharing buttons are disproportionately prominent, encouraging data sharing over content consumption.',
+    severity: 'low', regulation: ['EU-DSA', 'EU-GDPR'], detect: 'visual',
+  },
+  {
+    id: 'DP-PZ-03', category: 'privacy-zuckering', principle: 'informed-consent',
+    title: 'Data Sharing Enabled by Default Without Clear Disclosure',
+    description: 'Third-party data sharing toggles are pre-enabled (ON) by default in privacy settings, without user action. Violates GDPR Art. 5(1)(b) purpose limitation and Art. 7 consent.',
+    severity: 'critical', regulation: ['EU-GDPR', 'US-CCPA', 'IN-DPDPA'], detect: 'dom',
+  },
+  {
+    id: 'DP-PZ-04', category: 'privacy-zuckering', principle: 'transparency',
+    title: 'Vague Data Collection Purpose Statements',
+    description: 'Privacy policy or consent form uses generic language like "improving your experience" or "legitimate business purposes" without specific purpose disclosure. Violates GDPR Art. 13(1)(c) purpose specification.',
+    severity: 'medium', regulation: ['EU-GDPR', 'IN-DPDPA', 'US-CCPA'], detect: 'dom',
+  },
+
+  // ═══════════════════════════════════════════════════════════
+  // CONFIRMSHAMING (DP-CS) — Guilt-based rejection
+  // ═══════════════════════════════════════════════════════════
+  {
+    id: 'DP-CS-01', category: 'confirmshaming', principle: 'user-autonomy',
+    title: 'Guilt Language on Decline/Reject Option',
+    description: 'The reject/decline option uses emotionally manipulative text like "No thanks, I don\'t want to save money" or "I prefer to pay full price". Violates EU DSA Art. 25(1)(b) and FTC Act §5.',
+    severity: 'critical', regulation: ['EU-DSA', 'US-FTC', 'UK-CPR'], detect: 'ai',
+  },
+  {
+    id: 'DP-CS-02', category: 'confirmshaming', principle: 'user-autonomy',
+    title: 'Negative Framing on Opt-Out Choice',
+    description: 'Opt-out text uses negative framing (e.g., "No, I hate discounts") designed to shame users into opting in.',
+    severity: 'high', regulation: ['EU-DSA', 'US-FTC'], detect: 'ai',
   },
   {
     id: 'DP-CS-03', category: 'confirmshaming', principle: 'user-autonomy',
@@ -298,10 +361,68 @@ export const DARK_PATTERN_RULES: DarkPatternRule[] = [
     description: 'The decline option uses fear-inducing language like "Your account is at risk" or "You will lose access" to pressure users.',
     severity: 'high', regulation: ['EU-DSA', 'US-FTC', 'IN-CCPA'], detect: 'ai',
   },
+  {
+    id: 'DP-CS-04', category: 'confirmshaming', principle: 'user-autonomy',
+    title: 'Sad/Disappointed Visual on Decline Button',
+    description: 'The decline option uses a sad face emoji, downward arrow, or disappointed imagery to create visual shame without using guilt-language that NLP detectors can catch.',
+    severity: 'medium', regulation: ['EU-DSA', 'US-FTC'], detect: 'visual',
+  },
 
-  // ═══════════════════════════════════════════════════
+  // ═══════════════════════════════════════════════════════════
+  // MISDIRECTION (DP-MD) — Visual steering
+  // ═══════════════════════════════════════════════════════════
+  {
+    id: 'DP-MD-01', category: 'misdirection', principle: 'symmetry-of-choice',
+    title: 'Premium Option Visually Highlighted Over Basic',
+    description: 'In a pricing/plan comparison, the most expensive option is disproportionately highlighted with badges, colors, or size while the basic/free option is de-emphasized.',
+    severity: 'medium', regulation: ['EU-DSA', 'US-FTC'], detect: 'visual',
+  },
+  {
+    id: 'DP-MD-02', category: 'misdirection', principle: 'informed-consent',
+    title: 'Misleading Button Labels',
+    description: 'Buttons use ambiguous or misleading labels where the action performed does not match reasonable user expectations.',
+    severity: 'high', regulation: ['EU-DSA', 'US-FTC', 'UK-CPR'], detect: 'ai',
+  },
+  {
+    id: 'DP-MD-03', category: 'misdirection', principle: 'transparency',
+    title: 'Close Button Triggers Unexpected Action',
+    description: 'Clicking a close/dismiss button on a modal or banner triggers an unexpected action like a redirect or subscription.',
+    severity: 'critical', regulation: ['US-FTC', 'EU-DSA'], detect: 'journey',
+  },
+  {
+    id: 'DP-MD-04', category: 'misdirection', principle: 'informed-consent',
+    title: 'Trick Question (Confusing Checkbox Wording)',
+    description: 'A checkbox or toggle uses double-negative or confusing wording that makes it unclear whether checking means opting in or out. Violates GDPR Art. 7(2) plain language requirement.',
+    severity: 'high', regulation: ['EU-DSA', 'US-FTC', 'IN-CCPA'], detect: 'ai',
+  },
+  {
+    id: 'DP-MD-05', category: 'misdirection', principle: 'transparency',
+    title: 'Disguised Advertising Without Clear "Ad" Label',
+    description: 'Sponsored or paid content is styled identically to organic editorial content with no visible "Sponsored", "Ad", or "Paid" label. Violates FTC Native Advertising Guidelines and EU DSA Art. 26.',
+    severity: 'high', regulation: ['US-FTC', 'EU-DSA', 'UK-CPR'], detect: 'dom',
+  },
+  {
+    id: 'DP-MD-06', category: 'misdirection', principle: 'transparency',
+    title: 'Friend Spam / Contact Harvesting CTA',
+    description: 'Interface prompts users to invite contacts or import address books with vague language, potentially accessing contacts without granular consent.',
+    severity: 'high', regulation: ['EU-GDPR', 'IN-DPDPA', 'US-CCPA'], detect: 'dom',
+  },
+  {
+    id: 'DP-MD-07', category: 'misdirection', principle: 'transparency',
+    title: 'Bait and Switch — Dismiss Link Redirects Externally',
+    description: 'A link or button labelled "No thanks", "Close", or "Dismiss" navigates the user to a different page rather than dismissing the element.',
+    severity: 'high', regulation: ['EU-DSA', 'US-FTC'], detect: 'dom',
+  },
+  {
+    id: 'DP-MD-08', category: 'misdirection', principle: 'symmetry-of-choice',
+    title: 'Strikethrough "Original" Price Without Verification',
+    description: 'A crossed-out "original" or "RRP" price is displayed next to a sale price without evidence the item was ever sold at that price. Classic reference pricing deception violating FTC Act §5 and UK CPR.',
+    severity: 'high', regulation: ['US-FTC', 'UK-CPR', 'EU-DSA'], detect: 'dom',
+  },
+
+  // ═══════════════════════════════════════════════════════════
   // ACCESSIBILITY × DARK PATTERN CROSS-MAPPING (DP-AX)
-  // ═══════════════════════════════════════════════════
+  // ═══════════════════════════════════════════════════════════
   {
     id: 'DP-AX-01', category: 'interface-interference', principle: 'accessibility-clarity',
     title: 'Low-Contrast Opt-Out / Reject Button',
@@ -311,7 +432,7 @@ export const DARK_PATTERN_RULES: DarkPatternRule[] = [
   {
     id: 'DP-AX-02', category: 'interface-interference', principle: 'accessibility-clarity',
     title: 'Focus Trapped in Consent Modal',
-    description: 'Keyboard focus is trapped inside a consent/cookie modal with no way to dismiss using keyboard alone, forcing acceptance.',
+    description: 'Keyboard focus is trapped inside a consent/cookie modal with no way to dismiss using keyboard alone, forcing acceptance. Violates WCAG 2.1.2 No Keyboard Trap.',
     severity: 'critical', regulation: ['EU-DSA', 'EU-GDPR', 'IN-DPDPA'], detect: 'dom',
   },
   {
@@ -379,71 +500,193 @@ export const VISUAL_AI_RULES: DarkPatternRule[] = [
     description: 'The decline option is styled to look broken, greyed out, or paired with a sad/disappointed icon — creating visual shame without using guilt-language that NLP can detect.',
     severity: 'high', regulation: ['EU-DSA', 'US-FTC'], detect: 'visual',
   },
+  {
+    id: 'DP-VIS-AI-09', category: 'sneaking', principle: 'transparency',
+    title: 'Pre-ticked Visual Checkbox That Looks Decorative',
+    description: 'A checkbox is pre-ticked (checked state) but styled with a custom design (green checkmark, custom icon) that makes it look like a feature badge or decorative element rather than an actionable consent control.',
+    severity: 'critical', regulation: ['EU-GDPR', 'EU-DSA', 'IN-DPDPA'], detect: 'visual',
+  },
+  {
+    id: 'DP-VIS-AI-10', category: 'scarcity-urgency', principle: 'user-autonomy',
+    title: 'Red/Orange Urgency Color on Non-Urgent Content',
+    description: 'Red or orange alert-style colors are used on content that is not genuinely urgent (e.g., normal pricing, standard features) to create a false sense of urgency through visual alarm.',
+    severity: 'medium', regulation: ['EU-DSA'], detect: 'visual',
+  },
+  {
+    id: 'DP-VIS-AI-11', category: 'interface-interference', principle: 'symmetry-of-choice',
+    title: 'CTA Button Contrast Weaponisation — Accept Vivid, Decline Invisible',
+    description: 'Accept/Buy CTA is a high-saturation, full-opacity button while Decline/Cancel is rendered as a small greyed-out link or text-only element with no background — making the accept path visually irresistible.',
+    severity: 'critical', regulation: ['EU-DSA', 'EU-GDPR'], detect: 'visual',
+  },
+  {
+    id: 'DP-VIS-AI-12', category: 'misdirection', principle: 'informed-consent',
+    title: 'Strikethrough Price Without Verification Badge',
+    description: 'A crossed-out "original" price is displayed prominently next to a sale price with no verification that the item was ever sold at that price. Creates false anchoring.',
+    severity: 'high', regulation: ['US-FTC', 'UK-CPR', 'EU-DSA'], detect: 'visual',
+  },
 ];
 
-// ── Urgency/scarcity language patterns ──
+// ══════════════════════════════════════════════════════════════════
+// NLP DETECTION PATTERNS — massively expanded for real-world coverage
+// ══════════════════════════════════════════════════════════════════
+
+// ── Urgency / Scarcity language ──
 export const URGENCY_PATTERNS = [
-  /only\s+\d+\s+(left|remaining|available)/i,
-  /limited\s+(time|stock|availability|offer|spots)/i,
+  // Stock scarcity
+  /only\s+\d+\s+(left|remaining|available|in\s+stock)/i,
+  /\d+\s+(left|remaining|in\s+stock)\b/i,
+  /almost\s+(sold\s+out|gone|out)/i,
+  /selling\s+(fast|quickly|out)/i,
+  /going\s+fast/i,
+  /nearly\s+gone/i,
+  /while\s+(supplies|stocks?)\s+last/i,
+  /low\s+stock/i,
+  /high\s+demand/i,
+  /popular\s+item/i,
+  /last\s+(few|one|chance|item)/i,
+  // Time urgency
+  /limited\s+(time|offer|availability|deal|access|period|edition|spots?)/i,
   /(hurry|act\s+now|don'?t\s+miss|last\s+chance)/i,
-  /\d+\s+(people|users|visitors)\s+(are\s+)?(viewing|watching|looking)/i,
-  /(selling|going)\s+fast/i,
-  /offer\s+(ends|expires)\s+(soon|today|in)/i,
+  /offer\s+(ends?|expires?|closing)\s+(soon|today|tonight|at\s+midnight|in)/i,
+  /ends?\s+(in|at|today|tonight|soon|midnight)/i,
   /flash\s+sale/i,
+  /today\s+only/i,
+  /tonight\s+only/i,
+  /this\s+week\s+only/i,
   /before\s+it'?s?\s+(gone|too\s+late)/i,
-  /\d+%?\s+off\s+(ends|today|now)/i,
-  /exclusive\s+(deal|offer|access)/i,
+  /\d+%?\s+off\s+(ends?|today|now|tonight)/i,
+  /(time.?sensitive|time.?limited)/i,
+  /expires?\s+(in|at|soon|today)/i,
+  /deal\s+(ends?|expires?)\s+(in|at|today|soon)/i,
+  /sale\s+(ends?|expires?)\s+(in|at|today|soon|midnight)/i,
+  /countdown/i,
+  /hours?\s+(left|remaining)/i,
+  /minutes?\s+(left|remaining)/i,
+  /seconds?\s+(left|remaining)/i,
+  /don'?t\s+(wait|delay|miss\s+out)/i,
+  // Exclusivity / FOMO
+  /exclusive\s+(deal|offer|access|discount|price)/i,
+  /members?\s+only\s+(deal|offer|price)/i,
+  /invite.?only/i,
+  /limited\s+access/i,
+  /claim\s+(your|this)\s+(offer|deal|discount)/i,
 ];
 
-// ── Social pressure patterns ──
-export const SOCIAL_PRESSURE_PATTERNS = [
-  /\d+\s+(people|users|others)\s+(are\s+)?(viewing|watching|looking\s+at)/i,
-  /\d+\s+(people|customers)\s+(just\s+)?(bought|purchased|ordered)/i,
-  /(join|trusted\s+by)\s+\d[\d,]*\+?\s+(users|customers|people|businesses)/i,
-  /someone\s+(just|recently)\s+(bought|signed\s+up|subscribed)/i,
-  /popular\s+(choice|item|option)/i,
-  /most\s+(popular|chosen|selected)/i,
-  /trending\s+(now|today)/i,
-];
-
-// ── Confirmshaming keyword patterns ──
+// ── Confirmshaming on decline/reject buttons ──
 export const CONFIRMSHAMING_PATTERNS = [
-  /no\s*(,|\s)?\s*thanks?\s*[,.]?\s*i\s*(don'?t|do\s+not)/i,
-  /i\s*(prefer|choose)\s*to\s*(pay|miss|lose|stay|remain)/i,
-  /i\s*(hate|don'?t\s+(like|want|need|care))/i,
-  /no\s*(,|\s)?\s*i'?m?\s*(fine|good|ok)\s*(with|without|paying)/i,
-  /i'?ll?\s*(pass|skip)\s*(on)?\s*(saving|the\s+discount)/i,
-  /not?\s*(interested|now|for\s+me)/i,
+  // Classic "No thanks I hate..."
+  /no\s*(,|\.|\s)?\s*thanks?\s*(,|\.|\s)?\s*i\s*(don'?t|do\s+not|hate|dislike|prefer\s+not)/i,
+  /i\s*(prefer|choose|want)\s*to\s*(pay|miss|lose|stay|remain|keep)/i,
+  /i\s*(hate|don'?t\s+(like|want|need|care|bother))/i,
+  /no\s*(,|\.|\s)?\s*i'?m?\s*(fine|good|ok|alright)\s*(with|without|paying)/i,
+  /i'?ll?\s*(pass|skip|decline)\s*(on)?\s*(saving|the\s+discount|this\s+offer|free)/i,
+  /not?\s*(interested|now|for\s+me|thanks)/i,
+  // Variations
+  /i\s+(don'?t\s+want|don'?t\s+need)\s+(to\s+)?(save|protect|improve|grow|learn)/i,
+  /no\s+thanks?,?\s+i'?ll?\s+(pay\s+more|miss\s+out|figure\s+it\s+out|stay\s+as\s+is)/i,
+  /decline\s+(this)?\s*(offer|deal|discount|free\s+trial)?/i,
+  /i\s+(already\s+have\s+enough|don'?t\s+want\s+to\s+save|prefer\s+to\s+pay\s+full)/i,
+  /(skip|ignore)\s+this\s+offer/i,
+  /i\s+don'?t\s+want\s+(to|any|the)\s+(discount|deal|savings?|offer|free|trial)/i,
+  /continue\s+without\s+(saving|the\s+discount|protection|upgrade)/i,
+  /no,?\s+i'?m?\s+not?\s+interested/i,
+  /i'?m\s+okay\s+(paying|with|without)/i,
+  /maybe\s+later\s*(,|\s)*i'?ll?\s+pay/i,
 ];
 
-// ── Fear/threat language patterns (NEW) ──
+// ── Social pressure / fake proof ──
+export const SOCIAL_PRESSURE_PATTERNS = [
+  /\d+\s+(people|users?|visitors?|shoppers?|customers?|others?)\s+(are\s+)?(viewing|watching|looking\s+at|browsing|in\s+this\s+cart)/i,
+  /\d+\s+(people|customers?)\s+(just\s+)?(bought|purchased|ordered|added\s+to\s+cart)/i,
+  /(join|trusted\s+by)\s+[\d,]+\+?\s+(users?|customers?|people|businesses|companies)/i,
+  /someone\s+(just|recently)\s+(bought|signed\s+up|subscribed|purchased)/i,
+  /popular\s+(choice|item|option|product)/i,
+  /most\s+(popular|chosen|selected|loved|liked)/i,
+  /trending\s+(now|today|this\s+week)/i,
+  /best.?seller/i,
+  /#1\s+(rated|choice|pick|seller|product)/i,
+  /editor'?s?\s+(choice|pick|selection)/i,
+  /\d+[\d,]+\s+(five.?star|5.?star)\s+(reviews?|ratings?)/i,
+  /rated\s+[\d.]+\s+(out\s+of\s+5|stars?)\s+(by\s+)?\d+/i,
+  /sold\s+(out\s+)?\d+\s+times/i,
+  /\d+\s+(sold|bought)\s+(this\s+)?(week|month|today)/i,
+  /people\s+are\s+buying\s+this\s+(fast|quickly|right\s+now)/i,
+  /this\s+(product|item)\s+is\s+(hot|on\s+fire|flying\s+off)/i,
+];
+
+// ── Confirmshaming + Fear-based language ──
 export const FEAR_LANGUAGE_PATTERNS = [
-  /your\s*(account|data|files?)\s*(is|are|will\s+be)\s*(at\s+risk|compromised|deleted|lost)/i,
-  /you\s*(will|may|could)\s*(lose|miss|forfeit)\s*(access|data|progress|benefits)/i,
-  /(warning|alert|urgent|critical)\s*[:\-!]\s*(your|action\s+required)/i,
+  /your\s*(account|data|files?|information|device|computer)\s*(is|are|will\s+be)\s*(at\s+risk|compromised|deleted|lost|hacked|exposed|vulnerable)/i,
+  /you\s*(will|may|could|might)\s*(lose|miss|forfeit|be\s+without)\s*(access|data|progress|benefits?|protection|coverage)/i,
+  /(warning|alert|urgent|critical)\s*[:\-!]\s*(your|action\s+required|immediate)/i,
   /last\s+warning/i,
-  /(security|privacy)\s*(alert|warning|issue|concern)/i,
-  /before\s*(it'?s?\s+too\s+late|you\s+lose|your\s+account)/i,
-  /unprotected|vulnerable|exposed/i,
+  /(security|privacy|virus|malware|threat)\s*(alert|warning|issue|concern|risk|detected)/i,
+  /before\s*(it'?s?\s+too\s+late|you\s+lose|your\s+account|expir)/i,
+  /(unprotected|vulnerable|exposed|at\s+risk)\s*(device|account|data|network)/i,
+  /your\s*(protection|security|subscription)\s*(expires?|is\s+ending|runs?\s+out)/i,
+  /losing\s+access\s+to/i,
+  /account\s+(will\s+be\s+)?(deleted|closed|suspended|terminated)/i,
+  /danger(ous)?\s+(browsing|connection|network|activity)/i,
+  /action\s+required\s+(immediately|now|urgently)/i,
 ];
 
-// ── Trick question / double-negative patterns (NEW) ──
+// ── Trick questions / double-negatives ──
 export const TRICK_QUESTION_PATTERNS = [
-  /do\s+not\s+un(check|subscribe|select)/i,
-  /un(check|tick)\s+to\s+(not|avoid|prevent)/i,
-  /leave\s+(un)?checked\s+to\s+(not|avoid)/i,
+  /do\s+not\s+un(check|subscribe|select|tick)/i,
+  /un(check|tick)\s+to\s+(not|avoid|prevent|opt\s+out\s+of)/i,
+  /leave\s+(un)?checked\s+to\s+(not|avoid|stop)/i,
   /opt\s+out\s+of\s+not\s+receiving/i,
   /don'?t\s+not\s+/i,
   /disable\s+to\s+enable/i,
+  /check\s+to\s+unsubscribe/i,
+  /uncheck\s+to\s+subscribe/i,
+  /by\s+(not\s+checking|leaving\s+unchecked)\s+you\s+(agree|consent|accept)/i,
+  /by\s+(clicking|pressing|continuing)\s+(you\s+)?(agree|accept|consent\s+to)/i,
+  /proceeding\s+(means|indicates)\s+you\s+(agree|accept|consent)/i,
+  /your\s+continued\s+use\s+constitutes\s+(acceptance|agreement|consent)/i,
+  /no\s+(means|indicates)\s+yes/i,
 ];
 
-// ── Excessive data collection fields (more than needed for common forms) ──
-export const EXCESSIVE_FIELDS_FOR_PURPOSE: Record<string, number> = {
-  newsletter: 2,       // email + name at most
-  contact: 4,          // name, email, subject, message
-  login: 2,            // email/username + password
-  signup: 4,           // name, email, password, confirm
-  checkout: 8,         // name, email, address, city, state, zip, card, cvv
-  search: 1,           // search query only
-};
+// ── Auto-renewal / forced continuity ──
+export const AUTO_RENEWAL_PATTERNS = [
+  /auto.?renew(al|s)?/i,
+  /automatically\s+(renews?|billed|charged|debited)/i,
+  /recurring\s+(charge|billing|payment|subscription)/i,
+  /will\s+be\s+(charged|billed|debited)\s+(again|monthly|annually|yearly|weekly)/i,
+  /subscription\s+(renews?|continues?|auto.?renews?)/i,
+  /billed\s+(monthly|annually|yearly|weekly)\s+unless\s+(cancel(led)?|you\s+cancel)/i,
+  /unless\s+(you\s+)?(cancel|opt\s+out)\s+(before|by|within)/i,
+  /cancel\s+anytime/i,  // "cancel anytime" without a clear link = forced continuity signal
+  /free\s+trial\s+(converts?|becomes?|rolls?\s+into|auto.?renews?\s+to)\s+paid/i,
+  /charged\s+after\s+(trial|free\s+period|intro\s+period)/i,
+  /no\s+obligation\s+to\s+(cancel|stop|end)/i,
+];
 
+// ── Drip pricing / hidden costs ──
+export const DRIP_PRICING_PATTERNS = [
+  /\+\s*(fee|fees|charge|charges)/i,
+  /plus\s+(fee|fees|charge|charges|tax(es)?|vat)/i,
+  /(excl?\.?|excluding)\s+tax(es)?/i,
+  /before\s+tax(es)?/i,
+  /taxes?\s+(not\s+included|calculated\s+at\s+checkout|added\s+at\s+checkout)/i,
+  /additional\s+(fee|fees|charge|charges|cost|costs)/i,
+  /(processing|service|booking|handling|convenience)\s+(fee|fees|charge)/i,
+  /(final|actual)\s+price\s+(may\s+vary|shown\s+at\s+checkout)/i,
+  /from\s+\$?[\d.]+(\s+per\s+(month|year|day))?/i,  // "from £9.99" drip pricing signal
+  /starting\s+(at|from)\s+\$?[\d.]+/i,
+  /\+\s*\$?[\d.]+\s+(booking|service|processing|handling)/i,
+];
+
+// ── Fake review / badge signals ──
+export const FAKE_REVIEW_PATTERNS = [
+  /\d+[\d,]+\s+(verified\s+)?(5.?star|five.?star)\s+(reviews?|ratings?)/i,
+  /(awarded|winner|voted|named)\s+(best|top|#1)\s+(product|service|app|tool)/i,
+  /as\s+(seen\s+on|featured\s+in)\s+(bbc|cnn|forbes|techcrunch)/i,
+  /[\d,]+\+?\s+(happy|satisfied|delighted)\s+(customers?|users?|clients?)/i,
+  /money.?back\s+guarantee/i,
+  /(certified|accredited|approved)\s+by/i,
+  /iso\s+\d{4,5}/i,
+  /award.?winning/i,
+  /industry.?leading/i,
+  /world.?class/i,
+];

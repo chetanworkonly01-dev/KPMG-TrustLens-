@@ -5,8 +5,10 @@ import type {
 } from '../types/darkpattern';
 import { PRINCIPLE_WEIGHTS } from '../types/darkpattern';
 import {
-  DARK_PATTERN_RULES, VISUAL_AI_RULES, URGENCY_PATTERNS, SOCIAL_PRESSURE_PATTERNS,
+  DARK_PATTERN_RULES, VISUAL_AI_RULES,
+  URGENCY_PATTERNS, SOCIAL_PRESSURE_PATTERNS,
   CONFIRMSHAMING_PATTERNS, FEAR_LANGUAGE_PATTERNS, TRICK_QUESTION_PATTERNS,
+  AUTO_RENEWAL_PATTERNS, DRIP_PRICING_PATTERNS, FAKE_REVIEW_PATTERNS,
 } from './darkpattern-rules';
 import type { TestLogEntry } from '../types/audit';
 
@@ -28,10 +30,17 @@ export async function runDarkPatternAudit(
 
   for (const pageData of pages) {
     let page: Page | null = null;
+    let pageScreenshotDataUrl: string | undefined;
     try {
       page = await context.newPage();
       await page.goto(pageData.url, { waitUntil: 'domcontentloaded', timeout: 30000 });
       await page.waitForTimeout(2000);
+
+      // ── Capture viewport screenshot as physical evidence for all findings ──
+      try {
+        const buf = await page.screenshot({ fullPage: false, type: 'jpeg', quality: 72 });
+        pageScreenshotDataUrl = `data:image/jpeg;base64,${buf.toString('base64')}`;
+      } catch { /* screenshot optional — don't block scan */ }
 
       // ── Phase 1: DOM & Code-Level Inspection ──
       log('DP-DOM', 'running', '━━━ Phase 1: DOM & Code-Level Inspection', 'Brignull Taxonomy (12 Patterns)', 'Phase 1: DOM Scan');
@@ -43,7 +52,11 @@ export async function runDarkPatternAudit(
       log('DP-DOM-PZ', 'running', '  → Privacy Zuckering (GDPR Art. 5): Excessive form field data collection', 'GDPR Art. 5 — Data Minimisation', 'Phase 1: DOM Scan');
       log('DP-DOM-FC', 'running', '  → Forced Continuity (Brignull #10): Auto-renewal without visible cancel path', 'Brignull #10 — Forced Continuity', 'Phase 1: DOM Scan');
       const domFindings = await runDOMScans(page, pageData.url);
-      for (const f of domFindings) { f.id = `dp-${++findingId}`; findings.push(f); }
+      for (const f of domFindings) {
+        f.id = `dp-${++findingId}`;
+        if (pageScreenshotDataUrl) f.evidence.screenshotDataUrl = pageScreenshotDataUrl;
+        findings.push(f);
+      }
       log('DP-DOM', domFindings.length > 0 ? 'fail' : 'pass', `  ✓ Phase 1 complete — ${domFindings.length} finding(s) detected`, 'Brignull Taxonomy', 'Phase 1: DOM Scan');
 
       // ── Phase 2: Visual UI Analysis ──
@@ -53,7 +66,11 @@ export async function runDarkPatternAudit(
       log('DP-VIS-SZ', 'running', '  → Size Manipulation: Unwanted options smaller, greyed or outside scan path', 'EU DSA — Visual Interference', 'Phase 2: Visual Scan');
       log('DP-VIS-IM', 'running', '  → Dismiss Target Size: Close/X button touch-target compliance (min 44×44px)', 'WCAG 2.5.8 + ICO Guidance', 'Phase 2: Visual Scan');
       const visualFindings = await runVisualScans(page, pageData.url);
-      for (const f of visualFindings) { f.id = `dp-${++findingId}`; findings.push(f); }
+      for (const f of visualFindings) {
+        f.id = `dp-${++findingId}`;
+        if (pageScreenshotDataUrl) f.evidence.screenshotDataUrl = pageScreenshotDataUrl;
+        findings.push(f);
+      }
       log('DP-VIS', visualFindings.length > 0 ? 'fail' : 'pass', `  ✓ Phase 2 complete — ${visualFindings.length} finding(s) detected`, 'EU DSA Art. 25', 'Phase 2: Visual Scan');
 
       // ── Phase 3: Copy & Language (NLP) Analysis ──
@@ -64,7 +81,11 @@ export async function runDarkPatternAudit(
       log('DP-NLP-LA', 'running', '  → Loss Aversion Framing: "Don\'t miss out", "Lose access to X" language patterns', 'Cognitive Bias — Loss Aversion', 'Phase 3: NLP Scan');
       log('DP-NLP-AB', 'running', '  → Authority Bias: Fake trust badges, unverified award logos, fabricated accreditations', 'Cognitive Bias — Authority Bias', 'Phase 3: NLP Scan');
       const textFindings = await runTextPatternScans(page, pageData.url);
-      for (const f of textFindings) { f.id = `dp-${++findingId}`; findings.push(f); }
+      for (const f of textFindings) {
+        f.id = `dp-${++findingId}`;
+        if (pageScreenshotDataUrl) f.evidence.screenshotDataUrl = pageScreenshotDataUrl;
+        findings.push(f);
+      }
       log('DP-NLP', textFindings.length > 0 ? 'fail' : 'pass', `  ✓ Phase 3 complete — ${textFindings.length} finding(s) detected`, 'Cognitive Bias Framework', 'Phase 3: NLP Scan');
 
       // ── Phase 4: Deep Code Inspection ──
@@ -75,7 +96,11 @@ export async function runDarkPatternAudit(
       log('DP-DEEP-AR', 'running', '  → Auto-Renewal Detection: Recurring charge mentions without visible cancel instructions', 'Brignull #10 — Forced Continuity', 'Phase 4: Deep Code Scan');
       log('DP-DEEP-BU', 'running', '  → Buried Cancellation: Unsubscribe/cancel links nested 3+ levels deep in navigation', 'EU DSA Art. 25 — Obstruction', 'Phase 4: Deep Code Scan');
       const deepFindings = await runDeepCodeInspection(page, pageData.url);
-      for (const f of deepFindings) { f.id = `dp-${++findingId}`; findings.push(f); }
+      for (const f of deepFindings) {
+        f.id = `dp-${++findingId}`;
+        if (pageScreenshotDataUrl) f.evidence.screenshotDataUrl = pageScreenshotDataUrl;
+        findings.push(f);
+      }
       log('DP-DEEP', deepFindings.length > 0 ? 'fail' : 'pass', `  ✓ Phase 4 complete — ${deepFindings.length} finding(s) detected`, 'FTC + GDPR Art. 6', 'Phase 4: Deep Code Scan');
 
       // ── Phase 5: Accessibility × Dark Pattern Cross-Mapping ──
@@ -84,7 +109,11 @@ export async function runDarkPatternAudit(
       log('DP-AX-SR', 'running', '  → Screen Reader Mismatch: Visible label vs aria-label deception check', 'WCAG 4.1.2 — Name, Role, Value', 'Phase 5: A11Y Cross-Map');
       log('DP-AX-LC', 'running', '  → Low-Contrast Reject: Consent banner reject button contrast weaponisation', 'WCAG 1.4.3 — Contrast Minimum', 'Phase 5: A11Y Cross-Map');
       const axFindings = await runA11yCrossMap(page, pageData.url);
-      for (const f of axFindings) { f.id = `dp-${++findingId}`; findings.push(f); }
+      for (const f of axFindings) {
+        f.id = `dp-${++findingId}`;
+        if (pageScreenshotDataUrl) f.evidence.screenshotDataUrl = pageScreenshotDataUrl;
+        findings.push(f);
+      }
       log('DP-AX', axFindings.length > 0 ? 'fail' : 'pass', `  ✓ Phase 5 complete — ${axFindings.length} finding(s) detected`, 'WCAG + Dark Pattern Intersection', 'Phase 5: A11Y Cross-Map');
 
       // ── Phase 6: Interaction Flow (Ethical Friction Score) ──
@@ -93,11 +122,15 @@ export async function runDarkPatternAudit(
       log('DP-FLOW-HP', 'running', '  → Homepage Scan Simulation: First-impression CTA prominence & scan-path analysis', 'Misdirection — Visual Hierarchy Bias', 'Phase 6: Flow Analysis');
       log('DP-FLOW-MD', 'running', '  → Misdirection (Brignull #5): Visual design drawing attention away from key information', 'Brignull #5 — Misdirection', 'Phase 6: Flow Analysis');
       const flowFindings = await runInteractionFlowAnalysis(page, pageData.url);
-      for (const f of flowFindings) { f.id = `dp-${++findingId}`; findings.push(f); }
+      for (const f of flowFindings) {
+        f.id = `dp-${++findingId}`;
+        if (pageScreenshotDataUrl) f.evidence.screenshotDataUrl = pageScreenshotDataUrl;
+        findings.push(f);
+      }
       log('DP-FLOW', flowFindings.length > 0 ? 'fail' : 'pass', `  ✓ Phase 6 complete — ${flowFindings.length} finding(s) detected`, 'Ethical Friction Score', 'Phase 6: Flow Analysis');
 
-      // ── Phase 8: Visual AI Dark Pattern Analysis (GPT-4o Vision) ──
-      if (options.aiClassification) {
+      // ── Phase 8: Visual AI Dark Pattern Analysis (GPT-4o Vision) — always-on ──
+      if (process.env.OPENAI_API_KEY) {
         log('DP-VISAI', 'running', '━━━ Phase 8: Visual AI Dark Pattern Analysis', 'GPT-4o Vision — Visual Design Exploitation Detection', 'Phase 8: Visual AI Scan');
         log('DP-VISAI-CA', 'running', '  → Consent Asymmetry (DP-VIS-AI-01): Graphical Accept vs Reject visual weight imbalance', 'GPT-4o Vision', 'Phase 8: Visual AI Scan');
         log('DP-VISAI-UG', 'running', '  → Image-Based Urgency (DP-VIS-AI-02): Countdown graphics, scarcity badges rendered as images', 'GPT-4o Vision', 'Phase 8: Visual AI Scan');
@@ -415,8 +448,205 @@ async function runDOMScans(page: Page, pageUrl: string): Promise<DarkPatternFind
     }));
   }
 
+  // ── Framework-managed preselected checkboxes (React/Vue/Angular — aria-checked) ──
+  const ariaChecked = await page.$$eval(
+    '[role="checkbox"][aria-checked="true"], [role="switch"][aria-checked="true"]',
+    els => els.map(el => ({
+      html: el.outerHTML.substring(0, 200),
+      label: el.getAttribute('aria-label') || el.textContent?.trim()?.substring(0, 100) || '',
+      id: el.id || '',
+    }))
+  ).catch(() => []);
+  for (const cb of ariaChecked) {
+    const isOptIn = /newsletter|marketing|subscribe|promo|offer|update|notify|consent|agree|opt|email|share|third.?party/i.test(cb.label + cb.id);
+    if (isOptIn) {
+      findings.push(makeFinding('DP-SN-01', pageUrl, cb.html, {
+        summary: `Framework-managed opt-in toggle pre-enabled: "${cb.label || cb.id}"`,
+        details: [`aria-checked="true" on opt-in control — pre-enables without user action`, `Element: ${cb.html}`],
+        measurements: { label: cb.label, detectedVia: 'aria-checked' },
+      }));
+    }
+  }
+
+  // ── DP-SN-08: Bundled consent — multiple purposes in one checkbox ──
+  const bundledConsent = await page.$$eval('input[type="checkbox"], [role="checkbox"]', els =>
+    els.filter(el => {
+      const label = el.closest('label')?.textContent || el.getAttribute('aria-label') || '';
+      const consentTerms = (label.match(/\band\b|&|\+/gi) || []).length;
+      const purposes = ['analytics', 'marketing', 'advertising', 'third.party', 'partner', 'sharing', 'personaliz'];
+      const matchCount = purposes.filter(p => new RegExp(p, 'i').test(label)).length;
+      return consentTerms >= 1 && matchCount >= 2;
+    }).map(el => ({ html: el.outerHTML.substring(0, 200), label: el.closest('label')?.textContent?.trim()?.substring(0, 150) || '' }))
+  ).catch(() => []);
+  for (const b of bundledConsent) {
+    findings.push(makeFinding('DP-SN-08', pageUrl, b.html, {
+      summary: `Bundled consent checkbox covers multiple purposes: "${b.label.substring(0, 80)}"`,
+      details: [`Single checkbox bundles multiple consent purposes — GDPR requires separate consent per purpose`, `Label: "${b.label}"`],
+    }));
+  }
+
+  // ── DP-FA-05: Consent wall blocking content ──
+  const consentWall = await page.evaluate(() => {
+    const banner = document.querySelector('[class*="cookie"], [class*="consent"], [class*="gdpr"], [id*="consent"]');
+    if (!banner) return false;
+    const s = window.getComputedStyle(banner);
+    if (s.display === 'none') return false;
+    const overlays = document.querySelectorAll('[class*="overlay"], [class*="backdrop"]');
+    return overlays.length > 0;
+  }).catch(() => false);
+  if (consentWall) {
+    findings.push(makeFinding('DP-FA-05', pageUrl, '', {
+      summary: 'Consent wall detected — page content blocked unless user accepts data processing',
+      details: ['Consent banner overlays main content, effectively denying access without acceptance', 'Violates GDPR Art. 7 — consent cannot be coerced by denial of service'],
+    }));
+  }
+
+  // ── DP-FA-06: Forced social login — no email alternative ──
+  const socialLoginOnly = await page.evaluate(() => {
+    const hasSocial = document.querySelectorAll('[class*="google-login"], [class*="facebook-login"], [class*="apple-login"], [data-provider], [class*="social-login"]').length > 0;
+    const hasEmail = !!document.querySelector('input[type="email"], input[name*="email"], input[type="text"][name*="user"]');
+    return hasSocial && !hasEmail;
+  }).catch(() => false);
+  if (socialLoginOnly) {
+    findings.push(makeFinding('DP-FA-06', pageUrl, '', {
+      summary: 'Social login buttons present with no email/password alternative — forces third-party data sharing',
+      details: ['No email or username alternative found', 'Violates GDPR Art. 7 — consent cannot be conditional on data sharing'],
+    }));
+  }
+
+  // ── DP-OB-06: Phone-only cancellation ──
+  const phoneOnlyCancel = await page.evaluate(() => {
+    const body = (document.body?.textContent || '').toLowerCase();
+    const hasPhoneCancel = /cancel.*call|call.*to cancel|phone.*to cancel|cancel.*by phone|cancel.*email us/i.test(body);
+    const hasOnlineCancel = /cancel.*online|cancel\s+my\s+(account|subscription)\s+here|click\s+to\s+cancel/i.test(body);
+    return hasPhoneCancel && !hasOnlineCancel;
+  }).catch(() => false);
+  if (phoneOnlyCancel) {
+    findings.push(makeFinding('DP-OB-06', pageUrl, '', {
+      summary: 'Cancellation only via phone or email — no online option found',
+      details: ['FTC Click-to-Cancel Rule 2024 requires online cancellation if signup was online', 'Users must call or email — asymmetric friction with online subscribe'],
+    }));
+  }
+
+  // ── DP-OB-07: No data export / portability option ──
+  const hasDataExport = await page.evaluate(() => {
+    const links = [...document.querySelectorAll('a, button')];
+    return links.some(el => /download.*(my\s+)?data|export.*(my\s+)?data|data\s+portability|request.*my.*data/i.test(el.textContent || ''));
+  }).catch(() => false);
+  const hasAccountArea = await page.evaluate(() => /account|settings|profile|dashboard/i.test(document.body?.textContent || '')).catch(() => false);
+  if (hasAccountArea && !hasDataExport) {
+    findings.push(makeFinding('DP-OB-07', pageUrl, '', {
+      summary: 'Account area lacks data export option — potential GDPR Art. 20 violation',
+      details: ['No "Download my data" or "Export data" link found', 'GDPR Art. 20 and India DPDPA mandate data portability on request'],
+    }));
+  }
+
+  // ── DP-NG-04: Exit-intent popup ──
+  const exitPopup = await page.evaluate(() => {
+    const scripts = [...document.querySelectorAll('script:not([src])')];
+    return scripts.some(s => /mouseleave|exit.?intent|beforeunload/i.test(s.textContent || ''));
+  }).catch(() => false);
+  if (exitPopup) {
+    findings.push(makeFinding('DP-NG-04', pageUrl, '', {
+      summary: 'Exit-intent popup script detected — intercepts user when leaving',
+      details: ['JavaScript monitors for mouse leaving viewport and triggers a popup', 'Often combined with confirmshaming or urgency messaging'],
+    }));
+  }
+
+  // ── DP-SU-05: Flash sale / unverifiable time-limited deal ──
+  const flashSaleEls = await page.$$eval('*', els =>
+    els.filter(el => {
+      if (el.children.length > 10) return false;
+      const text = el.textContent || '';
+      return /flash\s+sale|deals?\s+end\s+(soon|today|tonight)|today.?only\s+deal|limited.?time\s+offer/i.test(text) && text.length < 300;
+    }).slice(0, 3).map(el => ({ text: el.textContent?.trim().substring(0, 150) || '', html: el.outerHTML.substring(0, 200) }))
+  ).catch(() => []);
+  for (const fs of flashSaleEls) {
+    findings.push(makeFinding('DP-SU-05', pageUrl, fs.html, {
+      summary: `Flash sale without verifiable end time: "${fs.text.substring(0, 80)}"`,
+      details: [`Text: "${fs.text}"`, 'End time not clearly stated or verifiable — may be manufactured urgency'],
+    }));
+  }
+
+  // ── DP-SU-06: Fake "X people viewing" live counter ──
+  const liveCounters = await page.$$eval('*', els =>
+    els.filter(el => {
+      if (el.children.length > 5) return false;
+      const text = el.textContent || '';
+      return /\d+\s+(people|others?|shoppers?)\s+(are\s+)?(viewing|watching|looking|in\s+their\s+cart)/i.test(text)
+          || /\d+\s+(bought|purchased|added)\s+(this\s+)?(today|in\s+the\s+last|this\s+hour)/i.test(text);
+    }).slice(0, 5).map(el => ({ text: el.textContent?.trim().substring(0, 120) || '', html: el.outerHTML.substring(0, 200) }))
+  ).catch(() => []);
+  for (const lc of liveCounters) {
+    findings.push(makeFinding('DP-SU-06', pageUrl, lc.html, {
+      summary: `Live social scarcity counter: "${lc.text.substring(0, 80)}"`,
+      details: [`Real-time counter: "${lc.text}"`, 'These counters are frequently fabricated — users cannot verify accuracy', 'Violates FTC Act §5 deceptive practices'],
+    }));
+  }
+
+  // ── DP-SP-03: Unverifiable "Best Seller" / "#1 Choice" badge ──
+  const bestSellerBadges = await page.$$eval('*', els =>
+    els.filter(el => {
+      if (el.children.length > 3) return false;
+      const text = el.textContent?.trim() || '';
+      return /best.?seller|#1\s+(rated|choice|pick|selling)|editor.?s\s+choice|top\s+rated|award.?winning|most\s+(popular|loved|chosen)/i.test(text) && text.length < 80;
+    }).slice(0, 5).map(el => ({ text: el.textContent?.trim().substring(0, 80) || '', html: el.outerHTML.substring(0, 200) }))
+  ).catch(() => []);
+  for (const b of bestSellerBadges) {
+    findings.push(makeFinding('DP-SP-03', pageUrl, b.html, {
+      summary: `Unverifiable badge: "${b.text}"`,
+      details: [`Badge text: "${b.text}"`, 'No source or verification link found', 'Violates FTC Endorsement Guides 16 CFR Part 255'],
+    }));
+  }
+
+  // ── DP-MD-08: Strikethrough reference price ──
+  const strikethroughPrices = await page.$$eval(
+    's, del, [class*="original-price"], [class*="was-price"], [class*="old-price"], [class*="strikethrough"]',
+    els => els.filter(el => {
+      const s = window.getComputedStyle(el);
+      return s.display !== 'none' && /[\d,]+/.test(el.textContent || '');
+    }).slice(0, 5).map(el => ({ text: el.textContent?.trim().substring(0, 80) || '', html: el.outerHTML.substring(0, 200) }))
+  ).catch(() => []);
+  for (const sp of strikethroughPrices) {
+    findings.push(makeFinding('DP-MD-08', pageUrl, sp.html, {
+      summary: `Strikethrough "original" price "${sp.text}" — reference pricing may be fabricated`,
+      details: [`Crossed-out price: "${sp.text}"`, 'No evidence this item was sold at this "original" price', 'Violates FTC Act §5 and UK Consumer Protection Regulations'],
+    }));
+  }
+
+  // ── DP-PZ-03: Data sharing toggles enabled by default ──
+  const sharingToggles = await page.$$eval(
+    'input[type="checkbox"][checked], [role="checkbox"][aria-checked="true"]',
+    els => els.filter(el => {
+      const label = el.closest('label')?.textContent || el.getAttribute('aria-label') || '';
+      return /share|third.?party|partner|advertis|personaliz|target/i.test(label);
+    }).map(el => ({ html: el.outerHTML.substring(0, 200), label: el.closest('label')?.textContent?.trim()?.substring(0, 120) || '' }))
+  ).catch(() => []);
+  for (const t of sharingToggles) {
+    findings.push(makeFinding('DP-PZ-03', pageUrl, t.html, {
+      summary: `Data sharing toggle pre-enabled: "${t.label.substring(0, 80)}"`,
+      details: [`Pre-enabled toggle: "${t.label}"`, 'Must opt-out not opt-in — violates GDPR Art. 7'],
+    }));
+  }
+
+  // ── DP-SN-09: Free trial auto-converts to paid ──
+  const trialConversion = await page.evaluate(() => {
+    const body = (document.body?.textContent || '').toLowerCase();
+    const hasTrial = /free\s+(trial|month|period|access)|try\s+(free|for\s+free)/i.test(body);
+    const hasAutoConvert = /automatically?\s+(charged|billed|converts?)|after\s+(trial|free\s+period)/i.test(body);
+    const hasClearCancel = /cancel\s+before\s+|cancel\s+to\s+avoid/i.test(body);
+    return hasTrial && hasAutoConvert && !hasClearCancel;
+  }).catch(() => false);
+  if (trialConversion) {
+    findings.push(makeFinding('DP-SN-09', pageUrl, '', {
+      summary: 'Free trial auto-converts to paid without clear pre-expiry cancellation instructions',
+      details: ['Page mentions free trial with auto-conversion', 'No clear cancel-before instructions found', 'Violates FTC Click-to-Cancel Rule 2024 and EU Consumer Rights Directive Art. 6'],
+    }));
+  }
+
   return findings;
 }
+
 
 
 // ═══════════════════════════════════════════════════════════

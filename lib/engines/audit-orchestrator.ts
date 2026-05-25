@@ -22,6 +22,9 @@ import type { PrivacyResult } from '../types/privacy';
 // ── New Phase 2 engines ──
 import { classifySite } from './site-profiler';
 import { getTransactionalPages } from './page-intent-classifier';
+// ── Gap 3 & 4: Temporal Scanner + CTA Prominence Scorer ──
+import { runTemporalPatternScan } from './temporal-scanner';
+import { scoreCTAHierarchy } from './cta-prominence-scorer';
 
 export function getAudit(id: string): AuditResult | undefined {
   return storeGet(id);
@@ -357,10 +360,46 @@ async function runAuditPipeline(id: string, config: AuditConfig) {
       addLog({ timestamp: new Date().toISOString(), testId: 'DP-ENGINE', testName: 'Dark Pattern Engine', wcag: '', status: 'running', pillar: 'darkpatterns', message: '━━━ 🕵️ Dark Pattern & Ethical UX Audit ━━━' });
       pillarTasks.push(
         runDarkPatternAudit(crawlResult.context, dpPageList, { aiClassification: config.includeAI }, addLog)
-          .then(result => {
+          .then(async result => {
             darkPatternResult = result;
-            setPillarProgress('darkpatterns', 100);
+            setPillarProgress('darkpatterns', 60);
             addLog({ timestamp: new Date().toISOString(), testId: 'DP-ENGINE', testName: 'Dark Pattern Engine', wcag: '', status: result.totalFindings > 0 ? 'fail' : 'pass', pillar: 'darkpatterns', message: `🕵️ Dark patterns: ${result.totalFindings} findings | Ethics: ${result.ethicsScore}/100 | Pages audited: ${dpPageList.length} transactional` });
+
+            // ── Gap 4: CTA Prominence Scorer — runs on first 3 pages ──
+            addLog({ timestamp: new Date().toISOString(), testId: 'CTA-SCORER', testName: 'CTA Prominence Scorer', wcag: '', status: 'running', pillar: 'darkpatterns', message: '  → Gap 4: Scoring CTA visual prominence hierarchy...', methodology: 'CTA Visual Weight Analysis', phase: 'CTA Prominence Scoring' });
+            const ctaPages = crawlResult.pages.slice(0, 3);
+            for (const pg of ctaPages) {
+              try {
+                const ctaPage = await crawlResult.context.newPage();
+                await ctaPage.goto(pg.url, { waitUntil: 'domcontentloaded', timeout: 20000 });
+                await ctaPage.waitForLoadState('networkidle', { timeout: 8000 }).catch(() => {});
+                const ctaResult = await scoreCTAHierarchy(ctaPage, pg.url, addLog);
+                await ctaPage.close();
+                if (ctaResult.totalViolations > 0 && result) {
+                  // Attach CTA findings to dark pattern result
+                  (result as any).ctaProminenceFindings = [...((result as any).ctaProminenceFindings || []), ...ctaResult.pairs];
+                  addLog({ timestamp: new Date().toISOString(), testId: 'CTA-SCORER', testName: 'CTA Prominence Scorer', wcag: '', status: 'fail', pillar: 'darkpatterns', message: `  ✓ CTA scorer: ${ctaResult.totalViolations} asymmetric pair(s) on ${pg.url}`, methodology: 'CTA Visual Weight Analysis', phase: 'CTA Prominence Scoring' });
+                }
+              } catch { /* non-fatal */ }
+            }
+            setPillarProgress('darkpatterns', 80);
+
+            // ── Gap 3: Temporal Scanner — runs on first transactional page ──
+            if (dpPageList.length > 0) {
+              addLog({ timestamp: new Date().toISOString(), testId: 'TEMPORAL-SCANNER', testName: 'Temporal Pattern Scanner', wcag: '', status: 'running', pillar: 'darkpatterns', message: '  → Gap 3: Temporal pattern scan (T=0s, T=15s, T=30s poll)...', methodology: 'Temporal DOM Polling', phase: 'Temporal Pattern Detection' });
+              try {
+                const temporalResult = await runTemporalPatternScan(crawlResult.context, dpPageList[0].url, addLog);
+                if (temporalResult.findings.length > 0 && result) {
+                  (result as any).temporalFindings = temporalResult.findings;
+                  addLog({ timestamp: new Date().toISOString(), testId: 'TEMPORAL-SCANNER', testName: 'Temporal Pattern Scanner', wcag: '', status: 'fail', pillar: 'darkpatterns', message: `  ✓ Temporal scan: ${temporalResult.findings.length} dynamic dark pattern(s) detected`, methodology: 'Temporal DOM Polling', phase: 'Temporal Pattern Detection' });
+                } else {
+                  addLog({ timestamp: new Date().toISOString(), testId: 'TEMPORAL-SCANNER', testName: 'Temporal Pattern Scanner', wcag: '', status: 'pass', pillar: 'darkpatterns', message: '  ✓ Temporal scan: no dynamic dark patterns detected', methodology: 'Temporal DOM Polling', phase: 'Temporal Pattern Detection' });
+                }
+              } catch (err) {
+                addLog({ timestamp: new Date().toISOString(), testId: 'TEMPORAL-SCANNER', testName: 'Temporal Pattern Scanner', wcag: '', status: 'error', pillar: 'darkpatterns', message: `  ⚠ Temporal scan failed: ${(err as Error).message}` });
+              }
+            }
+            setPillarProgress('darkpatterns', 100);
           })
           .catch(err => {
             failedPillars.push('darkpatterns');

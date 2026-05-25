@@ -120,8 +120,9 @@ export interface DarkPatternFinding {
 export interface DarkPatternEvidence {
   summary: string;
   details: string[];
-  measurements?: Record<string, string | number>;  // e.g. { acceptWidth: 240, rejectWidth: 80 }
-  screenshot?: string;                              // Base64 or path
+  measurements?: Record<string, string | number>;
+  screenshot?: string;          // legacy — Base64 or path
+  screenshotDataUrl?: string;   // data:image/jpeg;base64,... for inline display
 }
 
 // ── Dark Pattern Rule Definition ──

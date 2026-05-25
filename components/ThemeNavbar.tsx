@@ -27,11 +27,11 @@ export default function ThemeNavbar() {
         <a href="/" className="navbar-brand" aria-label="KPMG TrustLens — Home">
           <div className="kpmg-logo-wrap">
             <Image
-              src="/kpmg-logo-dark.svg"
+              src={isDark ? '/kpmg-logo-dark.svg' : '/kpmg-logo-light-user.png'}
               alt="KPMG"
-              width={100}
+              width={isDark ? 100 : 120}
               height={30}
-              style={{ width: 90, height: 'auto' }}
+              style={{ width: isDark ? 90 : 110, height: 'auto', transition: 'all 0.3s ease' }}
               className="kpmg-logo-svg"
               priority
             />

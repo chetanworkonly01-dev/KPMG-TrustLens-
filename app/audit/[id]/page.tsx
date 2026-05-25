@@ -153,6 +153,7 @@ export default function AuditResultPage() {
   const [showExportMenu, setShowExportMenu] = useState(false);
   const [exportLoading, setExportLoading] = useState<string | null>(null);
   const [issueView, setIssueView] = useState<'grouped' | 'all'>('grouped');
+  const [audienceView, setAudienceView] = useState<'developer' | 'designer' | 'legal'>('developer');
   const logEndRef = useRef<HTMLDivElement>(null);
 
   const handleExport = async (format: 'docx' | 'pdf' | 'pptx') => {
@@ -1272,19 +1273,64 @@ export default function AuditResultPage() {
               ))}
             </div>
 
+            {/* ── Audience-Segmented Report Toggle ── */}
+            <div style={{ marginBottom: 20 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8, flexWrap: 'wrap' }}>
+                <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-muted)', fontFamily: 'Geist Mono, monospace' }}>VIEW AS:</div>
+                {([
+                  { key: 'developer', icon: '👨‍💻', label: 'Developer', desc: 'Code fixes, selectors, priority queue' },
+                  { key: 'designer',  icon: '🎨', label: 'Designer',  desc: 'Visual evidence, CTA weights, design tokens' },
+                  { key: 'legal',     icon: '⚖️', label: 'Legal',     desc: 'Regulation articles, risk tiers, precedents' },
+                ] as const).map(v => (
+                  <button key={v.key} onClick={() => setAudienceView(v.key)}
+                    title={v.desc}
+                    style={{
+                      display: 'flex', alignItems: 'center', gap: 6, padding: '6px 14px',
+                      borderRadius: 99, border: `1px solid ${audienceView === v.key ? 'var(--pillar-dp)' : 'var(--border)'}`,
+                      background: audienceView === v.key ? 'rgba(205,171,254,0.12)' : 'transparent',
+                      color: audienceView === v.key ? 'var(--pillar-dp)' : 'var(--text-secondary)',
+                      cursor: 'pointer', fontSize: 12, fontWeight: 700, transition: 'all 0.2s ease',
+                    }}>
+                    <span>{v.icon}</span> {v.label}
+                  </button>
+                ))}
+                <span style={{ fontSize: 10, color: 'var(--text-muted)', marginLeft: 4 }}>— tailors finding detail for each audience</span>
+              </div>
+
+              {/* Developer View hint bar */}
+              {audienceView === 'developer' && (
+                <div style={{ padding: '6px 12px', borderRadius: 8, background: 'rgba(0,145,218,0.07)', border: '1px solid rgba(0,145,218,0.2)', fontSize: 11, color: '#0091DA', display: 'flex', gap: 6, alignItems: 'center' }}>
+                  <span>👨‍💻</span>
+                  <span><strong>Developer view:</strong> Shows WCAG/DSA article violated, element selector, P0–P3 priority, and a ready-to-use code fix for each finding.</span>
+                </div>
+              )}
+              {audienceView === 'designer' && (
+                <div style={{ padding: '6px 12px', borderRadius: 8, background: 'rgba(205,171,254,0.07)', border: '1px solid rgba(205,171,254,0.2)', fontSize: 11, color: 'var(--pillar-dp)', display: 'flex', gap: 6, alignItems: 'center' }}>
+                  <span>🎨</span>
+                  <span><strong>Designer view:</strong> Shows Brignull pattern category, CTA prominence ratios, visual evidence description, and design-token fix recommendations.</span>
+                </div>
+              )}
+              {audienceView === 'legal' && (
+                <div style={{ padding: '6px 12px', borderRadius: 8, background: 'rgba(254,113,65,0.07)', border: '1px solid rgba(254,113,65,0.2)', fontSize: 11, color: '#FE7141', display: 'flex', gap: 6, alignItems: 'center' }}>
+                  <span>⚖️</span>
+                  <span><strong>Legal view:</strong> Shows regulation articles violated (GDPR/DSA/FTC/CCPA), risk tier, enforcement precedent context, and remediation deadline framing.</span>
+                </div>
+              )}
+            </div>
+
             {/* Findings List */}
             <h3 style={{ fontSize: 14, fontWeight: 700, marginBottom: 12 }}>🕵️ Dark Pattern Findings ({dp.totalFindings})</h3>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
               {dp.findings.map((f: DPFinding) => (
                 <div key={f.id} className="dp-finding-card">
+                  {/* Header: always shown */}
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6, flexWrap: 'wrap' }}>
                     <span style={{ fontWeight: 700, fontSize: 13 }}>{f.title}</span>
                     <span className={`badge badge-${f.severity}`}>{f.severity}</span>
                     <span className="dp-category-badge">{catIcons[f.category] || '📋'} {f.category}</span>
-                    {/* Signal vs Verdict badge */}
                     {(f as any).findingVerdict && (
                       <span style={{
-                        fontSize: 9, padding: '2px 7px', borderRadius: 99, fontWeight: 700, letterSpacing: '0.02em',
+                        fontSize: 9, padding: '2px 7px', borderRadius: 99, fontWeight: 700,
                         background: (f as any).findingVerdict === 'verdict' ? 'rgba(0,186,140,0.12)' : 'rgba(243,156,18,0.12)',
                         color: (f as any).findingVerdict === 'verdict' ? '#00BA8C' : '#f39c12',
                         border: `1px solid ${(f as any).findingVerdict === 'verdict' ? 'rgba(0,186,140,0.3)' : 'rgba(243,156,18,0.3)'}`,
@@ -1298,24 +1344,107 @@ export default function AuditResultPage() {
                       </span>
                     )}
                   </div>
-                  <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginBottom: 6 }}>{f.description}</div>
-                  {/* Verifiability note */}
-                  {(f as any).verifiabilityNote && (
-                    <div style={{ fontSize: 10, color: (f as any).findingVerdict === 'verdict' ? '#00BA8C' : '#f39c12', marginBottom: 6, fontStyle: 'italic' }}>
-                      {(f as any).verifiabilityNote}
+                  <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginBottom: 8 }}>{f.description}</div>
+
+                  {/* ── DEVELOPER VIEW ── */}
+                  {audienceView === 'developer' && (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                      {/* Priority badge */}
+                      <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
+                        <span style={{
+                          fontSize: 9, fontWeight: 700, padding: '2px 8px', borderRadius: 99, fontFamily: 'Geist Mono, monospace',
+                          background: f.severity === 'critical' ? 'rgba(232,0,45,0.15)' : f.severity === 'high' ? 'rgba(254,113,65,0.15)' : 'rgba(217,119,6,0.15)',
+                          color: f.severity === 'critical' ? '#E8002D' : f.severity === 'high' ? '#FE7141' : '#D97706',
+                          border: `1px solid ${f.severity === 'critical' ? 'rgba(232,0,45,0.3)' : f.severity === 'high' ? 'rgba(254,113,65,0.3)' : 'rgba(217,119,6,0.3)'}`,
+                        }}>
+                          {f.severity === 'critical' ? 'P0 — Fix immediately' : f.severity === 'high' ? 'P1 — Fix this sprint' : f.severity === 'medium' ? 'P2 — Fix this quarter' : 'P3 — Backlog'}
+                        </span>
+                        {f.regulation.map(r => <span key={r} className="dp-regulation-badge">{r}</span>)}
+                        <span style={{ fontSize: 10, color: 'var(--text-muted)', marginLeft: 'auto' }}>🎯 {f.confidence} confidence</span>
+                      </div>
+                      {/* Evidence */}
+                      <div style={{ fontSize: 11, color: 'var(--text-secondary)', padding: '5px 9px', background: 'rgba(0,0,0,0.18)', borderRadius: 6 }}>
+                        <strong>Evidence:</strong> {f.evidence.summary}
+                      </div>
+                      {/* Code fix */}
+                      {(f as any).developerFix ? (
+                        <div style={{ padding: '6px 10px', borderRadius: 6, background: 'rgba(0,145,218,0.06)', border: '1px solid rgba(0,145,218,0.2)' }}>
+                          <div style={{ fontSize: 9, fontWeight: 700, color: '#0091DA', marginBottom: 3, fontFamily: 'Geist Mono, monospace', textTransform: 'uppercase' }}>👨‍💻 Code Fix</div>
+                          <div style={{ fontSize: 11, color: 'var(--text-secondary)', lineHeight: 1.5 }}>{(f as any).developerFix}</div>
+                        </div>
+                      ) : (
+                        <div style={{ fontSize: 11, color: '#00BA8C' }}>💡 {f.recommendation}</div>
+                      )}
                     </div>
                   )}
-                  <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginBottom: 8, padding: '6px 10px', background: 'rgba(0,0,0,0.2)', borderRadius: 'var(--radius-sm)' }}>
-                    <strong>Evidence:</strong> {f.evidence.summary}
-                  </div>
-                  <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
-                    <span className="dp-principle-badge">📐 {principleLabels[f.principle] || f.principle}</span>
-                    {f.regulation.map(r => <span key={r} className="dp-regulation-badge">{r}</span>)}
-                    <span style={{ fontSize: 10, color: 'var(--text-muted)', marginLeft: 'auto' }}>🎯 {f.confidence} confidence</span>
-                  </div>
-                  <div style={{ fontSize: 11, color: '#00BA8C', marginTop: 8 }}>💡 {f.recommendation}</div>
+
+                  {/* ── DESIGNER VIEW ── */}
+                  {audienceView === 'designer' && (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
+                        {(f as any).brignullPattern && (
+                          <span style={{ fontSize: 9, fontWeight: 700, padding: '2px 8px', borderRadius: 99, background: 'rgba(205,171,254,0.12)', color: 'var(--pillar-dp)', border: '1px solid rgba(205,171,254,0.3)', fontFamily: 'Geist Mono, monospace' }}>
+                            🎭 Brignull: {(f as any).brignullPattern}
+                          </span>
+                        )}
+                        <span className="dp-principle-badge">📐 {principleLabels[f.principle] || f.principle}</span>
+                      </div>
+                      {/* Visual evidence */}
+                      <div style={{ fontSize: 11, color: 'var(--text-secondary)', padding: '5px 9px', background: 'rgba(0,0,0,0.18)', borderRadius: 6 }}>
+                        <strong>Visual evidence:</strong> {f.evidence.summary}
+                        {f.evidence.details.length > 0 && <div style={{ marginTop: 4, color: 'var(--text-muted)' }}>{f.evidence.details[0]}</div>}
+                      </div>
+                      {/* Designer fix */}
+                      {(f as any).designerFix ? (
+                        <div style={{ padding: '6px 10px', borderRadius: 6, background: 'rgba(205,171,254,0.06)', border: '1px solid rgba(205,171,254,0.2)' }}>
+                          <div style={{ fontSize: 9, fontWeight: 700, color: 'var(--pillar-dp)', marginBottom: 3, fontFamily: 'Geist Mono, monospace', textTransform: 'uppercase' }}>🎨 Design Fix</div>
+                          <div style={{ fontSize: 11, color: 'var(--text-secondary)', lineHeight: 1.5 }}>{(f as any).designerFix}</div>
+                        </div>
+                      ) : (
+                        <div style={{ fontSize: 11, color: '#00BA8C' }}>💡 {f.recommendation}</div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* ── LEGAL VIEW ── */}
+                  {audienceView === 'legal' && (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                      {/* Risk tier */}
+                      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
+                        <span style={{
+                          fontSize: 9, fontWeight: 700, padding: '2px 8px', borderRadius: 99, fontFamily: 'Geist Mono, monospace',
+                          background: f.severity === 'critical' ? 'rgba(232,0,45,0.12)' : f.severity === 'high' ? 'rgba(254,113,65,0.12)' : 'rgba(217,119,6,0.12)',
+                          color: f.severity === 'critical' ? '#E8002D' : f.severity === 'high' ? '#FE7141' : '#D97706',
+                          border: `1px solid ${f.severity === 'critical' ? 'rgba(232,0,45,0.3)' : f.severity === 'high' ? 'rgba(254,113,65,0.3)' : 'rgba(217,119,6,0.3)'}`,
+                        }}>
+                          ⚖️ {f.severity === 'critical' ? 'Critical Risk — Regulatory Enforcement Likely' : f.severity === 'high' ? 'High Risk — Investigation Risk' : 'Medium Risk — Compliance Gap'}
+                        </span>
+                      </div>
+                      {/* Regulation articles */}
+                      <div style={{ padding: '6px 10px', borderRadius: 6, background: 'rgba(254,113,65,0.05)', border: '1px solid rgba(254,113,65,0.2)' }}>
+                        <div style={{ fontSize: 9, fontWeight: 700, color: '#FE7141', marginBottom: 4, fontFamily: 'Geist Mono, monospace', textTransform: 'uppercase' }}>Regulation Articles Violated</div>
+                        <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap' }}>
+                          {f.regulation.map(r => <span key={r} className="dp-regulation-badge">{r}</span>)}
+                          {(f as any).dsaArticle && <span className="dp-regulation-badge">{(f as any).dsaArticle}</span>}
+                        </div>
+                      </div>
+                      {/* Enforcement context */}
+                      <div style={{ fontSize: 11, color: 'var(--text-secondary)', padding: '5px 9px', background: 'rgba(0,0,0,0.18)', borderRadius: 6, lineHeight: 1.5 }}>
+                        <strong>Finding summary:</strong> {f.description}
+                      </div>
+                      {/* Remediation framing */}
+                      <div style={{ padding: '6px 10px', borderRadius: 6, background: 'rgba(0,186,140,0.05)', border: '1px solid rgba(0,186,140,0.2)' }}>
+                        <div style={{ fontSize: 9, fontWeight: 700, color: '#00BA8C', marginBottom: 3, fontFamily: 'Geist Mono, monospace', textTransform: 'uppercase' }}>Recommended Remediation</div>
+                        <div style={{ fontSize: 11, color: 'var(--text-secondary)', lineHeight: 1.5 }}>{f.recommendation}</div>
+                        <div style={{ fontSize: 10, color: 'var(--text-muted)', marginTop: 4 }}>
+                          {f.severity === 'critical' ? '⏱ Remediate within 30 days — critical regulatory risk' : f.severity === 'high' ? '⏱ Remediate within 90 days — high enforcement risk' : '⏱ Remediate within 6 months — compliance gap'}
+                        </div>
+                      </div>
+                    </div>
+                  )}
                 </div>
               ))}
+
               {dp.totalFindings === 0 && (
                 <div className="glass-card" style={{ textAlign: 'center', padding: 40 }}>
                   <div style={{ fontSize: 44, marginBottom: 10 }}>✅</div>
