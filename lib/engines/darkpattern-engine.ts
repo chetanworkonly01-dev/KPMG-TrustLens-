@@ -10,6 +10,7 @@ import {
   CONFIRMSHAMING_PATTERNS, FEAR_LANGUAGE_PATTERNS, TRICK_QUESTION_PATTERNS,
   AUTO_RENEWAL_PATTERNS, DRIP_PRICING_PATTERNS, FAKE_REVIEW_PATTERNS,
 } from './darkpattern-rules';
+import { applyComplianceExemptions } from './compliance-exemptions';
 import type { TestLogEntry } from '../types/audit';
 
 interface PageData { url: string; title: string; }
@@ -19,7 +20,7 @@ type ProgressFn = (entry: TestLogEntry) => void;
 export async function runDarkPatternAudit(
   context: BrowserContext,
   pages: PageData[],
-  options: { aiClassification?: boolean } = {},
+  options: { aiClassification?: boolean; siteProfile?: string } = {},
   onProgress?: ProgressFn
 ): Promise<DarkPatternResult> {
   const findings: DarkPatternFinding[] = [];
@@ -166,7 +167,23 @@ export async function runDarkPatternAudit(
   for (const f of findings) f.regulation.forEach(r => regulationSet.add(r));
   log('DP-REG', 'pass', `  ✓ Phase 7 complete — Mapped to ${regulationSet.size} regulation(s): ${[...regulationSet].join(', ')}`, 'Multi-Regulation Framework', 'Phase 7: Regulatory Mapping');
 
-  return buildResult(findings, pages.length);
+  // ── Compliance Exemption Pass (IRDAI / RBI / SEBI BFSI Context) ──
+  log('DP-COMP', 'running', '━━━ Compliance Context Pass: IRDAI / RBI / SEBI Exemption Check', 'Indian BFSI Regulatory Compliance Framework', 'Compliance Exemption Pass');
+  log('DP-COMP-UO', 'running', '  → Urgency cues: Validating against legitimate campaign offer context (IRDAI/RBI marketing norms)', 'IRDAI Protection of Policyholders Rules', 'Compliance Exemption Pass');
+  log('DP-COMP-MD', 'running', '  → Mandatory disclosures: IRDAI/SEBI/RBI regulatory acknowledgment gates', 'SEBI LODR + IRDAI Product Regulations', 'Compliance Exemption Pass');
+  log('DP-COMP-KY', 'running', '  → KYC/auth gates: OTP, Aadhaar/PAN validation required under PMLA/RBI KYC norms', 'RBI Master Direction on KYC (2016, updated 2023)', 'Compliance Exemption Pass');
+  log('DP-COMP-RD', 'running', '  → Default selections: Insurance rider/product defaults per IRDAI structuring norms', 'IRDAI (Non-Linked Insurance Products) Regulations, 2013', 'Compliance Exemption Pass');
+  log('DP-COMP-UW', 'running', '  → Data capture gates: Underwriting/personalization requirements for quotes (RBI Digital Lending, 2022)', 'RBI Master Direction on Digital Lending, 2022', 'Compliance Exemption Pass');
+  const { totalExempted, byCategory } = applyComplianceExemptions(findings, options.siteProfile);
+  if (totalExempted > 0) {
+    log('DP-COMP', 'warn',
+      `  ⚠ ${totalExempted} finding(s) flagged as potentially compliance-driven — requires backend validation before enforcement action`,
+      'BFSI Compliance Exemption Framework', 'Compliance Exemption Pass');
+  } else {
+    log('DP-COMP', 'pass', '  ✓ No compliance exemptions applicable (non-BFSI site or no exemptible patterns detected)', 'BFSI Compliance Exemption Framework', 'Compliance Exemption Pass');
+  }
+
+  return buildResult(findings, pages.length, totalExempted, byCategory);
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -1256,7 +1273,12 @@ function getUserImpact(principle: EthicalPrinciple): string {
   return impacts[principle];
 }
 
-function buildResult(findings: DarkPatternFinding[], pagesScanned: number): DarkPatternResult {
+function buildResult(
+  findings: DarkPatternFinding[],
+  pagesScanned: number,
+  complianceExemptions = 0,
+  complianceExemptionsByCategory: Record<string, number> = {},
+): DarkPatternResult {
   const categoryBreakdown = {} as Record<DarkPatternCategory, number>;
   const findingsBySeverity: Record<string, number> = { critical: 0, high: 0, medium: 0, low: 0 };
   const principleScores = {} as Record<EthicalPrinciple, number>;
@@ -1279,7 +1301,10 @@ function buildResult(findings: DarkPatternFinding[], pagesScanned: number): Dark
     const pFindings = findings.filter(f => f.principle === p);
     let deduction = 0;
     for (const f of pFindings) {
-      deduction += sevWeights[f.severity] * (f.confidence === 'high' ? 1 : f.confidence === 'medium' ? 0.7 : 0.4);
+      const confidenceMult = f.confidence === 'high' ? 1 : f.confidence === 'medium' ? 0.7 : 0.4;
+      // Apply compliance exemption reduction factor — reduces score impact for compliance-driven patterns
+      const exemptionFactor = (f as any).complianceExemption?.scoreReductionFactor ?? 1;
+      deduction += sevWeights[f.severity] * confidenceMult * exemptionFactor;
     }
     principleScores[p] = Math.max(0, Math.round(100 - deduction));
   }
@@ -1347,6 +1372,8 @@ function buildResult(findings: DarkPatternFinding[], pagesScanned: number): Dark
     regulatoryRisks: [...regulatorySet] as any[],
     findingsBySource,
     findingsByPhase,
+    complianceExemptions,
+    complianceExemptionsByCategory,
   };
 }
 

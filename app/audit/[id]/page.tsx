@@ -73,6 +73,10 @@ interface DPFinding {
   severity: string; regulation: string[]; confidence: string;
   recommendation: string; userImpact: string;
   evidence: { summary: string; details: string[]; measurements?: Record<string, any> };
+  complianceExemption?: {
+    category: string; regulation: string; rationale: string;
+    validationNote: string; exemptionLabel: string; scoreReductionFactor: number;
+  };
 }
 interface PerfPage {
   url: string; title: string; score: number;
@@ -1612,6 +1616,50 @@ export default function AuditResultPage() {
               </div>
             ) : null}
 
+            {/* ── Compliance Context Panel (IRDAI / RBI / SEBI) ── */}
+            {(dp as any).complianceExemptions > 0 && (
+              <div className="glass-card" style={{ marginBottom: 20, borderLeft: '3px solid #F0AB00', background: 'rgba(240,171,0,0.04)' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+                  <span style={{ fontSize: 16 }}>📋</span>
+                  <span style={{ fontSize: 13, fontWeight: 700, color: '#F0AB00' }}>Regulatory Compliance Context</span>
+                  <span style={{ fontSize: 10, padding: '2px 7px', borderRadius: 99, background: 'rgba(240,171,0,0.12)', color: '#F0AB00', border: '1px solid rgba(240,171,0,0.3)', fontWeight: 700, fontFamily: 'Geist Mono, monospace' }}>IRDAI / RBI / SEBI</span>
+                  <span style={{ marginLeft: 'auto', fontSize: 11, fontWeight: 700, color: '#F0AB00', background: 'rgba(240,171,0,0.12)', border: '1px solid rgba(240,171,0,0.3)', borderRadius: 99, padding: '2px 9px' }}>{(dp as any).complianceExemptions} flagged</span>
+                </div>
+                <p style={{ fontSize: 11, color: 'var(--text-secondary)', marginBottom: 10, lineHeight: 1.6 }}>
+                  The following findings have been flagged as <strong>potentially compliance-driven</strong> under Indian financial services regulations (IRDAI, RBI, SEBI). These patterns may appear as dark patterns under general UX heuristics but could be mandated by applicable regulatory frameworks. <strong>Backend validation is required before any enforcement action.</strong>
+                </p>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                  {Object.entries((dp as any).complianceExemptionsByCategory as Record<string, number> || {}).map(([cat, count]) => {
+                    const catIconMap: Record<string, string> = {
+                      'urgency-legitimate-offer': '📅',
+                      'mandatory-regulatory-disclosure': '📋',
+                      'kyc-authentication-gate': '🔐',
+                      'regulated-default-selection': '🏦',
+                      'underwriting-data-capture': '📝',
+                    };
+                    const catLabelMap: Record<string, string> = {
+                      'urgency-legitimate-offer': 'Legitimate Time-Limited Offer',
+                      'mandatory-regulatory-disclosure': 'Mandatory Regulatory Disclosure',
+                      'kyc-authentication-gate': 'KYC / Auth Gate',
+                      'regulated-default-selection': 'Regulated Product Default',
+                      'underwriting-data-capture': 'Underwriting / Personalization Gate',
+                    };
+                    return (
+                      <div key={cat} style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '4px 10px', borderRadius: 99, fontSize: 10, fontWeight: 700, background: 'rgba(240,171,0,0.08)', border: '1px solid rgba(240,171,0,0.25)', color: '#D97706' }}>
+                        <span>{catIconMap[cat] || '📋'}</span>
+                        <span>{catLabelMap[cat] || cat}</span>
+                        <span style={{ background: 'rgba(240,171,0,0.2)', borderRadius: 99, padding: '0 5px', minWidth: 16, textAlign: 'center', color: '#F0AB00' }}>{count}</span>
+                      </div>
+                    );
+                  })}
+                </div>
+                <div style={{ marginTop: 10, padding: '6px 10px', borderRadius: 6, background: 'rgba(240,171,0,0.06)', border: '1px solid rgba(240,171,0,0.15)', fontSize: 10, color: 'var(--text-muted)', display: 'flex', gap: 6, alignItems: 'flex-start' }}>
+                  <span>⚠</span>
+                  <span>Compliance-flagged findings are shown with a <strong style={{ color: '#F0AB00' }}>yellow banner</strong> below. Score impact is proportionally reduced. Final classification requires cross-referencing applicable regulation text and backend campaign/product logic.</span>
+                </div>
+              </div>
+            )}
+
             {/* ── Audience-Segmented Report Toggle ── */}
             <div style={{ marginBottom: 20 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8, flexWrap: 'wrap' }}>
@@ -1697,6 +1745,12 @@ export default function AuditResultPage() {
                         {(f as any).findingVerdict === 'verdict' ? '✓ Verdict' : '⚑ Signal'}
                       </span>
                     )}
+                    {/* Compliance Exemption badge */}
+                    {f.complianceExemption && (
+                      <span style={{ fontSize: 9, padding: '2px 7px', borderRadius: 99, fontWeight: 700, background: 'rgba(240,171,0,0.12)', color: '#D97706', border: '1px solid rgba(240,171,0,0.3)' }}>
+                        📋 {f.complianceExemption.exemptionLabel}
+                      </span>
+                    )}
                     {/* Fix priority */}
                     {(f as any).fixPriority && (
                       <span style={{ fontSize: 9, fontWeight: 700, padding: '2px 7px', borderRadius: 99, fontFamily: 'Geist Mono, monospace', marginLeft: 'auto',
@@ -1709,6 +1763,26 @@ export default function AuditResultPage() {
                     )}
                   </div>
                   <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginBottom: 8, lineHeight: 1.5 }}>{f.description}</div>
+                  {/* Compliance Exemption detail strip */}
+                  {f.complianceExemption && (
+                    <div style={{ marginBottom: 8, padding: '8px 12px', borderRadius: 6, background: 'rgba(240,171,0,0.05)', border: '1px solid rgba(240,171,0,0.2)', fontSize: 11 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 5 }}>
+                        <span style={{ fontWeight: 700, color: '#D97706' }}>📋 Compliance Context</span>
+                        <span style={{ fontSize: 9, padding: '1px 5px', borderRadius: 99, background: 'rgba(240,171,0,0.12)', color: '#F0AB00', border: '1px solid rgba(240,171,0,0.25)', fontWeight: 700 }}>
+                          {Math.round((1 - f.complianceExemption.scoreReductionFactor) * 100)}% score reduction applied
+                        </span>
+                      </div>
+                      <p style={{ color: 'var(--text-secondary)', margin: '0 0 5px 0', lineHeight: 1.5 }}>{f.complianceExemption.rationale}</p>
+                      <div style={{ display: 'flex', gap: 4, alignItems: 'flex-start' }}>
+                        <span style={{ color: '#F0AB00', fontWeight: 700, whiteSpace: 'nowrap' }}>Regulation:</span>
+                        <span style={{ color: 'var(--text-muted)' }}>{f.complianceExemption.regulation}</span>
+                      </div>
+                      <div style={{ marginTop: 5, padding: '4px 8px', borderRadius: 4, background: 'rgba(240,171,0,0.08)', display: 'flex', gap: 5, alignItems: 'flex-start' }}>
+                        <span style={{ color: '#F0AB00', fontWeight: 700, whiteSpace: 'nowrap' }}>⚠ Validation required:</span>
+                        <span style={{ color: 'var(--text-muted)' }}>{f.complianceExemption.validationNote}</span>
+                      </div>
+                    </div>
+                  )}
                   {/* Temporal T=0→T=30 diff strip */}
                   {(f as any).source === 'temporal' && (f as any).temporalT0Value && (
                     <div style={{ marginBottom: 8, padding: '6px 10px', borderRadius: 6, background: 'rgba(230,126,34,0.07)', border: '1px solid rgba(230,126,34,0.25)', fontSize: 11 }}>

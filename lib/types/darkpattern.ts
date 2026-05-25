@@ -131,6 +131,15 @@ export interface DarkPatternFinding {
   ctaAreaRatio?: number;                    // Accept:Reject area ratio (CTA findings)
   ctaPrimaryLabel?: string;                 // Primary CTA label
   ctaSecondaryLabel?: string;              // Secondary CTA label
+  // ── Compliance Exemption (IRDAI / RBI / SEBI regulated BFSI sites) ──
+  complianceExemption?: {
+    category: string;                       // ComplianceExemptionCategory
+    regulation: string;                     // Regulation(s) that mandate this pattern
+    rationale: string;                      // Why this is compliance-driven, not a dark pattern
+    validationNote: string;                 // What requires backend validation to confirm exemption
+    exemptionLabel: string;                 // Short label for display (e.g. "Mandatory KYC Step")
+    scoreReductionFactor: number;           // 0–1: multiplier applied to severity deduction in scoring
+  };
 }
 
 export interface DarkPatternEvidence {
@@ -151,6 +160,7 @@ export interface DarkPatternRule {
   severity: 'critical' | 'high' | 'medium' | 'low';
   regulation: DarkPatternRegulation[];
   detect: 'dom' | 'visual' | 'journey' | 'ai' | 'flow';  // Detection method type
+  complianceExemptible?: boolean;           // May be compliance-driven in BFSI/fintech (IRDAI/RBI/SEBI)
 }
 
 // ── Aggregated Dark Pattern Result ──
@@ -169,4 +179,7 @@ export interface DarkPatternResult {
   // ── Extended source breakdown ──
   findingsBySource?: Record<string, number>;              // rule / ai-vision / temporal / cta-scorer
   findingsByPhase?: Record<string, number>;               // Phase 1-8 breakdown
+  // ── Compliance Exemption Summary ──
+  complianceExemptions?: number;                          // Count of findings flagged as compliance-driven
+  complianceExemptionsByCategory?: Record<string, number>; // Breakdown by exemption category
 }

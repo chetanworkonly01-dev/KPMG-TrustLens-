@@ -477,7 +477,7 @@ async function runAuditPipeline(id: string, config: AuditConfig) {
       setPillarProgress('darkpatterns', 5);
       addLog({ timestamp: new Date().toISOString(), testId: 'DP-ENGINE', testName: 'Dark Pattern Engine', wcag: '', status: 'running', pillar: 'darkpatterns', message: '━━━ 🕵️ Dark Pattern & Ethical UX Audit ━━━' });
       pillarTasks.push(
-        runDarkPatternAudit(crawlResult.context, dpPageList, { aiClassification: config.includeAI }, addLog)
+        runDarkPatternAudit(crawlResult.context, dpPageList, { aiClassification: config.includeAI, siteProfile: siteProfile.profile }, addLog)
           .then(async result => {
             darkPatternResult = result;
             setPillarProgress('darkpatterns', 60);

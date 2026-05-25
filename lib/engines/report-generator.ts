@@ -127,6 +127,10 @@ function generateExecutiveSummary(
     if (dp.regulatoryRisks.length > 0) {
       summary += `Regulatory risks: ${dp.regulatoryRisks.join(', ')}. `;
     }
+    const complianceCount = (dp as any).complianceExemptions;
+    if (complianceCount > 0) {
+      summary += `\n\nCOMPLIANCE CONTEXT (IRDAI/RBI/SEBI): ${complianceCount} finding(s) have been flagged as potentially compliance-driven under Indian financial services regulations. These require backend validation before enforcement action. Score impact has been proportionally reduced for these findings.`;
+    }
   } else if (dpEnabled) {
     summary += `\n\nDARK PATTERNS: No dark patterns detected — the interface respects ethical design principles. `;
   }

@@ -6,6 +6,9 @@
 
 import type { DarkPatternRule } from '../types/darkpattern';
 
+// Note: complianceExemptible marks rules where the pattern may be
+// compliance-driven in BFSI/fintech contexts (IRDAI, RBI, SEBI).
+// The compliance-exemptions engine applies contextual exemption logic.
 export const DARK_PATTERN_RULES: DarkPatternRule[] = [
 
   // ═══════════════════════════════════════════════════════════
@@ -126,12 +129,14 @@ export const DARK_PATTERN_RULES: DarkPatternRule[] = [
     title: 'Preselected Opt-In Checkboxes',
     description: 'Checkboxes for newsletters, marketing emails, or data sharing are pre-checked by default, requiring users to actively opt-out. Violates GDPR Art. 7(2) — consent must be active, not passive.',
     severity: 'critical', regulation: ['EU-GDPR', 'EU-DSA', 'IN-DPDPA'], detect: 'dom',
+    complianceExemptible: true, // Insurance riders / card defaults may reflect IRDAI/RBI-mandated base covers
   },
   {
     id: 'DP-SN-02', category: 'sneaking', principle: 'transparency',
     title: 'Hidden Preselected Add-Ons',
     description: 'Additional products, services, or insurance options are preselected in forms or checkout flows without explicit user action. Violates EU Consumer Rights Directive Art. 22.',
     severity: 'critical', regulation: ['US-FTC', 'EU-DSA', 'IN-CCPA'], detect: 'dom',
+    complianceExemptible: true, // Preselected insurance covers or plan variants may follow IRDAI product structure norms
   },
   {
     id: 'DP-SN-03', category: 'sneaking', principle: 'transparency',
@@ -184,6 +189,7 @@ export const DARK_PATTERN_RULES: DarkPatternRule[] = [
     title: 'Forced Account Creation to View Content',
     description: 'Content is blocked by a login/registration wall that forces users to create an account before accessing publicly available information. Violates EU DSA Art. 25(1)(c) — obstruction pattern.',
     severity: 'high', regulation: ['EU-DSA'], detect: 'dom',
+    complianceExemptible: true, // Login/mobile gate for insurance quotes or pre-approved offers may be required for underwriting/KYC (RBI/IRDAI)
   },
   {
     id: 'DP-FA-02', category: 'forced-action', principle: 'informed-consent',
@@ -208,6 +214,7 @@ export const DARK_PATTERN_RULES: DarkPatternRule[] = [
     title: 'Consent Wall — Deny Consent, Deny Access',
     description: 'The website blocks all access (or significantly degrades experience) if the user declines data processing consent. Violates GDPR Art. 7 — consent cannot be coerced through denial of service.',
     severity: 'critical', regulation: ['EU-GDPR', 'EU-DSA', 'IN-DPDPA'], detect: 'dom',
+    complianceExemptible: true, // Mandatory risk/policy disclosures in insurance/investment flows may be required before proceeding (IRDAI/SEBI)
   },
   {
     id: 'DP-FA-06', category: 'forced-action', principle: 'informed-consent',
@@ -252,6 +259,7 @@ export const DARK_PATTERN_RULES: DarkPatternRule[] = [
     title: 'Countdown Timer Creating False Urgency',
     description: 'A countdown timer is displayed suggesting limited time for an offer, which may create artificial urgency. Violates EU DSA Art. 25(1)(d) when not tied to a genuine, verifiable deadline.',
     severity: 'high', regulation: ['US-FTC', 'EU-DSA', 'IN-CCPA'], detect: 'dom',
+    complianceExemptible: true, // Insurance premium discounts or cashback offers may be genuine campaign offers (requires backend validation)
   },
   {
     id: 'DP-SU-02', category: 'scarcity-urgency', principle: 'transparency',
@@ -320,6 +328,7 @@ export const DARK_PATTERN_RULES: DarkPatternRule[] = [
     title: 'Form Collects Excessive Personal Data',
     description: 'A form collects significantly more personal data fields than necessary for its stated purpose (e.g., phone number for a newsletter). Violates GDPR Art. 5(1)(c) data minimisation principle.',
     severity: 'high', regulation: ['EU-GDPR', 'US-CCPA', 'IN-DPDPA'], detect: 'dom',
+    complianceExemptible: true, // Mobile/PAN/Aadhaar capture for insurance quotes or loan eligibility may be required for underwriting/KYC
   },
   {
     id: 'DP-PZ-02', category: 'privacy-zuckering', principle: 'transparency',
