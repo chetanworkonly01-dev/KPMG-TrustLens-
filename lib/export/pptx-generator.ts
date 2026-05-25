@@ -1,5 +1,6 @@
 import PptxGenJS from 'pptxgenjs';
 import { AuditResult, AccessibilityIssue } from '../types/audit';
+import type { DarkPatternFinding } from '../types/darkpattern';
 
 // ── KPMG Brand Palette ────────────────────────────────────────
 const K = {
@@ -113,12 +114,25 @@ export async function generatePptx(audit: AuditResult): Promise<Buffer> {
   const medium    = issues.filter(i => i.severity === 'medium');
   const quickWins = issues.filter(i => i.severity === 'low');
 
+  // ── Pillar-aware title ──────────────────────────────────────
+  const pillars = ((config as any).enabledPillars as string[] | undefined) || [];
+  const reportTitle = pillars.length === 0 || (pillars.includes('accessibility') && pillars.length === 1)
+    ? 'Accessibility Audit'
+    : pillars.length === 1
+      ? ({ darkpatterns: 'Dark Pattern Audit', performance: 'Performance Audit', privacy: 'Privacy Compliance Audit' } as Record<string,string>)[pillars[0]] || 'Digital Trust Audit'
+      : pillars.length === 4 ? 'TrustLens 4-Pillar Audit' : 'TrustLens Multi-Pillar Audit';
+  const isA11y = pillars.length === 0 || pillars.includes('accessibility');
+  const isDP   = pillars.includes('darkpatterns');
+  const isPerf = pillars.includes('performance');
+  const isPriv = pillars.includes('privacy');
+  const dpFindings: DarkPatternFinding[] = (audit as any).pillarResults?.darkpatterns?.findings || [];
+
   const pptx = new PptxGenJS();
   pptx.layout    = 'LAYOUT_16x9';
-  pptx.author    = 'KPMG Accessibility Audit';
+  pptx.author    = `KPMG ${reportTitle}`;
   pptx.company   = 'KPMG';
-  pptx.title     = `KPMG Accessibility Audit — ${projectName}`;
-  pptx.subject   = 'Accessibility Audit Final Delivery Report';
+  pptx.title     = `KPMG ${reportTitle} — ${projectName}`;
+  pptx.subject   = `${reportTitle} Final Delivery Report`;
 
   let n = 0;
 
@@ -132,15 +146,16 @@ export async function generatePptx(audit: AuditResult): Promise<Buffer> {
   title.addShape('rect' as unknown as PptxGenJS.ShapeType, { x:0, y:1.0, w:0.07, h:5.5, fill:{ color: K.lightBlue } });
 
   title.addText('KPMG', { x:0.4, y:1.2, w:9, h:0.8, fontSize:48, fontFace:'Calibri', bold:true, color: K.navy });
-  title.addText('Accessibility Audit', { x:0.4, y:1.9, w:9, h:0.7, fontSize:36, fontFace:'Calibri', bold:false, color: K.white });
+  title.addText(reportTitle, { x:0.4, y:1.9, w:9, h:0.7, fontSize:36, fontFace:'Calibri', bold:false, color: K.white });
   title.addText('Final Delivery Report', { x:0.4, y:2.55, w:9, h:0.55, fontSize:22, fontFace:'Calibri', color: K.teal });
   title.addShape('rect' as unknown as PptxGenJS.ShapeType, { x:0.4, y:3.25, w:2.8, h:0.035, fill:{ color: K.lightBlue } });
   title.addText(projectName, { x:0.4, y:3.4, w:8.5, h:0.4, fontSize:13, fontFace:'Calibri', color: K.midGrey, italic:true });
   title.addText([
-    { text: `${standard} Level ${testedLevel}   ·   `, options:{ bold:true, color: K.lightBlue, fontSize:11 } },
+    ...(isA11y ? [{ text: `${standard} Level ${testedLevel}   ·   `, options:{ bold:true, color: K.lightBlue, fontSize:11 } }] : []),
     { text: auditDate + '   ·   ', options:{ color: K.midGrey, fontSize:11 } },
     { text: `Score: `, options:{ bold:true, color: K.lightBlue, fontSize:11 } },
     { text: `${score.overall}/100`, options:{ bold:true, color: score.overall >= 75 ? K.teal : score.overall >= 50 ? K.medium : K.critical, fontSize:11 } },
+    ...(pillars.length > 1 ? [{ text: `   ·   Pillars: ${pillars.join(', ')}`, options:{ color: K.midGrey, fontSize:10 } }] : []),
   ], { x:0.4, y:4.0, w:9, h:0.4, fontFace:'Calibri' });
 
   // Score circle
@@ -431,8 +446,94 @@ export async function generatePptx(audit: AuditResult): Promise<Buffer> {
     end.addText(text, { x:0.95, y: y+0.04, w:8.6, h:0.36, fontSize:10.5, fontFace:'Calibri', color: K.midGrey });
   });
 
-  end.addText('KPMG Accessibility Audit — Confidential', { x:0, y:6.85, w:10, h:0.25, fontSize:8, fontFace:'Calibri', color: K.midGrey, align:'center', italic:true });
+  end.addText(`KPMG ${reportTitle} — Confidential`, { x:0, y:6.85, w:10, h:0.25, fontSize:8, fontFace:'Calibri', color: K.midGrey, align:'center', italic:true });
   addPageNum(end, n);
+
+  // ══════════════════════════════════════════════════
+  // DARK PATTERN SLIDES (if DP pillar selected)
+  // ══════════════════════════════════════════════════
+  if (isDP && dpFindings.length > 0) {
+    // Section divider
+    n++;
+    const dpDiv = darkSlide(pptx);
+    addLogo(dpDiv);
+    dpDiv.addText('Dark Pattern', { x:0.4, y:2.5, w:9, h:0.7, fontSize:38, fontFace:'Calibri', bold:true, color: K.white });
+    dpDiv.addText('Findings', { x:0.4, y:3.15, w:9, h:0.5, fontSize:30, fontFace:'Calibri', color: 'C084FC' });
+    dpDiv.addText(`${dpFindings.length} pattern(s) detected across audited pages`, { x:0.4, y:3.8, w:9, h:0.35, fontSize:13, fontFace:'Calibri', color: K.midGrey });
+    addPageNum(dpDiv, n);
+
+    // Summary KPI slide
+    n++;
+    const dpKpi = darkSlide(pptx);
+    addLogo(dpKpi);
+    dpKpi.addText('Dark Pattern Intelligence', { x:0.4, y:0.22, w:9, h:0.55, fontSize:24, fontFace:'Calibri', bold:true, color: K.white });
+    dpKpi.addShape('rect' as unknown as PptxGenJS.ShapeType, { x:0.4, y:0.82, w:1.8, h:0.035, fill:{ color: 'C084FC' } });
+
+    const dpResult = (audit as any).pillarResults?.darkpatterns;
+    const kpis = [
+      { label: 'Ethics Score',       value: String(dpResult?.ethicsScore ?? '—'),       color: dpResult?.ethicsScore >= 80 ? K.teal : K.critical },
+      { label: 'Total Findings',     value: String(dpFindings.length),                   color: dpFindings.length === 0 ? K.teal : K.critical },
+      { label: 'Consent Integrity',  value: String(dpResult?.consentIntegrity ?? '—'),   color: dpResult?.consentIntegrity >= 80 ? K.teal : K.medium },
+      { label: 'Manipulation Index', value: String(dpResult?.manipulationIndex ?? '—'),  color: dpResult?.manipulationIndex <= 20 ? K.teal : K.critical },
+    ];
+    kpis.forEach(({ label, value, color }, i) => {
+      const x = 0.4 + i * 2.3;
+      dpKpi.addShape('roundRect' as unknown as PptxGenJS.ShapeType, { x, y:1.1, w:2.1, h:1.4, rectRadius:0.1, fill:{ color: K.bgCard }, line:{ color, width:1 } });
+      dpKpi.addText(value, { x, y:1.15, w:2.1, h:0.85, fontSize:36, fontFace:'Calibri', bold:true, color, align:'center', valign:'middle' });
+      dpKpi.addText(label.toUpperCase(), { x, y:2.0, w:2.1, h:0.35, fontSize:8, fontFace:'Calibri', bold:true, color, align:'center' });
+    });
+
+    // Category breakdown
+    const catBreakdown = dpResult?.categoryBreakdown || {};
+    const topCats = Object.entries(catBreakdown as Record<string,number>)
+      .filter(([, v]) => v > 0)
+      .sort(([,a],[,b]) => b - a)
+      .slice(0, 6);
+    topCats.forEach(([cat, count], i) => {
+      const col = i % 3; const row = Math.floor(i / 3);
+      const x = 0.4 + col * 3.15; const y = 2.9 + row * 1.6;
+      dpKpi.addShape('roundRect' as unknown as PptxGenJS.ShapeType, { x, y, w:3.0, h:1.4, rectRadius:0.08, fill:{ color: K.bgCard }, line:{ color:'C084FC', width:0.5 } });
+      dpKpi.addText(String(count), { x: x+0.1, y: y+0.1, w:0.8, h:0.7, fontSize:28, fontFace:'Calibri', bold:true, color:'C084FC', align:'center', valign:'middle' });
+      dpKpi.addText(cat.replace(/-/g, ' '), { x: x+0.95, y: y+0.15, w:1.95, h:0.6, fontSize:10, fontFace:'Calibri', bold:true, color: K.white, valign:'middle' });
+    });
+    addPageNum(dpKpi, n);
+
+    // Finding table slides (10 per slide)
+    const dpPerPage = 10;
+    for (let batch = 0; batch < dpFindings.length; batch += dpPerPage) {
+      n++;
+      const batchFindings = dpFindings.slice(batch, batch + dpPerPage);
+      const dpSlide = lightSlide(pptx);
+      addLogo(dpSlide);
+      addSlideTitle(dpSlide, `Dark Pattern Findings${batch === 0 ? '' : ' (cont.)'}`, `Issues ${batch+1}–${Math.min(batch+dpPerPage, dpFindings.length)} of ${dpFindings.length}`);
+
+      const dpHeaderRow: PptxGenJS.TableRow = [
+        { text:'#',         options:{ bold:true, color:K.white, fill:{ color:'6A289B' }, fontSize:8, align:'center' } },
+        { text:'Finding',   options:{ bold:true, color:K.white, fill:{ color:'6A289B' }, fontSize:8 } },
+        { text:'Category',  options:{ bold:true, color:K.white, fill:{ color:'6A289B' }, fontSize:8 } },
+        { text:'Brignull',  options:{ bold:true, color:K.white, fill:{ color:'6A289B' }, fontSize:8 } },
+        { text:'Severity',  options:{ bold:true, color:K.white, fill:{ color:'6A289B' }, fontSize:8, align:'center' } },
+        { text:'Priority',  options:{ bold:true, color:K.white, fill:{ color:'6A289B' }, fontSize:8, align:'center' } },
+      ];
+      const dpDataRows: PptxGenJS.TableRow[] = batchFindings.map((f, idx) => [
+        { text:`#${String(batch+idx+1).padStart(3,'0')}`, options:{ fontSize:8, bold:true, color:K.nearBlack, align:'center' as const, fill:{ color: idx%2===0 ? K.offWhite : K.white } } },
+        { text:f.title.substring(0,55), options:{ fontSize:8, color:K.nearBlack, fill:{ color: idx%2===0 ? K.offWhite : K.white } } },
+        { text:f.category.replace(/-/g,' '), options:{ fontSize:8, color:K.darkGrey, fill:{ color: idx%2===0 ? K.offWhite : K.white } } },
+        { text:f.brignullPattern ? `#${f.brignullNumber} ${f.brignullPattern}` : '—', options:{ fontSize:8, color:'C084FC', fill:{ color: idx%2===0 ? K.offWhite : K.white } } },
+        { text:f.severity.toUpperCase(), options:{ fontSize:8, bold:true, color:sevColor(f.severity), fill:{ color:sevBg(f.severity) }, align:'center' as const } },
+        { text:f.fixPriority || '—', options:{ fontSize:8, bold:true, color: f.fixPriority === 'P0' ? K.critical : K.high, fill:{ color: idx%2===0 ? K.offWhite : K.white }, align:'center' as const } },
+      ]);
+
+      dpSlide.addTable([dpHeaderRow, ...dpDataRows], {
+        x:0.3, y:1.1, w:9.4,
+        colW:[0.65, 3.3, 1.8, 1.5, 0.95, 0.8],
+        border:{ type:'solid', pt:0.4, color:'D1DCE8' },
+        rowH: batchFindings.length <= 8 ? 0.56 : 0.48,
+        autoPage:false,
+      });
+      addPageNum(dpSlide, n);
+    }
+  }
 
   const data = await pptx.write({ outputType:'nodebuffer' });
   return data as Buffer;

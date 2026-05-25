@@ -5,7 +5,7 @@ import { useParams } from 'next/navigation';
 // ===== TYPE INTERFACES =====
 interface AuditData {
   id: string; status: string; progress: number; progressMessage: string;
-  config: { url?: string; type: string; wcagLevels?: string[]; standard?: string; enabledPillars?: string[] };
+  config: { url?: string; type: string; wcagLevels?: string[]; standard?: string; enabledPillars?: string[]; scopeMode?: string; selectedJourney?: string; journeySteps?: { id: string; label: string; url: string; action?: string }[] };
   pages: { url: string; title: string }[];
   issues: Issue[]; score: Score; report?: Report; crawlCoverage?: CrawlCoverage;
   testResults: TestResultItem[]; testLog: TestLogEntry[];
@@ -460,7 +460,11 @@ export default function AuditResultPage() {
     const blob = new Blob([JSON.stringify(data.report, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a'); a.href = url;
-    a.download = `kpmg-accessibility-report-${id}.json`; a.click();
+    const dlPillars = data.config?.enabledPillars || ['accessibility'];
+    const dlLabel = dlPillars.length === 4 ? 'trustlens-4pillar-report'
+      : dlPillars.length === 1 ? ({ accessibility: 'accessibility-report', darkpatterns: 'dark-pattern-report', performance: 'performance-report', privacy: 'privacy-report' } as Record<string,string>)[dlPillars[0]] || 'trustlens-report'
+      : 'trustlens-report';
+    a.download = `kpmg-${dlLabel}-${id}.json`; a.click();
   };
 
   const tabs: string[] = ['overview'];
@@ -1191,36 +1195,284 @@ export default function AuditResultPage() {
       )}
 
       {/* ══════════════════════════════════════════════════════
-           PAGES TAB
+           PAGES TAB — pillar-aware per-page breakdown
          ══════════════════════════════════════════════════════ */}
-      {activeTab === 'pages' && data.report && (
-        <div className="animate-fade-in" style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-          {data.report.pageBreakdown.map(page => (
-            <div key={page.url} className="glass-card" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontWeight: 600, fontSize: 14, marginBottom: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{page.title}</div>
-                <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 7, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{page.url}</div>
+      {activeTab === 'pages' && (() => {
+        const scopeMode = data.config?.scopeMode || 'general';
+        const journeySteps = data.config?.journeySteps || [];
+        const baseUrl = data.config?.url || '';
+        const selectedJourney = data.config?.selectedJourney;
+
+        // Build url→title map from all available sources
+        const urlMap = new Map<string, string>();
+        data.pages?.forEach(p => urlMap.set(p.url, p.title || p.url));
+        data.report?.pageBreakdown?.forEach(p => { if (p.title) urlMap.set(p.url, p.title); });
+        data.pillarResults?.performance?.pages?.forEach(p => { if (p.title) urlMap.set(p.url, p.title); });
+
+        // Set of actually crawled/audited URLs
+        const crawledUrls = new Set<string>(data.pages?.map(p => p.url) || []);
+
+        // Helper: gather per-page findings across all enabled pillars
+        const getPageFindings = (url: string) => ({
+          a11y:        a11yEnabled ? data.report?.pageBreakdown?.find(p => p.url === url) : undefined,
+          dpFindings:  dpEnabled   ? (data.pillarResults?.darkpatterns?.findings || []).filter(f => f.pageUrl === url) : [],
+          perfPage:    perfEnabled ? data.pillarResults?.performance?.pages?.find(p => p.url === url) : undefined,
+          privFindings: privEnabled ? (data.pillarResults?.privacy?.findings || []).filter(f => f.pageUrl === url) : [],
+        });
+
+        // Helper: compute unified score for a page (only when audited)
+        const computeScore = (findings: ReturnType<typeof getPageFindings>) => {
+          const { a11y, dpFindings, perfPage, privFindings } = findings;
+          const scores: number[] = [];
+          if (a11yEnabled && a11y) scores.push(a11y.score);
+          const dpCrit = dpFindings.filter(f => f.severity === 'critical').length;
+          const dpHigh = dpFindings.filter(f => f.severity === 'high').length;
+          const dpMed  = dpFindings.filter(f => f.severity === 'medium').length;
+          const dpLow  = dpFindings.filter(f => f.severity === 'low').length;
+          if (dpEnabled) scores.push(dpFindings.length === 0 ? 100 : Math.max(0, 100 - dpCrit * 25 - dpHigh * 15 - dpMed * 8 - dpLow * 3));
+          if (perfEnabled && perfPage) scores.push(perfPage.score);
+          if (privEnabled) scores.push(privFindings.length === 0 ? 100 : Math.max(40, 100 - privFindings.length * 10));
+          return scores.length > 0 ? Math.round(scores.reduce((a, b) => a + b, 0) / scores.length) : null;
+        };
+
+        // Render per-pillar findings rows
+        const renderPillarFindings = (findings: ReturnType<typeof getPageFindings>, wasAudited: boolean) => {
+          const { a11y, dpFindings, perfPage, privFindings } = findings;
+          const dpCrit = dpFindings.filter(f => f.severity === 'critical').length;
+          const dpHigh = dpFindings.filter(f => f.severity === 'high').length;
+          const dpMed  = dpFindings.filter(f => f.severity === 'medium').length;
+          const dpLow  = dpFindings.filter(f => f.severity === 'low').length;
+
+          if (!wasAudited) return (
+            <div style={{ fontSize: 11, color: 'var(--text-muted)', fontStyle: 'italic', padding: '4px 0' }}>
+              ⚠ This page was not accessible during the audit — URL may differ on the actual site
+            </div>
+          );
+
+          const hasAnyFindings = (a11y && a11y.issueCount > 0) || dpFindings.length > 0 || (perfPage && perfPage.resourceIssues.length > 0) || privFindings.length > 0;
+
+          return (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
+              {a11yEnabled && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                  <span style={{ fontSize: 10, fontWeight: 700, color: '#0091DA', textTransform: 'uppercase', minWidth: 100 }}>♿ Accessibility</span>
+                  <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap' }}>
+                    {a11y ? (
+                      <>
+                        {a11y.criticalCount > 0 && <span className="badge badge-critical">{a11y.criticalCount} Critical</span>}
+                        {a11y.highCount > 0 && <span className="badge badge-high">{a11y.highCount} High</span>}
+                        {a11y.mediumCount > 0 && <span className="badge badge-medium">{a11y.mediumCount} Medium</span>}
+                        {a11y.lowCount > 0 && <span className="badge badge-low">{a11y.lowCount} Low</span>}
+                        {a11y.issueCount === 0 && <span className="badge badge-pass">No Issues</span>}
+                      </>
+                    ) : <span style={{ fontSize: 10, color: 'var(--text-muted)' }}>Not scanned</span>}
+                  </div>
+                </div>
+              )}
+              {dpEnabled && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                  <span style={{ fontSize: 10, fontWeight: 700, color: '#9B59B6', textTransform: 'uppercase', minWidth: 100 }}>🕵️ Dark Patterns</span>
+                  <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap', alignItems: 'center' }}>
+                    {dpCrit > 0 && <span className="badge badge-critical">{dpCrit} Critical</span>}
+                    {dpHigh > 0 && <span className="badge badge-high">{dpHigh} High</span>}
+                    {dpMed  > 0 && <span className="badge badge-medium">{dpMed} Medium</span>}
+                    {dpLow  > 0 && <span className="badge badge-low">{dpLow} Low</span>}
+                    {dpFindings.length === 0 && <span className="badge badge-pass">No Issues</span>}
+                    {dpFindings.length > 0 && (
+                      <span style={{ fontSize: 10, color: 'var(--text-muted)' }}>
+                        {[...new Set(dpFindings.map(f => f.category))].slice(0, 2).join(', ')}
+                      </span>
+                    )}
+                  </div>
+                </div>
+              )}
+              {perfEnabled && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                  <span style={{ fontSize: 10, fontWeight: 700, color: '#00BA8C', textTransform: 'uppercase', minWidth: 100 }}>⚡ Performance</span>
+                  {perfPage ? (
+                    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+                      <span style={{ fontSize: 11, fontWeight: 600, color: perfPage.score >= 75 ? '#00BA8C' : perfPage.score >= 50 ? '#F0AB00' : '#FF3356' }}>
+                        Score: {perfPage.score}
+                      </span>
+                      {(['lcp', 'fid', 'cls'] as const).map(v => {
+                        const val = perfPage?.vitals?.[v] ?? null;
+                        if (val === null) return null;
+                        return <span key={v} style={{ fontSize: 10, color: 'var(--text-secondary)' }}>{v.toUpperCase()}: {typeof val === 'number' ? val.toFixed(2) : val}</span>;
+                      })}
+                      {perfPage.resourceIssues.length > 0 && <span className="badge badge-medium">{perfPage.resourceIssues.length} resource issues</span>}
+                    </div>
+                  ) : <span style={{ fontSize: 10, color: 'var(--text-muted)' }}>Not measured</span>}
+                </div>
+              )}
+              {privEnabled && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                  <span style={{ fontSize: 10, fontWeight: 700, color: '#E67E22', textTransform: 'uppercase', minWidth: 100 }}>🔒 Privacy</span>
+                  <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap' }}>
+                    {privFindings.length === 0
+                      ? <span className="badge badge-pass">No Issues</span>
+                      : <>
+                          {privFindings.filter(f => f.severity === 'critical').length > 0 && <span className="badge badge-critical">{privFindings.filter(f => f.severity === 'critical').length} Critical</span>}
+                          {privFindings.filter(f => f.severity === 'high').length > 0 && <span className="badge badge-high">{privFindings.filter(f => f.severity === 'high').length} High</span>}
+                          {privFindings.filter(f => f.severity === 'medium').length > 0 && <span className="badge badge-medium">{privFindings.filter(f => f.severity === 'medium').length} Med</span>}
+                        </>
+                    }
+                  </div>
+                </div>
+              )}
+              {!hasAnyFindings && (
+                <div style={{ fontSize: 11, color: 'var(--text-muted)', fontStyle: 'italic' }}>
+                  No issues detected on this page — verify manually for edge cases
+                </div>
+              )}
+            </div>
+          );
+        };
+
+        // ── PREDEFINED / DIRECTOR MODE: Journey-step-first display ──
+        if ((scopeMode === 'predefined' || scopeMode === 'director') && journeySteps.length > 0) {
+          const journeyLabels: Record<string, { icon: string; label: string; primaryPillar: string }> = {
+            login: { icon: '🔐', label: 'Login Flow', primaryPillar: 'Dark Patterns' },
+            account: { icon: '👤', label: 'Account Creation', primaryPillar: 'Dark Patterns' },
+            checkout: { icon: '🛒', label: 'Checkout Flow', primaryPillar: 'Dark Patterns' },
+            cancel: { icon: '❌', label: 'Cancellation Flow', primaryPillar: 'Dark Patterns' },
+            consent: { icon: '🍪', label: 'Consent & Cookie Flow', primaryPillar: 'Privacy' },
+            subscription: { icon: '📈', label: 'Subscription Upgrade', primaryPillar: 'Dark Patterns' },
+            search: { icon: '🔍', label: 'Search & Discovery', primaryPillar: 'Dark Patterns' },
+            profile: { icon: '⚙️', label: 'Profile & Data Settings', primaryPillar: 'Privacy' },
+          };
+          const journeyMeta = selectedJourney ? journeyLabels[selectedJourney] : null;
+
+          return (
+            <div className="animate-fade-in" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+              {/* Journey context header */}
+              <div className="glass-card" style={{ padding: '14px 18px', borderLeft: '4px solid var(--accent-primary)' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 }}>
+                  <span style={{ fontSize: 20 }}>{journeyMeta?.icon || '🗺️'}</span>
+                  <div>
+                    <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-primary)' }}>
+                      {scopeMode === 'predefined' ? (journeyMeta?.label || 'Predefined Journey') : 'Director Mode'} — {journeySteps.length} Steps Audited
+                    </div>
+                    <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+                      Each step below shows actual findings from the audited URL. Pages marked ⚠ were not accessible on the target site.
+                    </div>
+                  </div>
+                </div>
                 <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                  {page.criticalCount > 0 && <span className="badge badge-critical">{page.criticalCount} Critical</span>}
-                  {page.highCount > 0     && <span className="badge badge-high">{page.highCount} High</span>}
-                  {page.mediumCount > 0   && <span className="badge badge-medium">{page.mediumCount} Medium</span>}
-                  {page.lowCount > 0      && <span className="badge badge-low">{page.lowCount} Low</span>}
-                  {page.issueCount === 0  && <span className="badge badge-pass">No Issues</span>}
+                  <span style={{ fontSize: 10, padding: '2px 8px', borderRadius: 99, background: 'rgba(254,113,65,0.1)', color: 'var(--accent-primary)', border: '1px solid rgba(254,113,65,0.3)', fontWeight: 700 }}>
+                    {journeySteps.filter(s => { try { return crawledUrls.has(new URL(s.url, baseUrl).href); } catch { return crawledUrls.has(s.url); } }).length}/{journeySteps.length} steps audited
+                  </span>
+                  <span style={{ fontSize: 10, padding: '2px 8px', borderRadius: 99, background: 'rgba(0,178,169,0.1)', color: '#00B2A9', border: '1px solid rgba(0,178,169,0.3)', fontWeight: 700 }}>
+                    {enabledPillars.length} pillar{enabledPillars.length !== 1 ? 's' : ''} active
+                  </span>
                 </div>
               </div>
-              <div style={{
-                width: 54, height: 54, borderRadius: '50%', flexShrink: 0, marginLeft: 16,
-                border: `3px solid ${page.score >= 75 ? '#00BA8C' : page.score >= 50 ? '#F0AB00' : '#FF3356'}`,
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
-                fontWeight: 300, fontSize: 17, letterSpacing: '-0.02em',
-                color: page.score >= 75 ? '#00BA8C' : page.score >= 50 ? '#F0AB00' : '#FF3356'
-              }}>
-                {page.score}
-              </div>
+
+              {journeySteps.map((step, stepIdx) => {
+                let resolvedUrl = step.url;
+                try { resolvedUrl = new URL(step.url, baseUrl).href; } catch { /* keep as-is */ }
+
+                const wasAudited = crawledUrls.has(resolvedUrl);
+                const findings = getPageFindings(resolvedUrl);
+                const score = wasAudited ? computeScore(findings) : null;
+                const scoreColor = score === null ? '#5B7198' : score >= 75 ? '#00BA8C' : score >= 50 ? '#F0AB00' : '#FF3356';
+                const totalIssues = (findings.a11y?.issueCount || 0) + findings.dpFindings.length + (findings.perfPage?.resourceIssues.length || 0) + findings.privFindings.length;
+
+                return (
+                  <div key={step.id || stepIdx} className="glass-card" style={{ borderLeft: `3px solid ${wasAudited ? (totalIssues > 0 ? scoreColor : '#00B2A9') : '#5B7198'}` }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 10 }}>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+                          <span style={{ fontSize: 10, fontWeight: 700, padding: '2px 8px', borderRadius: 99, background: 'rgba(255,255,255,0.06)', color: 'var(--text-muted)', border: '1px solid var(--border)', fontFamily: 'Geist Mono, monospace' }}>
+                            Step {stepIdx + 1}
+                          </span>
+                          <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-primary)' }}>{step.label}</span>
+                          {wasAudited
+                            ? <span style={{ fontSize: 9, padding: '2px 7px', borderRadius: 99, background: 'rgba(0,178,169,0.1)', color: '#00B2A9', border: '1px solid rgba(0,178,169,0.3)', fontWeight: 700 }}>✓ Audited</span>
+                            : <span style={{ fontSize: 9, padding: '2px 7px', borderRadius: 99, background: 'rgba(232,0,45,0.08)', color: '#E8002D', border: '1px solid rgba(232,0,45,0.2)', fontWeight: 700 }}>⚠ Not Accessible</span>
+                          }
+                        </div>
+                        <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: step.action ? 6 : 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          {resolvedUrl}
+                        </div>
+                        {step.action && (
+                          <div style={{ fontSize: 11, color: 'var(--text-secondary)', fontStyle: 'italic', marginBottom: 6, lineHeight: 1.4 }}>
+                            Checks: {step.action}
+                          </div>
+                        )}
+                      </div>
+                      <div style={{
+                        width: 52, height: 52, borderRadius: '50%', flexShrink: 0, marginLeft: 16,
+                        border: `3px solid ${scoreColor}`,
+                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        flexDirection: 'column', gap: 0,
+                      }}>
+                        {score !== null
+                          ? <span style={{ fontWeight: 300, fontSize: 16, color: scoreColor, lineHeight: 1 }}>{score}</span>
+                          : <span style={{ fontSize: 10, color: '#5B7198', textAlign: 'center', lineHeight: 1.2 }}>N/A</span>
+                        }
+                      </div>
+                    </div>
+                    {renderPillarFindings(findings, wasAudited)}
+                  </div>
+                );
+              })}
             </div>
-          ))}
-        </div>
-      )}
+          );
+        }
+
+        // ── GENERAL / SPECIFIC MODE: Standard per-page display ──
+        const urlSet = new Set<string>();
+        if (a11yEnabled) data.report?.pageBreakdown?.forEach(p => urlSet.add(p.url));
+        if (dpEnabled) data.pillarResults?.darkpatterns?.findings?.forEach(f => urlSet.add(f.pageUrl));
+        if (perfEnabled) data.pillarResults?.performance?.pages?.forEach(p => urlSet.add(p.url));
+        if (privEnabled) data.pillarResults?.privacy?.findings?.forEach(f => urlSet.add(f.pageUrl));
+        if (urlSet.size === 0) data.pages?.forEach(p => urlSet.add(p.url));
+
+        const unifiedPages = Array.from(urlSet).map(url => ({
+          url,
+          title: urlMap.get(url) || url,
+          wasAudited: crawledUrls.has(url),
+          findings: getPageFindings(url),
+        }));
+
+        if (unifiedPages.length === 0) return (
+          <div className="glass-card animate-fade-in" style={{ textAlign: 'center', padding: 40, color: 'var(--text-muted)' }}>
+            No page data available.
+          </div>
+        );
+
+        return (
+          <div className="animate-fade-in" style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 4, fontFamily: 'Geist Mono, monospace' }}>
+              {unifiedPages.length} page{unifiedPages.length !== 1 ? 's' : ''} audited · {enabledPillars.length} pillar{enabledPillars.length !== 1 ? 's' : ''} active
+            </div>
+            {unifiedPages.map(page => {
+              const score = computeScore(page.findings);
+              const scoreColor = score === null ? '#5B7198' : score >= 75 ? '#00BA8C' : score >= 50 ? '#F0AB00' : '#FF3356';
+              const totalIssues = (page.findings.a11y?.issueCount || 0) + page.findings.dpFindings.length + (page.findings.perfPage?.resourceIssues.length || 0) + page.findings.privFindings.length;
+              return (
+                <div key={page.url} className="glass-card" style={{ borderLeft: `3px solid ${score !== null ? (totalIssues > 0 ? scoreColor : '#00B2A9') : '#5B7198'}` }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 10 }}>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontWeight: 600, fontSize: 14, marginBottom: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{page.title}</div>
+                      <div style={{ fontSize: 11, color: 'var(--text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{page.url}</div>
+                    </div>
+                    <div style={{
+                      width: 52, height: 52, borderRadius: '50%', flexShrink: 0, marginLeft: 16,
+                      border: `3px solid ${scoreColor}`,
+                      display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      fontWeight: 300, fontSize: 16, color: scoreColor,
+                    }}>
+                      {score !== null ? score : '—'}
+                    </div>
+                  </div>
+                  {renderPillarFindings(page.findings, page.wasAudited)}
+                </div>
+              );
+            })}
+          </div>
+        );
+      })()}
 
       {/* ══════════════════════════════════════════════════════
            DARK PATTERNS TAB

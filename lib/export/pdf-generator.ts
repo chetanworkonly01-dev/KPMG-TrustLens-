@@ -1,6 +1,7 @@
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { AuditResult, AccessibilityIssue } from '../types/audit';
+import type { DarkPatternFinding } from '../types/darkpattern';
 
 // ── KPMG Brand Palette (RGB) ──────────────────────────────────
 const K = {
@@ -652,6 +653,163 @@ export async function generatePdf(audit: AuditResult): Promise<Buffer> {
     },
     margin: { left: 20, right: 20 },
   });
+
+  // ══════════════════════════════════════════════
+  // SECTION 8: DARK PATTERN FINDINGS (if DP pillar)
+  // ══════════════════════════════════════════════
+  const dpFindings: DarkPatternFinding[] = (audit as any).pillarResults?.darkpatterns?.findings || [];
+  if (isDP && dpFindings.length > 0) {
+    doc.addPage();
+    y = 18;
+    y = sectionHeading(doc, '8', 'Dark Pattern Findings', y);
+
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(9);
+    doc.setTextColor(...K.darkGrey);
+    doc.text(`${dpFindings.length} dark pattern(s) detected across the audited pages.`, 20, y);
+    y += 8;
+
+    // Summary table
+    autoTable(doc, {
+      startY: y,
+      head: [['#', 'Finding', 'Category', 'Brignull', 'Severity', 'DSA Article', 'Fix Priority']],
+      body: dpFindings.map((f, idx) => [
+        `#${String(idx + 1).padStart(3, '0')}`,
+        f.title,
+        f.category.replace(/-/g, ' ').replace(/\b\w/g, c => c.toUpperCase()),
+        f.brignullPattern ? `#${f.brignullNumber} ${f.brignullPattern}` : '—',
+        f.severity.toUpperCase(),
+        f.dsaArticle || (f.regulation?.[0] || '—'),
+        f.fixPriority || '—',
+      ]),
+      headStyles: { fillColor: [106, 40, 155], textColor: K.white, fontStyle: 'bold', fontSize: 8 },
+      styles: { fontSize: 7.5, cellPadding: 3.5, lineColor: K.lightGrey, lineWidth: 0.2, overflow: 'linebreak' },
+      alternateRowStyles: { fillColor: K.offWhite },
+      columnStyles: {
+        0: { cellWidth: 12, fontStyle: 'bold', halign: 'center' },
+        1: { cellWidth: 44 },
+        2: { cellWidth: 26 },
+        3: { cellWidth: 28 },
+        4: { cellWidth: 18, halign: 'center' },
+        5: { cellWidth: 22 },
+        6: { cellWidth: 12, halign: 'center' },
+      },
+      didParseCell: (data) => {
+        if (data.section === 'body' && data.column.index === 4) {
+          const s = data.cell.text[0]?.toLowerCase();
+          if (s) { data.cell.styles.textColor = sevColor(s); data.cell.styles.fillColor = sevBg(s); data.cell.styles.fontStyle = 'bold'; }
+        }
+      },
+      margin: { left: 20, right: 20 },
+    });
+
+    // Detailed dark pattern finding blocks
+    doc.addPage();
+    y = 18;
+    y = sectionHeading(doc, '8.1', 'Dark Pattern Detail Cards', y);
+
+    dpFindings.forEach((f, idx) => {
+      if (y > ph - 80) { doc.addPage(); y = 18; }
+
+      const purpleBg: [number, number, number] = [248, 240, 255];
+      const purple: [number, number, number] = [106, 40, 155];
+
+      // Finding header
+      doc.setFillColor(...purpleBg);
+      doc.roundedRect(20, y - 3, pw - 40, 13, 2, 2, 'F');
+      doc.setDrawColor(...purple);
+      doc.setLineWidth(0.5);
+      doc.line(20, y - 3, 20, y + 10);
+
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(10);
+      doc.setTextColor(...purple);
+      doc.text(`#${String(idx + 1).padStart(3, '0')}  ${f.title}`, 24, y + 5);
+      y += 16;
+
+      // Meta line 1
+      doc.setFontSize(8);
+      doc.setFont('helvetica', 'bold');
+      doc.setTextColor(...K.navy);
+      doc.text('Severity: ', 24, y);
+      doc.setTextColor(...sevColor(f.severity));
+      doc.text(f.severity.toUpperCase(), 44, y);
+
+      doc.setTextColor(...K.midGrey); doc.text('|', 62, y);
+      doc.setTextColor(...K.navy); doc.text('Rule: ', 68, y);
+      doc.setTextColor(...K.lightBlue);
+      doc.text(f.ruleId || '—', 80, y);
+
+      if (f.brignullPattern) {
+        doc.setTextColor(...K.midGrey); doc.text('|', 102, y);
+        doc.setTextColor(...purple);
+        doc.text(`Brignull #${f.brignullNumber}: ${f.brignullPattern}`, 108, y);
+      }
+      y += 5;
+
+      // Meta line 2
+      doc.setTextColor(...K.navy); doc.text('DSA Article: ', 24, y);
+      doc.setTextColor(...K.lightBlue); doc.text(f.dsaArticle || '—', 50, y);
+      if (f.fixPriority) {
+        doc.setTextColor(...K.midGrey); doc.text('|', 82, y);
+        doc.setTextColor(...K.navy); doc.text('Priority: ', 88, y);
+        doc.setTextColor(f.fixPriority === 'P0' ? K.critical[0] : K.high[0], f.fixPriority === 'P0' ? K.critical[1] : K.high[1], f.fixPriority === 'P0' ? K.critical[2] : K.high[2]);
+        doc.text(f.fixPriority, 104, y);
+      }
+      if (f.estimatedEffort) {
+        doc.setTextColor(...K.midGrey); doc.text('|', 116, y);
+        doc.setTextColor(...K.navy); doc.text(`Effort: ${f.estimatedEffort}`, 122, y);
+      }
+      y += 8;
+
+      // Description
+      if (y > ph - 40) { doc.addPage(); y = 18; }
+      doc.setFont('helvetica', 'bold'); doc.setFontSize(9); doc.setTextColor(...K.nearBlack);
+      doc.text('User Impact', 24, y); y += 4;
+      doc.setFont('helvetica', 'normal'); doc.setFontSize(8); doc.setTextColor(...K.darkGrey);
+      const impactLines = doc.splitTextToSize(f.userImpact || f.description, pw - 48);
+      doc.text(impactLines, 24, y);
+      y += impactLines.length * 3.5 + 3;
+
+      // Developer fix
+      if (f.developerFix && !isA11y) {
+        if (y > ph - 35) { doc.addPage(); y = 18; }
+        doc.setFont('helvetica', 'bold'); doc.setFontSize(9); doc.setTextColor(...K.nearBlack);
+        doc.text('Developer Fix', 24, y); y += 4;
+        const fixLines = doc.splitTextToSize(f.developerFix.substring(0, 250), pw - 48);
+        const fh = fixLines.length * 3.5 + 5;
+        doc.setFillColor(1, 11, 26); doc.setDrawColor(...K.teal); doc.setLineWidth(0.5);
+        doc.roundedRect(24, y - 1, pw - 48, fh, 2, 2, 'FD');
+        doc.setFont('courier', 'normal'); doc.setFontSize(7); doc.setTextColor(134, 239, 172);
+        doc.text(fixLines, 28, y + 3);
+        y += fh + 3;
+      }
+
+      // Legal summary
+      if (f.legalSummary) {
+        if (y > ph - 30) { doc.addPage(); y = 18; }
+        doc.setFont('helvetica', 'bold'); doc.setFontSize(9); doc.setTextColor(180, 30, 30);
+        doc.text('Legal / Regulatory Exposure', 24, y); y += 4;
+        doc.setFont('helvetica', 'normal'); doc.setFontSize(8); doc.setTextColor(...K.darkGrey);
+        const legalLines = doc.splitTextToSize(f.legalSummary.substring(0, 250), pw - 48);
+        doc.text(legalLines, 24, y);
+        y += legalLines.length * 3.5 + 3;
+      }
+
+      // Separator
+      y += 2;
+      doc.setDrawColor(...K.lightGrey); doc.setLineWidth(0.2);
+      doc.line(20, y, pw - 20, y);
+      y += 8;
+    });
+  } else if (isDP) {
+    // DP pillar selected but no findings
+    doc.addPage();
+    y = 18;
+    y = sectionHeading(doc, '8', 'Dark Pattern Findings', y);
+    doc.setFont('helvetica', 'normal'); doc.setFontSize(11); doc.setTextColor(0, 150, 100);
+    doc.text('✓  No dark patterns detected — the interface respects ethical design principles.', 20, y + 10);
+  }
 
   // Footer on all pages
   addKpmgFooter(doc, footerLabel);

@@ -5,6 +5,7 @@ import {
   convertInchesToTwip, LevelFormat, INumberingOptions
 } from 'docx';
 import { AuditResult, AccessibilityIssue } from '../types/audit';
+import type { DarkPatternFinding } from '../types/darkpattern';
 
 // ── KPMG Brand Palette ────────────────────────────────────────
 const K = {
@@ -424,7 +425,7 @@ export async function generateDocx(audit: AuditResult): Promise<Buffer> {
               new Paragraph({ spacing: { after: 50 }, children: [new TextRun({ text: 'Steps to Reproduce', bold: true, font: 'Calibri', size: 21, color: K.nearBlack })] }),
               new Paragraph({ spacing: { after: 60 }, numbering: { reference: 'bullet-list', level: 0 }, children: [new TextRun({ text: `Navigate to: ${iss.pageUrl}`, font: 'Calibri', size: 19, color: K.darkGrey })] }),
               new Paragraph({ spacing: { after: 60 }, numbering: { reference: 'bullet-list', level: 0 }, children: [new TextRun({ text: `Locate element: ${iss.element.substring(0, 80)}`, font: 'Calibri', size: 19, color: K.darkGrey })] }),
-              new Paragraph({ spacing: { after: 60 }, numbering: { reference: 'bullet-list', level: 0 }, children: [new TextRun({ text: 'Interact using keyboard only (Tab, Enter, Space) or screen reader (NVDA/JAWS/VoiceOver)', font: 'Calibri', size: 19, color: K.darkGrey })] }),
+              new Paragraph({ spacing: { after: 60 }, numbering: { reference: 'bullet-list', level: 0 }, children: [new TextRun({ text: isA11y ? 'Interact using keyboard only (Tab, Enter, Space) or screen reader (NVDA/JAWS/VoiceOver)' : isDP ? 'Visually inspect the element for dark pattern indicators (prominence, pre-selection, misleading copy)' : isPerf ? 'Load page with DevTools Network tab open and capture timing metrics' : 'Check cookies, network requests, and consent state in browser DevTools', font: 'Calibri', size: 19, color: K.darkGrey })] }),
               sp(60),
               new Paragraph({ spacing: { after: 50 }, children: [new TextRun({ text: 'Current Behaviour', bold: true, font: 'Calibri', size: 21, color: K.critical })] }),
               body(iss.description, K.critical),
@@ -572,6 +573,264 @@ export async function generateDocx(audit: AuditResult): Promise<Buffer> {
               ] })),
             ],
           }),
+
+          // ─────────────────────────────────────────────────────
+          // SECTION 7: DARK PATTERN FINDINGS (if DP pillar)
+          // ─────────────────────────────────────────────────────
+          ...(() => {
+            if (!isDP) return [];
+            const dpFindings: DarkPatternFinding[] = (audit as any).pillarResults?.darkpatterns?.findings || [];
+            const purple = '6A289B';
+            const purpleBg = 'F8F0FF';
+
+            if (dpFindings.length === 0) {
+              return [
+                h1('7. Dark Pattern Findings'),
+                body('✓  No dark patterns detected — the interface respects ethical design principles.', K.teal),
+              ];
+            }
+
+            return [
+              h1('7. Dark Pattern Findings'),
+              body(`${dpFindings.length} dark pattern(s) detected. Each finding is classified against the Brignull taxonomy and EU Digital Services Act Article 25.`, K.darkGrey),
+              sp(),
+
+              // Summary table
+              new Table({
+                width: { size: 100, type: WidthType.PERCENTAGE },
+                borders: TABLE_BORDERS,
+                rows: [
+                  new TableRow({ children: [
+                    cell('#',           { bold: true, bg: purple, color: K.white, width: 6, align: AlignmentType.CENTER }),
+                    cell('Finding',     { bold: true, bg: purple, color: K.white, width: 28 }),
+                    cell('Category',    { bold: true, bg: purple, color: K.white, width: 18 }),
+                    cell('Brignull',    { bold: true, bg: purple, color: K.white, width: 16 }),
+                    cell('Severity',    { bold: true, bg: purple, color: K.white, width: 12, align: AlignmentType.CENTER }),
+                    cell('DSA Article', { bold: true, bg: purple, color: K.white, width: 10 }),
+                    cell('Priority',    { bold: true, bg: purple, color: K.white, width: 10, align: AlignmentType.CENTER }),
+                  ]}),
+                  ...dpFindings.map((f, idx) => new TableRow({ children: [
+                    cell(`#${String(idx + 1).padStart(3, '0')}`, { align: AlignmentType.CENTER, bold: true, bg: idx % 2 === 0 ? K.offWhite : K.white, size: 17 }),
+                    cell(f.title, { bg: idx % 2 === 0 ? K.offWhite : K.white, size: 17 }),
+                    cell(f.category.replace(/-/g, ' '), { bg: idx % 2 === 0 ? K.offWhite : K.white, size: 17 }),
+                    cell(f.brignullPattern ? `#${f.brignullNumber} ${f.brignullPattern}` : '—', { bg: idx % 2 === 0 ? K.offWhite : K.white, size: 17, color: purple }),
+                    cell(f.severity.toUpperCase(), { align: AlignmentType.CENTER, bold: true, color: sevColor(f.severity), bg: sevBg(f.severity), size: 17 }),
+                    cell(f.dsaArticle || (f.regulation?.[0] || '—'), { bg: idx % 2 === 0 ? K.offWhite : K.white, size: 17 }),
+                    cell(f.fixPriority || '—', { align: AlignmentType.CENTER, bold: true, color: f.fixPriority === 'P0' ? K.critical : f.fixPriority === 'P1' ? K.high : K.darkGrey, bg: idx % 2 === 0 ? K.offWhite : K.white, size: 17 }),
+                  ]})),
+                ],
+              }),
+
+              // Detail cards
+              sp(200),
+              h2('7.1 Dark Pattern Detail Cards'),
+              ...dpFindings.flatMap((f, idx) => {
+                const parts: (Paragraph | Table)[] = [
+                  divider(),
+                  new Paragraph({
+                    heading: HeadingLevel.HEADING_3,
+                    spacing: { before: 220, after: 100 },
+                    shading: { type: ShadingType.SOLID, color: purpleBg, fill: purpleBg },
+                    border: { left: { style: BorderStyle.THICK, size: 6, color: purple } },
+                    children: [new TextRun({ text: `  #${String(idx + 1).padStart(3, '0')} — ${f.title}`, font: 'Calibri', bold: true, size: 22, color: purple })],
+                  }),
+                  new Paragraph({
+                    spacing: { after: 100 },
+                    children: [
+                      new TextRun({ text: 'Severity: ', bold: true, font: 'Calibri', size: 20, color: K.navy }),
+                      new TextRun({ text: f.severity.toUpperCase(), bold: true, font: 'Calibri', size: 20, color: sevColor(f.severity) }),
+                      new TextRun({ text: '   |   Rule: ', bold: true, font: 'Calibri', size: 20, color: K.navy }),
+                      new TextRun({ text: f.ruleId || '—', font: 'Calibri', size: 20, color: K.lightBlue }),
+                      ...(f.brignullPattern ? [
+                        new TextRun({ text: '   |   Brignull: ', bold: true, font: 'Calibri', size: 20, color: K.navy }),
+                        new TextRun({ text: `#${f.brignullNumber} ${f.brignullPattern}`, bold: true, font: 'Calibri', size: 20, color: purple }),
+                      ] : []),
+                    ],
+                  }),
+                  new Paragraph({
+                    spacing: { after: 120 },
+                    children: [
+                      new TextRun({ text: 'DSA Article: ', bold: true, font: 'Calibri', size: 20, color: K.navy }),
+                      new TextRun({ text: f.dsaArticle || '—', font: 'Calibri', size: 20, color: K.lightBlue }),
+                      ...(f.fixPriority ? [
+                        new TextRun({ text: '   |   Fix Priority: ', bold: true, font: 'Calibri', size: 20, color: K.navy }),
+                        new TextRun({ text: f.fixPriority, bold: true, font: 'Calibri', size: 20, color: f.fixPriority === 'P0' ? K.critical : K.high }),
+                        new TextRun({ text: f.estimatedEffort ? `   |   Effort: ${f.estimatedEffort}` : '', font: 'Calibri', size: 20, color: K.darkGrey }),
+                      ] : []),
+                    ],
+                  }),
+                  new Paragraph({ spacing: { after: 50 }, children: [new TextRun({ text: 'User Impact', bold: true, font: 'Calibri', size: 21, color: K.nearBlack })] }),
+                  body(f.userImpact || f.description),
+                ];
+
+                if (f.developerFix) {
+                  parts.push(new Paragraph({ spacing: { after: 50 }, children: [new TextRun({ text: 'Developer Fix', bold: true, font: 'Calibri', size: 21, color: K.nearBlack })] }));
+                  parts.push(new Paragraph({
+                    spacing: { after: 120 },
+                    shading: { type: ShadingType.SOLID, color: '010B1A', fill: '010B1A' },
+                    border: { left: { style: BorderStyle.THICK, size: 6, color: K.teal } },
+                    children: [new TextRun({ text: f.developerFix.substring(0, 500), font: 'Consolas', size: 17, color: '86EFAC' })],
+                  }));
+                }
+
+                if (f.designerFix) {
+                  parts.push(new Paragraph({ spacing: { after: 50 }, children: [new TextRun({ text: 'Design Fix', bold: true, font: 'Calibri', size: 21, color: K.nearBlack })] }));
+                  parts.push(body(f.designerFix, 'A78BFA'));
+                }
+
+                if (f.legalSummary) {
+                  parts.push(new Paragraph({ spacing: { after: 50 }, children: [new TextRun({ text: 'Legal / Regulatory Exposure', bold: true, font: 'Calibri', size: 21, color: K.critical })] }));
+                  parts.push(body(f.legalSummary.substring(0, 400), K.critical));
+                }
+
+                parts.push(new Paragraph({ spacing: { after: 50 }, children: [new TextRun({ text: 'Recommendation', bold: true, font: 'Calibri', size: 21, color: '047856' })] }));
+                parts.push(body(f.recommendation, '047856'));
+
+                return parts;
+              }),
+            ];
+          })(),
+
+          // ─────────────────────────────────────────────────────
+          // SECTION 8: PERFORMANCE FINDINGS (if Perf pillar)
+          // ─────────────────────────────────────────────────────
+          ...(() => {
+            if (!isPerf) return [];
+            const perfResult = (audit as any).pillarResults?.performance;
+            if (!perfResult) return [h1('8. Performance Findings'), body('Performance pillar data not available.', K.midGrey)];
+            const perfPages: any[] = perfResult.pages || [];
+            const green = '006E51';
+            const greenBg = 'E8F9F4';
+            if (perfPages.length === 0) return [h1('8. Performance Findings'), body('✓  No performance data captured.', K.teal)];
+
+            const vitalLabel: Record<string, string> = { lcp: 'LCP (ms)', fid: 'FID (ms)', cls: 'CLS', fcp: 'FCP (ms)', ttfb: 'TTFB (ms)', tti: 'TTI (ms)' };
+
+            return [
+              h1('8. Performance Findings'),
+              body(`Core Web Vitals and resource analysis across ${perfPages.length} page(s). Overall performance score: ${perfResult.overallScore ?? '—'}/100.`, K.darkGrey),
+              sp(),
+              new Table({
+                width: { size: 100, type: WidthType.PERCENTAGE },
+                borders: TABLE_BORDERS,
+                rows: [
+                  new TableRow({ children: [
+                    cell('Page', { bold: true, bg: green, color: K.white, width: 36 }),
+                    cell('Score', { bold: true, bg: green, color: K.white, width: 10, align: AlignmentType.CENTER }),
+                    cell('LCP (ms)', { bold: true, bg: green, color: K.white, width: 12, align: AlignmentType.CENTER }),
+                    cell('CLS', { bold: true, bg: green, color: K.white, width: 10, align: AlignmentType.CENTER }),
+                    cell('FCP (ms)', { bold: true, bg: green, color: K.white, width: 12, align: AlignmentType.CENTER }),
+                    cell('Resource Issues', { bold: true, bg: green, color: K.white, width: 20, align: AlignmentType.CENTER }),
+                  ]}),
+                  ...perfPages.map((pg: any, i: number) => {
+                    const sc = pg.score ?? 0;
+                    const scCol = sc >= 75 ? K.teal : sc >= 50 ? K.medium : K.critical;
+                    return new TableRow({ children: [
+                      cell(pg.title || pg.url.replace(/^https?:\/\/[^/]+/, '') || '/', { bg: i % 2 === 0 ? K.offWhite : K.white, size: 17 }),
+                      cell(String(sc), { align: AlignmentType.CENTER, bold: true, color: scCol, bg: i % 2 === 0 ? K.offWhite : K.white }),
+                      cell(pg.vitals?.lcp != null ? String(Math.round(pg.vitals.lcp)) : '—', { align: AlignmentType.CENTER, bg: i % 2 === 0 ? K.offWhite : K.white, size: 17 }),
+                      cell(pg.vitals?.cls != null ? pg.vitals.cls.toFixed(3) : '—', { align: AlignmentType.CENTER, bg: i % 2 === 0 ? K.offWhite : K.white, size: 17 }),
+                      cell(pg.vitals?.fcp != null ? String(Math.round(pg.vitals.fcp)) : '—', { align: AlignmentType.CENTER, bg: i % 2 === 0 ? K.offWhite : K.white, size: 17 }),
+                      cell(String(pg.resourceIssues?.length ?? 0), { align: AlignmentType.CENTER, bold: (pg.resourceIssues?.length ?? 0) > 0, color: (pg.resourceIssues?.length ?? 0) > 0 ? K.high : K.teal, bg: i % 2 === 0 ? K.offWhite : K.white }),
+                    ]});
+                  }),
+                ],
+              }),
+              sp(120),
+              ...(perfResult.recommendations?.length > 0 ? [
+                h2('8.1 Performance Recommendations'),
+                ...(perfResult.recommendations as string[]).slice(0, 10).map((r: string) => bullet(r)),
+              ] : []),
+            ];
+          })(),
+
+          // ─────────────────────────────────────────────────────
+          // SECTION 9: PRIVACY FINDINGS (if Privacy pillar)
+          // ─────────────────────────────────────────────────────
+          ...(() => {
+            if (!isPriv) return [];
+            const privResult = (audit as any).pillarResults?.privacy;
+            if (!privResult) return [h1('9. Privacy & Compliance Findings'), body('Privacy pillar data not available.', K.midGrey)];
+            const privFindings: any[] = privResult.findings || [];
+            const orange = 'B45309';
+            const orangeBg = 'FFF7ED';
+
+            return [
+              h1('9. Privacy & Compliance Findings'),
+              body(`${privFindings.length} privacy finding(s) detected. Overall privacy score: ${privResult.overallScore ?? '—'}/100. Trackers detected: ${privResult.totalTrackers ?? 0}. Consent banner: ${privResult.hasConsentBanner ? 'Present' : 'Missing'}.`, K.darkGrey),
+              sp(),
+              new Table({
+                width: { size: 100, type: WidthType.PERCENTAGE },
+                borders: TABLE_BORDERS,
+                rows: [
+                  new TableRow({ children: [
+                    cell('#',           { bold: true, bg: orange, color: K.white, width: 6, align: AlignmentType.CENTER }),
+                    cell('Finding',     { bold: true, bg: orange, color: K.white, width: 28 }),
+                    cell('Category',   { bold: true, bg: orange, color: K.white, width: 18 }),
+                    cell('Regulation', { bold: true, bg: orange, color: K.white, width: 18 }),
+                    cell('Severity',   { bold: true, bg: orange, color: K.white, width: 12, align: AlignmentType.CENTER }),
+                    cell('Page',       { bold: true, bg: orange, color: K.white, width: 18 }),
+                  ]}),
+                  ...privFindings.map((f: any, idx: number) => new TableRow({ children: [
+                    cell(`#${String(idx + 1).padStart(3, '0')}`, { align: AlignmentType.CENTER, bold: true, bg: idx % 2 === 0 ? K.offWhite : K.white, size: 17 }),
+                    cell(f.title || '—', { bg: idx % 2 === 0 ? K.offWhite : K.white, size: 17 }),
+                    cell(f.category || '—', { bg: idx % 2 === 0 ? K.offWhite : K.white, size: 17 }),
+                    cell(Array.isArray(f.regulation) ? f.regulation.slice(0, 2).join(', ') : (f.regulation || '—'), { bg: idx % 2 === 0 ? K.offWhite : K.white, size: 17, color: K.lightBlue }),
+                    cell(String(f.severity || '—').toUpperCase(), { align: AlignmentType.CENTER, bold: true, color: sevColor(f.severity), bg: sevBg(f.severity), size: 17 }),
+                    cell((f.pageUrl || '').replace(/^https?:\/\/[^/]+/, '') || '/', { bg: idx % 2 === 0 ? K.offWhite : K.white, size: 16 }),
+                  ]})),
+                ],
+              }),
+              ...(privFindings.length > 0 ? [
+                sp(120),
+                h2('9.1 Privacy Finding Details'),
+                ...privFindings.slice(0, 20).flatMap((f: any, idx: number) => [
+                  divider(),
+                  new Paragraph({
+                    heading: HeadingLevel.HEADING_3,
+                    spacing: { before: 200, after: 80 },
+                    shading: { type: ShadingType.SOLID, color: orangeBg, fill: orangeBg },
+                    border: { left: { style: BorderStyle.THICK, size: 6, color: orange } },
+                    children: [new TextRun({ text: `  #${String(idx + 1).padStart(3, '0')} — ${f.title}`, font: 'Calibri', bold: true, size: 22, color: orange })],
+                  }),
+                  new Paragraph({
+                    spacing: { after: 100 },
+                    children: [
+                      new TextRun({ text: 'Severity: ', bold: true, font: 'Calibri', size: 20, color: K.navy }),
+                      new TextRun({ text: String(f.severity || '').toUpperCase(), bold: true, font: 'Calibri', size: 20, color: sevColor(f.severity) }),
+                      new TextRun({ text: '   |   Regulation: ', bold: true, font: 'Calibri', size: 20, color: K.navy }),
+                      new TextRun({ text: Array.isArray(f.regulation) ? f.regulation.join(', ') : (f.regulation || '—'), font: 'Calibri', size: 20, color: K.lightBlue }),
+                    ],
+                  }),
+                  new Paragraph({ spacing: { after: 50 }, children: [new TextRun({ text: 'Description', bold: true, font: 'Calibri', size: 21, color: K.nearBlack })] }),
+                  body(f.description || '—'),
+                  new Paragraph({ spacing: { after: 50 }, children: [new TextRun({ text: 'Recommendation', bold: true, font: 'Calibri', size: 21, color: '047856' })] }),
+                  body(f.recommendation || '—', '047856'),
+                ]),
+              ] : []),
+              ...(privResult.trackers?.length > 0 ? [
+                sp(120),
+                h2('9.2 Trackers Detected'),
+                new Table({
+                  width: { size: 100, type: WidthType.PERCENTAGE },
+                  borders: TABLE_BORDERS,
+                  rows: [
+                    new TableRow({ children: [
+                      cell('Tracker Domain', { bold: true, bg: K.navy, color: K.white, width: 30 }),
+                      cell('Company', { bold: true, bg: K.navy, color: K.white, width: 25 }),
+                      cell('Category', { bold: true, bg: K.navy, color: K.white, width: 25 }),
+                      cell('Requests', { bold: true, bg: K.navy, color: K.white, width: 20, align: AlignmentType.CENTER }),
+                    ]}),
+                    ...(privResult.trackers as any[]).slice(0, 20).map((t: any, i: number) => new TableRow({ children: [
+                      cell(t.domain || '—', { bg: i % 2 === 0 ? K.offWhite : K.white, size: 17 }),
+                      cell(t.company || '—', { bg: i % 2 === 0 ? K.offWhite : K.white, size: 17 }),
+                      cell(t.category || '—', { bg: i % 2 === 0 ? K.offWhite : K.white, size: 17 }),
+                      cell(String(t.requestCount || 0), { align: AlignmentType.CENTER, bg: i % 2 === 0 ? K.offWhite : K.white, size: 17 }),
+                    ]})),
+                  ],
+                }),
+              ] : []),
+            ];
+          })(),
 
           sp(200),
           divider(),

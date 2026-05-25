@@ -66,7 +66,17 @@ export async function GET(request: NextRequest) {
       .replace(/_+/g, '_')
       .replace(/^_|_$/g, '')
       .substring(0, 50);
-    const fileName = `Accessibility_Audit_${date}_${projectName}.${fileExtension}`;
+    const pillars = (audit.config as any).enabledPillars as string[] | undefined;
+    const reportLabel = !pillars || pillars.length === 0 ? 'Accessibility_Audit'
+      : pillars.length === 1 ? ({
+          accessibility: 'Accessibility_Audit',
+          darkpatterns:  'Dark_Pattern_Audit',
+          performance:   'Performance_Audit',
+          privacy:       'Privacy_Compliance_Audit',
+        } as Record<string, string>)[pillars[0]] || 'TrustLens_Audit'
+      : pillars.length === 4 ? 'TrustLens_4Pillar_Audit'
+      : 'TrustLens_Audit';
+    const fileName = `${reportLabel}_${date}_${projectName}.${fileExtension}`;
 
     return new NextResponse(new Uint8Array(buffer), {
       status: 200,

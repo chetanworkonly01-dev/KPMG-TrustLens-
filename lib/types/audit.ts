@@ -30,7 +30,7 @@ export interface AuditConfig {
   scopeMode?: 'general' | 'specific' | 'predefined' | 'director';
   specificUrls?: string[];
   selectedJourney?: string;
-  journeySteps?: { id: string; label: string; url: string }[];
+  journeySteps?: { id: string; label: string; url: string; action?: string }[];
   aiDirection?: string;
 }
 
