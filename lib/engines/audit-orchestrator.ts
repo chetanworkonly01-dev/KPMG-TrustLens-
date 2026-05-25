@@ -25,6 +25,124 @@ import { getTransactionalPages } from './page-intent-classifier';
 // ── Gap 3 & 4: Temporal Scanner + CTA Prominence Scorer ──
 import { runTemporalPatternScan } from './temporal-scanner';
 import { scoreCTAHierarchy } from './cta-prominence-scorer';
+import type { DarkPatternFinding, DarkPatternRegulation } from '../types/darkpattern';
+import type { TemporalFinding } from './temporal-scanner';
+import type { CTAPair } from './cta-prominence-scorer';
+
+// ── Convert TemporalFinding → DarkPatternFinding for unified rendering ──
+function normalizeTemporalFinding(tf: TemporalFinding, idx: number): DarkPatternFinding {
+  const brignullMap: Record<string, { pattern: string; number: number; dsa: string }> = {
+    'countdown-timer':         { pattern: 'False Urgency',          number: 11, dsa: 'Art. 25(1)(e)' },
+    'social-proof-inflation':  { pattern: 'Social Proof Inflation', number: 7,  dsa: 'Art. 25(1)(e)' },
+    'delayed-urgency-popup':   { pattern: 'Nagging',                number: 9,  dsa: 'Art. 25(1)(d)' },
+    'scroll-triggered-urgency':{ pattern: 'False Urgency',          number: 11, dsa: 'Art. 25(1)(e)' },
+    'fake-stock-counter':      { pattern: 'False Urgency',          number: 11, dsa: 'Art. 25(1)(e)' },
+  };
+  const brignull = brignullMap[tf.pattern] ?? { pattern: 'False Urgency', number: 11, dsa: 'Art. 25(1)(e)' };
+  const fixPriority: 'P0'|'P1'|'P2'|'P3' =
+    tf.severity === 'critical' ? 'P0' : tf.severity === 'high' ? 'P1' : 'P2';
+
+  return {
+    id: `temporal-${idx + 1}`,
+    ruleId: `TEMPORAL-${tf.pattern.toUpperCase()}`,
+    category: tf.pattern === 'social-proof-inflation' ? 'social-pressure' : 'scarcity-urgency',
+    principle: 'user-autonomy',
+    title: tf.title,
+    description: tf.description,
+    element: tf.element,
+    pageUrl: tf.pageUrl,
+    severity: tf.severity,
+    regulation: tf.regulation as DarkPatternRegulation[],
+    confidence: tf.changed ? 'high' : 'medium',
+    recommendation: tf.developerFix || 'Remove or verify this dynamic element. Only show real-time data from verified sources.',
+    userImpact: 'Users are exposed to manipulative dynamic content that changes over time to create artificial urgency.',
+    evidence: {
+      summary: `Temporal detection (T=0s→T=30s): ${tf.changeDescription}`,
+      details: [
+        `Pattern: ${tf.pattern}`,
+        `Value at T=0s: "${tf.t0Value}"`,
+        tf.t15Value ? `Value at T=15s: "${tf.t15Value}"` : '',
+        `Value at T=30s: "${tf.t30Value}"`,
+        `Changed: ${tf.changed ? 'YES — value mutated during observation' : 'No change detected'}`,
+      ].filter(Boolean),
+      measurements: {
+        t0Value: tf.t0Value,
+        t30Value: tf.t30Value,
+        changed: tf.changed ? 'yes' : 'no',
+        changeDescription: tf.changeDescription,
+      },
+    },
+    source: 'temporal',
+    detectionBasis: 'structural',
+    findingVerdict: tf.changed ? 'verdict' : 'signal',
+    verifiabilityNote: tf.changed
+      ? 'DOM-proven: element value changed during 30-second observation window'
+      : 'Temporal signal: element present but no change observed in 30s window',
+    brignullPattern:  brignull.pattern,
+    brignullNumber:   brignull.number,
+    dsaArticle:       brignull.dsa,
+    fixPriority,
+    developerFix:     tf.developerFix,
+    designerFix:      tf.designerFix,
+    temporalT0Value:  tf.t0Value,
+    temporalT30Value: tf.t30Value,
+  };
+}
+
+// ── Convert CTAPair → DarkPatternFinding for unified rendering ──
+function normalizeCTAFinding(pair: CTAPair, idx: number): DarkPatternFinding | null {
+  if (pair.severity === 'pass') return null;
+  const fixPriority: 'P0'|'P1'|'P2'|'P3' =
+    pair.severity === 'critical' ? 'P0' : pair.severity === 'high' ? 'P1' : 'P2';
+
+  return {
+    id: `cta-${idx + 1}`,
+    ruleId: `CTA-${pair.patternType.toUpperCase()}`,
+    category: pair.patternType === 'privacy-zuckering' ? 'privacy-zuckering' : 'interface-interference',
+    principle: 'symmetry-of-choice',
+    title: `CTA Prominence Asymmetry: "${pair.primaryLabel}" vs "${pair.secondaryLabel}"`,
+    description: `The primary CTA ("${pair.primaryLabel}") is ${pair.prominenceRatio.toFixed(1)}× more visually prominent than the secondary CTA ("${pair.secondaryLabel}"). Area ratio: ${pair.areaRatio.toFixed(1)}:1, Font ratio: ${pair.fontRatio.toFixed(1)}:1.`,
+    element: '',
+    pageUrl: pair.pageUrl,
+    severity: pair.severity === 'critical' ? 'critical' : pair.severity === 'high' ? 'high' : 'medium',
+    regulation: pair.regulation as DarkPatternRegulation[],
+    confidence: 'high',
+    recommendation: pair.developerFix || 'Apply equal CSS styling to both CTA buttons — same min-width, padding, and font-size.',
+    userImpact: 'Users are visually steered toward the primary action with disproportionate visual weight, reducing true freedom of choice.',
+    evidence: {
+      summary: `CTA Prominence Scorer: ${pair.prominenceRatio.toFixed(1)}× visual weight asymmetry between "${pair.primaryLabel}" and "${pair.secondaryLabel}"`,
+      details: [
+        `Primary: "${pair.primaryLabel}" — ${Math.round(pair.primaryArea)}px² area, ${pair.primaryFontSize}px font`,
+        `Secondary: "${pair.secondaryLabel}" — ${Math.round(pair.secondaryArea)}px² area, ${pair.secondaryFontSize}px font`,
+        `Area ratio: ${pair.areaRatio.toFixed(1)}:1`,
+        `Font ratio: ${pair.fontRatio.toFixed(1)}:1`,
+        `Primary above fold: ${pair.primaryAboveFold ? 'Yes' : 'No'}`,
+        `Secondary above fold: ${pair.secondaryAboveFold ? 'Yes' : 'No'}`,
+        `Composite prominence ratio: ${pair.prominenceRatio.toFixed(1)}`,
+      ],
+      measurements: {
+        areaRatio: parseFloat(pair.areaRatio.toFixed(2)),
+        fontRatio: parseFloat(pair.fontRatio.toFixed(2)),
+        prominenceRatio: parseFloat(pair.prominenceRatio.toFixed(2)),
+        primaryContrast: pair.primaryContrast,
+        secondaryContrast: pair.secondaryContrast,
+      },
+    },
+    source: 'cta-scorer',
+    detectionBasis: 'visual',
+    findingVerdict: 'verdict',
+    verifiabilityNote: 'CTA Prominence Scorer: computed from live DOM measurements (getBoundingClientRect + computed styles)',
+    brignullPattern: 'Interface Interference',
+    brignullNumber: 12,
+    dsaArticle: 'Art. 25(1)(a)',
+    fixPriority,
+    developerFix: pair.developerFix,
+    designerFix: pair.designerFix,
+    ctaAreaRatio: pair.areaRatio,
+    ctaPrimaryLabel: pair.primaryLabel,
+    ctaSecondaryLabel: pair.secondaryLabel,
+  };
+}
 
 export function getAudit(id: string): AuditResult | undefined {
   return storeGet(id);
@@ -368,6 +486,7 @@ async function runAuditPipeline(id: string, config: AuditConfig) {
             // ── Gap 4: CTA Prominence Scorer — runs on first 3 pages ──
             addLog({ timestamp: new Date().toISOString(), testId: 'CTA-SCORER', testName: 'CTA Prominence Scorer', wcag: '', status: 'running', pillar: 'darkpatterns', message: '  → Gap 4: Scoring CTA visual prominence hierarchy...', methodology: 'CTA Visual Weight Analysis', phase: 'CTA Prominence Scoring' });
             const ctaPages = crawlResult.pages.slice(0, 3);
+            let totalCTAViolations = 0;
             for (const pg of ctaPages) {
               try {
                 const ctaPage = await crawlResult.context.newPage();
@@ -376,11 +495,25 @@ async function runAuditPipeline(id: string, config: AuditConfig) {
                 const ctaResult = await scoreCTAHierarchy(ctaPage, pg.url, addLog);
                 await ctaPage.close();
                 if (ctaResult.totalViolations > 0 && result) {
-                  // Attach CTA findings to dark pattern result
-                  (result as any).ctaProminenceFindings = [...((result as any).ctaProminenceFindings || []), ...ctaResult.pairs];
-                  addLog({ timestamp: new Date().toISOString(), testId: 'CTA-SCORER', testName: 'CTA Prominence Scorer', wcag: '', status: 'fail', pillar: 'darkpatterns', message: `  ✓ CTA scorer: ${ctaResult.totalViolations} asymmetric pair(s) on ${pg.url}`, methodology: 'CTA Visual Weight Analysis', phase: 'CTA Prominence Scoring' });
+                  // Normalize CTA pairs → DarkPatternFinding and merge into main findings
+                  const ctaFindings = ctaResult.pairs
+                    .map((pair, i) => normalizeCTAFinding(pair, result!.findings.length + i))
+                    .filter(Boolean) as DarkPatternFinding[];
+                  result.findings.push(...ctaFindings);
+                  result.totalFindings = result.findings.length;
+                  result.findingsBySeverity = result.findingsBySeverity || {};
+                  for (const f of ctaFindings) {
+                    result.findingsBySeverity[f.severity] = (result.findingsBySeverity[f.severity] || 0) + 1;
+                  }
+                  if (!result.findingsBySource) result.findingsBySource = {};
+                  result.findingsBySource['cta-scorer'] = (result.findingsBySource['cta-scorer'] || 0) + ctaFindings.length;
+                  totalCTAViolations += ctaResult.totalViolations;
+                  addLog({ timestamp: new Date().toISOString(), testId: 'CTA-SCORER', testName: 'CTA Prominence Scorer', wcag: '', status: 'fail', pillar: 'darkpatterns', message: `  ✓ CTA scorer: ${ctaResult.totalViolations} asymmetric pair(s) on ${pg.url} — merged into findings`, methodology: 'CTA Visual Weight Analysis', phase: 'CTA Prominence Scoring' });
                 }
               } catch { /* non-fatal */ }
+            }
+            if (totalCTAViolations === 0) {
+              addLog({ timestamp: new Date().toISOString(), testId: 'CTA-SCORER', testName: 'CTA Prominence Scorer', wcag: '', status: 'pass', pillar: 'darkpatterns', message: '  ✓ CTA scorer: no prominence asymmetry violations detected', methodology: 'CTA Visual Weight Analysis', phase: 'CTA Prominence Scoring' });
             }
             setPillarProgress('darkpatterns', 80);
 
@@ -390,8 +523,21 @@ async function runAuditPipeline(id: string, config: AuditConfig) {
               try {
                 const temporalResult = await runTemporalPatternScan(crawlResult.context, dpPageList[0].url, addLog);
                 if (temporalResult.findings.length > 0 && result) {
-                  (result as any).temporalFindings = temporalResult.findings;
-                  addLog({ timestamp: new Date().toISOString(), testId: 'TEMPORAL-SCANNER', testName: 'Temporal Pattern Scanner', wcag: '', status: 'fail', pillar: 'darkpatterns', message: `  ✓ Temporal scan: ${temporalResult.findings.length} dynamic dark pattern(s) detected`, methodology: 'Temporal DOM Polling', phase: 'Temporal Pattern Detection' });
+                  // Normalize temporal findings → DarkPatternFinding and merge into main findings
+                  const temporalDPFindings = temporalResult.findings.map((tf, i) =>
+                    normalizeTemporalFinding(tf, result!.findings.length + i)
+                  );
+                  result.findings.push(...temporalDPFindings);
+                  result.totalFindings = result.findings.length;
+                  result.findingsBySeverity = result.findingsBySeverity || {};
+                  for (const f of temporalDPFindings) {
+                    result.findingsBySeverity[f.severity] = (result.findingsBySeverity[f.severity] || 0) + 1;
+                  }
+                  if (!result.findingsBySource) result.findingsBySource = {};
+                  result.findingsBySource['temporal'] = (result.findingsBySource['temporal'] || 0) + temporalDPFindings.length;
+                  if (!result.findingsByPhase) result.findingsByPhase = {};
+                  result.findingsByPhase['Gap 3: Temporal'] = (result.findingsByPhase['Gap 3: Temporal'] || 0) + temporalDPFindings.length;
+                  addLog({ timestamp: new Date().toISOString(), testId: 'TEMPORAL-SCANNER', testName: 'Temporal Pattern Scanner', wcag: '', status: 'fail', pillar: 'darkpatterns', message: `  ✓ Temporal scan: ${temporalResult.findings.length} dynamic dark pattern(s) detected — merged into findings`, methodology: 'Temporal DOM Polling', phase: 'Temporal Pattern Detection' });
                 } else {
                   addLog({ timestamp: new Date().toISOString(), testId: 'TEMPORAL-SCANNER', testName: 'Temporal Pattern Scanner', wcag: '', status: 'pass', pillar: 'darkpatterns', message: '  ✓ Temporal scan: no dynamic dark patterns detected', methodology: 'Temporal DOM Polling', phase: 'Temporal Pattern Detection' });
                 }

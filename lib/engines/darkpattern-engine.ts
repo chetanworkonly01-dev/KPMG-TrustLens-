@@ -851,6 +851,323 @@ async function runTextPatternScans(page: Page, pageUrl: string): Promise<DarkPat
   return findings;
 }
 // ═══════════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════
+// AUDIENCE FIX MAP — per rule: Brignull taxonomy, DSA article,
+// developer code fix, designer fix, effort estimate.
+// Drives the Developer / Designer / Legal audience-toggle views.
+// ═══════════════════════════════════════════════════════════
+interface AudienceFixEntry {
+  brignullPattern: string;
+  brignullNumber: number;
+  dsaArticle: string;
+  developerFix: string;
+  designerFix: string;
+  legalSummary: string;
+  estimatedEffort: 'XS' | 'S' | 'M' | 'L';
+}
+const RULE_AUDIENCE_MAP: Record<string, AudienceFixEntry> = {
+  // ── Trick Questions / Sneaking (Brignull #1) ──
+  'DP-SN-01': {
+    brignullPattern: 'Trick Questions', brignullNumber: 1,
+    dsaArticle: 'Art. 25(1)(b)',
+    developerFix: 'Remove the checked attribute: <input type="checkbox"> (no checked). Under GDPR Art. 7, opt-in must be a distinct affirmative action — not default state.',
+    designerFix: 'Default all consent toggles to OFF. Use neutral label copy ("I agree to marketing emails") with no visual bias toward acceptance.',
+    legalSummary: 'Pre-ticked opt-in violates GDPR Art. 7(4) — consent must be freely given via unambiguous affirmative action. EU DSA Art. 25(1)(b) prohibits using default settings to bias choices.',
+    estimatedEffort: 'XS',
+  },
+  'DP-SN-02': {
+    brignullPattern: 'Sneak into Basket', brignullNumber: 2,
+    dsaArticle: 'Art. 25(1)(b)',
+    developerFix: 'Change default radio/select to a neutral "None" or "No add-on" option. Never preselect a paid or data-sharing option.',
+    designerFix: 'Add-on options should default to unselected. Show add-ons in a clearly labelled optional section separate from the main flow.',
+    legalSummary: 'Pre-selected commercial add-ons constitute Sneak into Basket (Brignull). EU DSA Art. 25(1)(b) prohibits pre-ticked boxes for optional paid extras. FTC Act §5 unfair practice.',
+    estimatedEffort: 'XS',
+  },
+  'DP-SN-04': {
+    brignullPattern: 'Trick Questions', brignullNumber: 1,
+    dsaArticle: 'Art. 25(1)(b)',
+    developerFix: 'Remove hidden inputs that carry default consent/opt-in values. Any consent submission must come from explicit user UI interaction.',
+    designerFix: 'Never use hidden fields to transmit consent decisions. All consent choices must be surfaced visibly to the user.',
+    legalSummary: 'Hidden form inputs carrying default consent values violate GDPR Art. 7 — consent requires a clear affirmative act. ICO guidance explicitly prohibits this pattern.',
+    estimatedEffort: 'XS',
+  },
+  'DP-SN-08': {
+    brignullPattern: 'Privacy Zuckering', brignullNumber: 6,
+    dsaArticle: 'Art. 25(2)(b)',
+    developerFix: 'Split bundled consent into separate checkboxes per purpose. GDPR requires granular consent: analytics, marketing, and third-party sharing must each have their own control.',
+    designerFix: 'Design a consent matrix or accordion: one row per purpose. Each purpose must be independently toggleable with clear on/off state.',
+    legalSummary: 'Bundled consent violates GDPR Art. 7(2) and Recital 43 — consent must be given separately for each purpose. CNIL and ICO enforcement has fined companies for this pattern.',
+    estimatedEffort: 'S',
+  },
+  'DP-SN-09': {
+    brignullPattern: 'Forced Continuity', brignullNumber: 10,
+    dsaArticle: 'Art. 25(1)(c)',
+    developerFix: 'Add a pre-expiry email reminder with one-click cancel link. Display cancel deadline prominently at signup. Implement FTC Click-to-Cancel (16 CFR Part 425).',
+    designerFix: 'Show trial end date in dashboard permanently. Place cancel CTA in the primary navigation, not buried in settings.',
+    legalSummary: 'Auto-converting free trials without clear cancel instructions violate FTC Click-to-Cancel Rule 2024 and EU Consumer Rights Directive Art. 6. Potential for large-scale enforcement.',
+    estimatedEffort: 'M',
+  },
+  // ── Roach Motel / Obstruction (Brignull #3) ──
+  'DP-OB-01': {
+    brignullPattern: 'Roach Motel', brignullNumber: 3,
+    dsaArticle: 'Art. 25(1)(c)',
+    developerFix: 'Add a visible unsubscribe/cancel link to the footer and account settings. Ensure cancel flow ≤ same steps as subscribe.',
+    designerFix: 'Subscribe and cancel CTAs must be symmetric in placement and prominence. If "Subscribe" is in the hero, "Cancel" must be in settings with equivalent findability.',
+    legalSummary: 'Asymmetric subscribe/cancel paths constitute a Roach Motel (Brignull #3). EU DSA Art. 25(1)(c) prohibits making termination harder than subscription. FTC Click-to-Cancel Rule applies.',
+    estimatedEffort: 'M',
+  },
+  'DP-OB-04': {
+    brignullPattern: 'Roach Motel', brignullNumber: 3,
+    dsaArticle: 'Art. 25(1)(c)',
+    developerFix: 'Remove multi-step confirmation dialogs on the cancel path. Cancel should complete in ≤ 2 steps from settings page.',
+    designerFix: 'Cancel flow should mirror the subscribe flow in step count. No retention offers should block or delay cancellation.',
+    legalSummary: 'Confirmation dialogs added exclusively to the cancel path are a Roach Motel pattern. EU DSA Art. 25(1)(c) and FTC Click-to-Cancel Rule 2024 require easy cancellation.',
+    estimatedEffort: 'S',
+  },
+  'DP-OB-06': {
+    brignullPattern: 'Roach Motel', brignullNumber: 3,
+    dsaArticle: 'Art. 25(1)(c)',
+    developerFix: 'Implement an online cancellation endpoint. If signup is online, FTC 2024 mandates that cancellation is also possible online without calling or emailing.',
+    designerFix: 'Add a self-serve cancellation page accessible from account settings. Phone-only cancellation is a deliberate friction pattern.',
+    legalSummary: 'Phone/email-only cancellation violates FTC Click-to-Cancel Rule 2024 (16 CFR Part 425) — if signup was online, cancellation must also be online. CCPA and DSA Art. 25(1)(c) apply.',
+    estimatedEffort: 'M',
+  },
+  'DP-OB-07': {
+    brignullPattern: 'Obstruction', brignullNumber: 3,
+    dsaArticle: 'Art. 25(1)(c)',
+    developerFix: 'Add a "Download my data" endpoint (GDPR Art. 20 data portability). Expose via /account/settings/data-export with standard JSON/CSV format.',
+    designerFix: 'Add "Download my data" to the account settings page. Link to it from the privacy policy.',
+    legalSummary: 'Missing data portability violates GDPR Art. 20 (EU) and India DPDPA 2023 §13 — users have the right to receive their personal data in machine-readable format.',
+    estimatedEffort: 'M',
+  },
+  // ── Nagging (Brignull #9) ──
+  'DP-NG-01': {
+    brignullPattern: 'Nagging', brignullNumber: 9,
+    dsaArticle: 'Art. 25(1)(d)',
+    developerFix: 'Implement modal stacking prevention: use a global modal manager that allows only one modal to be active at a time.',
+    designerFix: 'One modal rule — never render multiple dialogs simultaneously. Queue dismissals and apply session memory to prevent re-showing dismissed modals.',
+    legalSummary: 'Overlapping modals constitute Nagging (Brignull #9). EU DSA Art. 25(1)(d) prohibits repeatedly requesting decisions. ICO guidance requires a single consent request per session.',
+    estimatedEffort: 'S',
+  },
+  'DP-NG-02': {
+    brignullPattern: 'Nagging', brignullNumber: 9,
+    dsaArticle: 'Art. 25(1)(d)',
+    developerFix: 'Gate notification prompts behind genuine user engagement (e.g., after 3+ purchases or explicit user request). Respect browser-level permission model.',
+    designerFix: 'Show notification opt-in as a non-blocking inline prompt after meaningful user engagement. Never show on page load.',
+    legalSummary: 'Aggressive push-permission prompts on page load violate the spirit of GDPR Art. 5(1)(c) and the ICO\'s "privacy by design" principle. Pattern is explicitly named in DSA guidance.',
+    estimatedEffort: 'XS',
+  },
+  'DP-NG-04': {
+    brignullPattern: 'Nagging', brignullNumber: 9,
+    dsaArticle: 'Art. 25(1)(d)',
+    developerFix: 'Remove exit-intent listeners (mouseleave, beforeunload). If retention is needed, implement a value proposition page instead of an interrupt popup.',
+    designerFix: 'Replace exit-intent popups with a persistent value banner or homepage messaging. Do not intercept users who have decided to leave.',
+    legalSummary: 'Exit-intent popups intercept user autonomy at the point of decision. EU DSA Art. 25(1)(d) prohibits repeatedly disrupting user decision-making. FTC has cited exit-intent patterns in enforcement actions.',
+    estimatedEffort: 'XS',
+  },
+  // ── Forced Action (Brignull #5) ──
+  'DP-FA-01': {
+    brignullPattern: 'Forced Action', brignullNumber: 5,
+    dsaArticle: 'Art. 25(3)(d)',
+    developerFix: 'Remove auth guards from public content endpoints. Implement progressive engagement — show teaser content, prompt login only for premium features.',
+    designerFix: 'Apply progressive disclosure: show value first, gate registration to deeper actions only. Use a soft CTA overlay rather than a blocking modal.',
+    legalSummary: 'Forced registration walls violate DSA Art. 25(3)(d) — users must not be required to create accounts to access publicly available services. GDPR Art. 7(4) prohibits conditioning service access on consent.',
+    estimatedEffort: 'L',
+  },
+  'DP-FA-03': {
+    brignullPattern: 'Forced Action', brignullNumber: 5,
+    dsaArticle: 'Art. 25(3)(d)',
+    developerFix: 'Remove full-viewport app install banners. Use a native Smart App Banner (meta tag) instead — max 64px, dismissible, non-blocking.',
+    designerFix: 'Reduce app install prompt to a slim, dismissible top bar (≤48px). Never block page content. Apply only after user has spent >30 seconds on page.',
+    legalSummary: 'Full-viewport app install prompts that block content access are Forced Action patterns (Brignull #5). FTC §5 deceptive framing applies when content is withheld without genuine need.',
+    estimatedEffort: 'XS',
+  },
+  'DP-FA-05': {
+    brignullPattern: 'Forced Action', brignullNumber: 5,
+    dsaArticle: 'Art. 25(3)(d)',
+    developerFix: 'Remove the DOM backdrop/overlay on the consent banner. Users must be able to scroll and interact with the page without accepting cookies.',
+    designerFix: 'Use a non-blocking bottom banner for cookie consent. Never overlay page content. Accept and Reject must be equally prominent.',
+    legalSummary: 'Cookie walls that block content unless users accept are illegal under GDPR Art. 7(4) — "take it or leave it" consent is not freely given. CNIL issued €60M fines for this exact pattern.',
+    estimatedEffort: 'S',
+  },
+  'DP-FA-06': {
+    brignullPattern: 'Forced Action', brignullNumber: 5,
+    dsaArticle: 'Art. 25(3)(d)',
+    developerFix: 'Add an email/password registration alternative alongside social login buttons. Social login must never be the only option.',
+    designerFix: 'Display email registration at same hierarchy level as social login. "Continue with email" should not be hidden below social buttons.',
+    legalSummary: 'Forced social login violates GDPR Art. 7 — consent to third-party data sharing cannot be a condition of service access. EDPB guidance requires an alternative.',
+    estimatedEffort: 'S',
+  },
+  // ── Interface Interference (Brignull #12) ──
+  'DP-IF-01': {
+    brignullPattern: 'Interface Interference', brignullNumber: 12,
+    dsaArticle: 'Art. 25(1)(a)',
+    developerFix: 'Apply equal CSS classes to accept and reject buttons: same min-width, padding, border-radius. Example: `.consent-btn { min-width: 120px; padding: 10px 20px; font-size: 14px; }`',
+    designerFix: 'Consent button pair must share identical dimensions and visual weight. Use the same component instance — differentiate only by color (brand primary vs outlined).',
+    legalSummary: 'Accept:Reject size asymmetry >2:1 constitutes Interface Interference under DSA Art. 25(1)(a). ICO enforces this under UK GDPR. CNIL specifically measures button size ratios in audits.',
+    estimatedEffort: 'XS',
+  },
+  'DP-IF-02': {
+    brignullPattern: 'Interface Interference', brignullNumber: 12,
+    dsaArticle: 'Art. 25(1)(a)',
+    developerFix: 'Remove transparent/muted styling from reject button. Reject must meet WCAG 1.4.3 AA contrast ratio (4.5:1). Add visible border if using ghost button style.',
+    designerFix: 'Both consent buttons must be equally visible. If accept uses a filled primary color, reject must use an outlined variant with matching contrast, not a muted/faded appearance.',
+    legalSummary: 'Color-based button asymmetry (accept prominent, reject muted) violates DSA Art. 25(1)(a) and WCAG 1.4.3. ICO guidance names "colour contrast manipulation" as an enforcement target.',
+    estimatedEffort: 'XS',
+  },
+  'DP-IF-04': {
+    brignullPattern: 'Interface Interference', brignullNumber: 12,
+    dsaArticle: 'Art. 25(1)(a)',
+    developerFix: 'Set dismiss/reject button min touch target to 44×44px per WCAG 2.5.8. Add padding if needed: `.consent-reject { min-width: 44px; min-height: 44px; padding: 10px 16px; }`',
+    designerFix: 'All interactive consent controls must be ≥44×44px touch target. Tiny close/X buttons on consent banners fail WCAG 2.5.8 and are a deliberate friction pattern.',
+    legalSummary: 'Sub-44px dismiss targets violate WCAG 2.5.8 Success Criterion and EU DSA Art. 25(1)(a). This is a deliberate accessibility/dark pattern combination that regulators actively target.',
+    estimatedEffort: 'XS',
+  },
+  // ── Scarcity / Urgency (Brignull #11) ──
+  'DP-SU-01': {
+    brignullPattern: 'False Urgency', brignullNumber: 11,
+    dsaArticle: 'Art. 25(1)(e)',
+    developerFix: 'Bind countdown to a server-verified deadline from your API (e.g., deal_expires_at). Add validation: if(expired) remove timer element entirely. Never reset via setInterval.',
+    designerFix: 'Display countdown only when a real deadline exists. Show the specific date/time (e.g., "Ends 15 Jun 11:59 PM") not just a timer that could be fabricated.',
+    legalSummary: 'Countdown timers without verifiable deadlines violate DSA Art. 25(1)(e) and FTC Act §5. The FTC\'s "Click-to-Cancel" rule and dark patterns report explicitly target false urgency timers.',
+    estimatedEffort: 'S',
+  },
+  'DP-SU-02': {
+    brignullPattern: 'False Urgency', brignullNumber: 11,
+    dsaArticle: 'Art. 25(1)(e)',
+    developerFix: 'Bind stock counts to live inventory API. If count cannot be verified in real-time, remove the element. Add audit trail: log stock display vs actual inventory.',
+    designerFix: 'Only show "X left in stock" when sourced from live inventory. Show the actual number with a verified timestamp.',
+    legalSummary: 'Unverifiable stock scarcity claims violate FTC Act §5 (deceptive practices) and UK CPR 2008. Several major retailers have been fined for fabricated "only X left" counters.',
+    estimatedEffort: 'S',
+  },
+  'DP-SU-03': {
+    brignullPattern: 'False Urgency', brignullNumber: 11,
+    dsaArticle: 'Art. 25(1)(e)',
+    developerFix: 'Remove or verify all urgency language before production. If sale is permanent or regularly renewed, the "limited time" claim is deceptive under FTC guidelines.',
+    designerFix: 'Replace unverifiable urgency language with factual value propositions. "Our best price" is legal; "Deal ends in 2 hours" requires a real deadline.',
+    legalSummary: 'Generic urgency language ("limited time", "hurry") without verified deadlines violates FTC Act §5 and DSA Art. 25(1)(e). The FTC\'s 2022 dark patterns report lists this as a top enforcement priority.',
+    estimatedEffort: 'XS',
+  },
+  'DP-SU-05': {
+    brignullPattern: 'False Urgency', brignullNumber: 11,
+    dsaArticle: 'Art. 25(1)(e)',
+    developerFix: 'Add an expires_at timestamp to flash sale data. Display specific end time. If no verified end time exists, do not show "flash sale" messaging.',
+    designerFix: 'Flash sale banners must show a precise, verified expiry date/time. Never use vague "ends soon" language. Tie expiry display to real backend data.',
+    legalSummary: 'Flash sales with unverifiable end times violate FTC Act §5. The FTC has issued warning letters to e-commerce retailers for fabricated flash sale timers.',
+    estimatedEffort: 'S',
+  },
+  'DP-SU-06': {
+    brignullPattern: 'Social Proof Inflation', brignullNumber: 11,
+    dsaArticle: 'Art. 25(1)(e)',
+    developerFix: 'Bind viewer counter to a verified analytics source (e.g., Google Analytics real-time API). Add last_updated timestamp to the element. If unbindable, remove the element.',
+    designerFix: 'Show live counter only if connected to real-time verified data. Add a "verified" indicator. Never show rounded numbers like "100 people viewing".',
+    legalSummary: 'Fabricated real-time viewer counts violate FTC Act §5 (deceptive practices). The 2022 FTC dark patterns study specifically names fake social-proof counters as an enforcement priority.',
+    estimatedEffort: 'M',
+  },
+  // ── Social Pressure (Brignull #7) ──
+  'DP-SP-01': {
+    brignullPattern: 'Social Proof', brignullNumber: 7,
+    dsaArticle: 'Art. 25(1)(e)',
+    developerFix: 'Connect to a verified real-time data source for social proof metrics. Add data-verified="true" attribute and timestamp. If verification is impossible, remove the element.',
+    designerFix: 'Show source and timestamp for all social proof claims. "47 people bought this today (via verified analytics)" is acceptable; fabricated counters are not.',
+    legalSummary: 'Unverifiable social proof ("X people bought this") constitutes a deceptive practice under FTC Act §5 and DSA Art. 25(1)(e). Multiple retailers have received FTC warning letters.',
+    estimatedEffort: 'M',
+  },
+  'DP-SP-03': {
+    brignullPattern: 'Authority Bias', brignullNumber: 7,
+    dsaArticle: 'Art. 25(1)(e)',
+    developerFix: 'Add a source reference link next to every badge: <a href="/award-source">Award source ↗</a>. Remove badges with no verifiable source.',
+    designerFix: 'Every trust badge must link to its source. Use a small "i" info icon with source tooltip. "Best Seller" claims must reference an auditable basis.',
+    legalSummary: 'Unverified "Best Seller" and "Award-Winning" badges constitute deceptive endorsements under FTC 16 CFR Part 255 (Endorsement Guides). The FTC requires disclosure of basis for all superlative claims.',
+    estimatedEffort: 'XS',
+  },
+  // ── Privacy Zuckering (Brignull #6) ──
+  'DP-PZ-01': {
+    brignullPattern: 'Privacy Zuckering', brignullNumber: 6,
+    dsaArticle: 'Art. 25(2)(b)',
+    developerFix: 'Audit each form field against its stated purpose. Remove fields not essential to core function. Apply GDPR data minimisation (Art. 5(1)(c)): only collect what you use.',
+    designerFix: 'Reduce form to minimum viable fields for the stated purpose. Each removed field reduces abandonment and GDPR liability. Group optional fields in a collapsible section.',
+    legalSummary: 'Excessive data collection violates GDPR Art. 5(1)(c) data minimisation principle and India DPDPA 2023 §6. The ICO regularly fines organisations for collecting phone numbers without legitimate need.',
+    estimatedEffort: 'M',
+  },
+  'DP-PZ-03': {
+    brignullPattern: 'Privacy Zuckering', brignullNumber: 6,
+    dsaArticle: 'Art. 25(2)(b)',
+    developerFix: 'Change all data-sharing toggles to default OFF. Pre-enabled sharing toggles require explicit opt-in under GDPR Art. 7. Review backend to ensure no data is shared before toggle is turned on.',
+    designerFix: 'Data sharing toggles must default to OFF. Show them in a dedicated Privacy Settings section with clear labels. Never bury them in a dense settings page.',
+    legalSummary: 'Pre-enabled data sharing toggles violate GDPR Art. 7 — consent must be an active, unambiguous affirmative act. CNIL (France) has issued multi-million euro fines for pre-checked data sharing.',
+    estimatedEffort: 'XS',
+  },
+  // ── Confirmshaming (Brignull #8) ──
+  'DP-CS-01': {
+    brignullPattern: 'Confirmshaming', brignullNumber: 8,
+    dsaArticle: 'Art. 25(1)(f)',
+    developerFix: 'Replace shame-inducing decline copy with neutral text. Accepted formula: "Yes, subscribe me" / "No, thanks". Any text that makes declining feel morally wrong must be removed.',
+    designerFix: 'Decline copy must be factually neutral — never emotionally manipulative. Use a symmetry test: if the decline option feels shaming or self-deprecating, rewrite it.',
+    legalSummary: 'Confirmshaming (guilt-inducing decline options) violates DSA Art. 25(1)(f) and user autonomy principles. The UK ICO has cited confirmshaming in its dark patterns guidance as a deceptive design pattern.',
+    estimatedEffort: 'XS',
+  },
+  // ── Misdirection (Brignull #11) ──
+  'DP-MD-08': {
+    brignullPattern: 'Misdirection', brignullNumber: 11,
+    dsaArticle: 'Art. 25(1)(a)',
+    developerFix: 'Remove inflated reference prices unless the item was genuinely sold at that price within the past 30 days. Comply with the UK CPR 2008 and EU Omnibus Directive Art. 6a.',
+    designerFix: 'Show strikethrough prices only with a "was" label and previous price period. Never fabricate reference prices for visual urgency effect.',
+    legalSummary: 'Fabricated reference/strikethrough pricing violates the EU Omnibus Directive (2022), UK CPR 2008 Reg. 5, and FTC Act §5. Major retailers have been fined by national consumer protection authorities for fake reference prices.',
+    estimatedEffort: 'S',
+  },
+  // ── Disguised Ads ──
+  'DP-DA-01': {
+    brignullPattern: 'Disguised Ads', brignullNumber: 4,
+    dsaArticle: 'Art. 26(2)',
+    developerFix: 'Add a visible "Sponsored" or "Ad" label to every paid placement element. Use aria-label="Sponsored content" for accessibility. Never use vague "promoted" wording without an "Ad" indicator.',
+    designerFix: 'Sponsored content must be visually distinct from editorial content — different background color, clear "Sponsored" label in consistent position.',
+    legalSummary: 'Disguised advertising violates DSA Art. 26(2) — all commercial content must be clearly identified as advertising. FTC Endorsement Guides require clear and conspicuous disclosure.',
+    estimatedEffort: 'XS',
+  },
+  // ── Hidden Costs ──
+  'DP-HC-01': {
+    brignullPattern: 'Hidden Costs', brignullNumber: 12,
+    dsaArticle: 'Art. 25(1)(g)',
+    developerFix: 'Display total price including all mandatory fees at first price display. Use price breakdown component: base + fees + tax = total. Never reveal the full price only at checkout.',
+    designerFix: 'Show the complete price on the product/service page — not just the base. Use a price breakdown tooltip if needed. "From £X" without fee disclosure is deceptive.',
+    legalSummary: 'Drip pricing (hidden fees revealed at checkout) violates EU Omnibus Directive Art. 6(1)(e), FTC Act §5, and UK CPR 2008. Several airlines and hotels have received enforcement action specifically for drip pricing.',
+    estimatedEffort: 'M',
+  },
+  // ── Bait & Switch ──
+  'DP-BS-01': {
+    brignullPattern: 'Bait and Switch', brignullNumber: 12,
+    dsaArticle: 'Art. 25(1)(a)',
+    developerFix: 'Fix misleading link destinations: if link text says "dismiss", destination must be a local dismiss action, not an external navigation. Audit all CTA links for text-destination alignment.',
+    designerFix: 'Every link/button must do exactly what its label says. Dismissal CTAs must dismiss — not navigate, subscribe, or redirect.',
+    legalSummary: 'Links that appear to dismiss but navigate externally constitute Bait and Switch (Brignull). FTC Act §5 deceptive practice. EU DSA Art. 25(1)(a) — interface manipulation of user choices.',
+    estimatedEffort: 'XS',
+  },
+  // ── Friend Spam ──
+  'DP-FS-01': {
+    brignullPattern: 'Friend Spam', brignullNumber: 12,
+    dsaArticle: 'Art. 25(3)(d)',
+    developerFix: 'Implement granular permission for contact access. Show exactly which contacts will be contacted and what message they will receive before any action. Require explicit per-contact selection.',
+    designerFix: 'Contact harvesting flows must show a detailed preview: who will receive what message, with ability to deselect individual contacts. Never bulk-import and message without preview.',
+    legalSummary: 'Contact harvesting without granular consent violates GDPR Art. 6 and many national spam regulations. Multiple social networks have been fined hundreds of millions for Friend Spam patterns.',
+    estimatedEffort: 'L',
+  },
+};
+
+// ── Per-category fallback audience content ──
+const CATEGORY_AUDIENCE_FALLBACK: Record<string, Pick<AudienceFixEntry, 'brignullPattern' | 'brignullNumber' | 'dsaArticle'>> = {
+  'interface-interference': { brignullPattern: 'Interface Interference', brignullNumber: 12, dsaArticle: 'Art. 25(1)(a)' },
+  'obstruction':           { brignullPattern: 'Roach Motel',            brignullNumber: 3,  dsaArticle: 'Art. 25(1)(c)' },
+  'sneaking':              { brignullPattern: 'Trick Questions',         brignullNumber: 1,  dsaArticle: 'Art. 25(1)(b)' },
+  'forced-action':         { brignullPattern: 'Forced Action',           brignullNumber: 5,  dsaArticle: 'Art. 25(3)(d)' },
+  'nagging':               { brignullPattern: 'Nagging',                 brignullNumber: 9,  dsaArticle: 'Art. 25(1)(d)' },
+  'scarcity-urgency':      { brignullPattern: 'False Urgency',           brignullNumber: 11, dsaArticle: 'Art. 25(1)(e)' },
+  'social-pressure':       { brignullPattern: 'Social Proof',            brignullNumber: 7,  dsaArticle: 'Art. 25(1)(e)' },
+  'privacy-zuckering':     { brignullPattern: 'Privacy Zuckering',       brignullNumber: 6,  dsaArticle: 'Art. 25(2)(b)' },
+  'confirmshaming':        { brignullPattern: 'Confirmshaming',          brignullNumber: 8,  dsaArticle: 'Art. 25(1)(f)' },
+  'misdirection':          { brignullPattern: 'Misdirection',            brignullNumber: 11, dsaArticle: 'Art. 25(1)(a)' },
+};
+
 function makeFinding(
   ruleId: string, pageUrl: string, elementHtml: string, evidence: DarkPatternEvidence
 ): DarkPatternFinding {
@@ -864,6 +1181,19 @@ function makeFinding(
   };
   const detectionBasis = detectToBasis[rule.detect] || 'textual';
   const isVerdict = detectionBasis === 'structural' || detectionBasis === 'visual';
+
+  // ── Resolve audience-specific content ──
+  const audienceFix = RULE_AUDIENCE_MAP[ruleId];
+  const categoryFallback = CATEGORY_AUDIENCE_FALLBACK[rule.category];
+  const brignullPattern = audienceFix?.brignullPattern ?? categoryFallback?.brignullPattern;
+  const brignullNumber  = audienceFix?.brignullNumber  ?? categoryFallback?.brignullNumber;
+  const dsaArticle      = audienceFix?.dsaArticle      ?? categoryFallback?.dsaArticle;
+
+  // Derive fix priority from severity
+  const fixPriority: 'P0' | 'P1' | 'P2' | 'P3' =
+    rule.severity === 'critical' ? 'P0' :
+    rule.severity === 'high'     ? 'P1' :
+    rule.severity === 'medium'   ? 'P2' : 'P3';
 
   return {
     id: '',  // assigned by caller
@@ -887,6 +1217,15 @@ function makeFinding(
     verifiabilityNote: isVerdict
       ? 'DOM-proven: element structure or computed style confirms this pattern'
       : 'Content-based signal: flagged by text/AI analysis — manual review recommended',
+    // ── Audience handoff ──
+    brignullPattern,
+    brignullNumber,
+    dsaArticle,
+    fixPriority,
+    developerFix:  audienceFix?.developerFix,
+    designerFix:   audienceFix?.designerFix,
+    legalSummary:  audienceFix?.legalSummary,
+    estimatedEffort: audienceFix?.estimatedEffort,
   };
 }
 
@@ -972,6 +1311,28 @@ function buildResult(findings: DarkPatternFinding[], pagesScanned: number): Dark
   const manipulationIndex = manipFindings.length === 0 ? 0 :
     Math.min(100, manipFindings.length * 15);
 
+  // ── Source + Phase breakdown ──
+  const findingsBySource: Record<string, number> = {};
+  const findingsByPhase: Record<string, number> = {};
+  const ruleIdToPhase: Record<string, string> = {};
+  // Map ruleId prefixes to phase names
+  for (const f of findings) {
+    findingsBySource[f.source] = (findingsBySource[f.source] || 0) + 1;
+    // Infer phase from ruleId prefix
+    const phase =
+      f.source === 'ai-vision'    ? 'Phase 8: Visual AI'       :
+      f.source === 'temporal'     ? 'Gap 3: Temporal'           :
+      f.source === 'cta-scorer'   ? 'Gap 4: CTA Prominence'     :
+      /DP-SN|DP-OB|DP-FA|DP-NG|DP-PZ/.test(f.ruleId) ? 'Phase 1: DOM Scan'       :
+      /DP-IF/.test(f.ruleId)      ? 'Phase 2: Visual Scan'      :
+      /DP-SU|DP-SP|DP-CS|DP-MD|DP-BS|DP-DA|DP-FS|DP-HC/.test(f.ruleId) ? 'Phase 3: NLP Scan' :
+      /DP-DEEP/.test(f.ruleId)    ? 'Phase 4: Deep Code'        :
+      /DP-AX/.test(f.ruleId)      ? 'Phase 5: A11Y Cross-Map'   :
+      /DP-FLOW|DP-OB-04/.test(f.ruleId) ? 'Phase 6: Flow Analysis' : 'Other';
+    findingsByPhase[phase] = (findingsByPhase[phase] || 0) + 1;
+    ruleIdToPhase[f.ruleId] = phase;
+  }
+
   return {
     findings,
     ethicsScore,
@@ -984,6 +1345,8 @@ function buildResult(findings: DarkPatternFinding[], pagesScanned: number): Dark
     findingsBySeverity,
     pagesScanned,
     regulatoryRisks: [...regulatorySet] as any[],
+    findingsBySource,
+    findingsByPhase,
   };
 }
 
@@ -1338,6 +1701,15 @@ ${ruleDescriptions}
     const matchedRule = VISUAL_AI_RULES.find(r => r.id === item.ruleId);
     if (!matchedRule) continue;
 
+    const audienceFix = RULE_AUDIENCE_MAP[item.ruleId];
+    const categoryFallback = CATEGORY_AUDIENCE_FALLBACK[matchedRule.category];
+    const brignullPattern = audienceFix?.brignullPattern ?? categoryFallback?.brignullPattern;
+    const brignullNumber  = audienceFix?.brignullNumber  ?? categoryFallback?.brignullNumber;
+    const dsaArticle      = audienceFix?.dsaArticle      ?? categoryFallback?.dsaArticle;
+    const severity = item.severity || matchedRule.severity;
+    const fixPriority: 'P0' | 'P1' | 'P2' | 'P3' =
+      severity === 'critical' ? 'P0' : severity === 'high' ? 'P1' : severity === 'medium' ? 'P2' : 'P3';
+
     findings.push({
       id: '', // assigned by caller
       ruleId: item.ruleId,
@@ -1348,7 +1720,7 @@ ${ruleDescriptions}
       element: item.element || '',
       elementHtml: undefined,
       pageUrl,
-      severity: item.severity || matchedRule.severity,
+      severity,
       regulation: matchedRule.regulation,
       confidence: item.confidence || 'medium',
       recommendation: item.recommendation || getRecommendation(matchedRule.category),
@@ -1367,6 +1739,15 @@ ${ruleDescriptions}
       findingVerdict: 'signal',
       verifiabilityNote: 'Visual AI signal: flagged by GPT-4o screenshot analysis — manual design review recommended',
       visualAnalysisPhase: 'Phase 8: Visual AI Dark Pattern Analysis',
+      // ── Audience handoff ──
+      brignullPattern,
+      brignullNumber,
+      dsaArticle,
+      fixPriority,
+      developerFix:    audienceFix?.developerFix  ?? item.developerFix,
+      designerFix:     audienceFix?.designerFix   ?? item.designerFix,
+      legalSummary:    audienceFix?.legalSummary,
+      estimatedEffort: audienceFix?.estimatedEffort,
     });
   }
 

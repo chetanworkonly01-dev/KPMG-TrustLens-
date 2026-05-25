@@ -107,14 +107,30 @@ export interface DarkPatternFinding {
   recommendation: string;
   userImpact: string;                       // How this harms real users
   evidence: DarkPatternEvidence;
-  source: 'rule' | 'ai' | 'journey' | 'ai-vision'; // Detection method
-  // Signal vs Verdict model (Plan B3)
+  source: 'rule' | 'ai' | 'journey' | 'ai-vision' | 'temporal' | 'cta-scorer'; // Detection method
+  // Signal vs Verdict model
   detectionBasis?: DetectionBasis;          // How the finding was detected: visual/structural/textual/visual-ai
   verifiabilityNote?: string;               // Explains if DOM-provable (verdict) or content-only (signal)
   findingVerdict?: FindingVerdict;          // 'verdict' = DOM-proven, 'signal' = unverifiable claim
   // Visual AI fields (Phase 8)
   screenshotEvidence?: string;              // Base64 screenshot used as evidence
   visualAnalysisPhase?: 'Phase 8: Visual AI Dark Pattern Analysis';
+  // ── Audience-segmented handoff fields ──
+  developerFix?: string;                    // Code-level remediation (selector, snippet, PR guidance)
+  designerFix?: string;                     // Design-token / visual hierarchy fix
+  legalSummary?: string;                    // Enforcement framing for legal team
+  brignullPattern?: string;                 // e.g. "Trick Questions", "Roach Motel"
+  brignullNumber?: number;                  // 1–12 Brignull taxonomy number
+  dsaArticle?: string;                      // e.g. "Art. 25(1)(a)", "Art. 25(3)(b)"
+  elementSelector?: string;                 // Developer-ready CSS selector
+  fixPriority?: 'P0' | 'P1' | 'P2' | 'P3'; // P0 = fix immediately, P3 = backlog
+  estimatedEffort?: 'XS' | 'S' | 'M' | 'L'; // Effort to remediate
+  // ── Temporal / CTA-specific fields ──
+  temporalT0Value?: string;                 // Value at T=0s (temporal findings)
+  temporalT30Value?: string;                // Value at T=30s (temporal findings)
+  ctaAreaRatio?: number;                    // Accept:Reject area ratio (CTA findings)
+  ctaPrimaryLabel?: string;                 // Primary CTA label
+  ctaSecondaryLabel?: string;              // Secondary CTA label
 }
 
 export interface DarkPatternEvidence {
@@ -150,4 +166,7 @@ export interface DarkPatternResult {
   findingsBySeverity: Record<string, number>;
   pagesScanned: number;
   regulatoryRisks: DarkPatternRegulation[];               // Regulations with violations
+  // ── Extended source breakdown ──
+  findingsBySource?: Record<string, number>;              // rule / ai-vision / temporal / cta-scorer
+  findingsByPhase?: Record<string, number>;               // Phase 1-8 breakdown
 }

@@ -1273,6 +1273,93 @@ export default function AuditResultPage() {
               ))}
             </div>
 
+            {/* ── Detection Intelligence Dashboard ── */}
+            {(dp as any).findingsBySource || (dp as any).findingsByPhase ? (
+              <div className="glass-card" style={{ marginBottom: 20 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 14 }}>
+                  <span style={{ fontSize: 14, fontWeight: 700 }}>🔬 Detection Intelligence</span>
+                  <span style={{ fontSize: 10, padding: '2px 7px', borderRadius: 99, background: 'rgba(205,171,254,0.15)', color: 'var(--accent-purple)', border: '1px solid rgba(205,171,254,0.3)', fontWeight: 700, fontFamily: 'Geist Mono, monospace' }}>MULTI-ENGINE</span>
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+                  {/* Detection Source Breakdown */}
+                  {(dp as any).findingsBySource && Object.keys((dp as any).findingsBySource).length > 0 && (
+                    <div>
+                      <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-muted)', marginBottom: 8, fontFamily: 'Geist Mono, monospace', textTransform: 'uppercase' }}>By Detection Source</div>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
+                        {Object.entries((dp as any).findingsBySource as Record<string, number>).map(([src, count]) => {
+                          const srcMeta: Record<string, { icon: string; color: string; label: string }> = {
+                            'rule':       { icon: '📋', color: '#0091DA', label: 'DOM + NLP Rules' },
+                            'ai-vision':  { icon: '👁️', color: '#9B59B6', label: 'GPT-4o Vision (Phase 8)' },
+                            'temporal':   { icon: '⏱️', color: '#E67E22', label: 'Temporal Scanner (Gap 3)' },
+                            'cta-scorer': { icon: '⚖️', color: '#E74C3C', label: 'CTA Prominence Scorer (Gap 4)' },
+                            'ai':         { icon: '🤖', color: '#27AE60', label: 'AI Classification' },
+                            'journey':    { icon: '🗺️', color: '#F39C12', label: 'Journey Tester' },
+                          };
+                          const meta = srcMeta[src] || { icon: '📌', color: 'var(--text-secondary)', label: src };
+                          return (
+                            <div key={src} style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
+                              <span style={{ fontSize: 11 }}>{meta.icon}</span>
+                              <div style={{ flex: 1, height: 6, borderRadius: 99, background: 'var(--bg-secondary)', overflow: 'hidden' }}>
+                                <div style={{ height: '100%', width: `${Math.min(100, (count / dp.totalFindings) * 100)}%`, background: meta.color, borderRadius: 99, transition: 'width 0.5s ease' }} />
+                              </div>
+                              <span style={{ fontSize: 10, color: meta.color, fontWeight: 700, minWidth: 18, textAlign: 'right' }}>{count}</span>
+                              <span style={{ fontSize: 10, color: 'var(--text-muted)', minWidth: 140 }}>{meta.label}</span>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+                  {/* Phase Breakdown */}
+                  {(dp as any).findingsByPhase && Object.keys((dp as any).findingsByPhase).length > 0 && (
+                    <div>
+                      <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-muted)', marginBottom: 8, fontFamily: 'Geist Mono, monospace', textTransform: 'uppercase' }}>By Detection Phase</div>
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5 }}>
+                        {Object.entries((dp as any).findingsByPhase as Record<string, number>).sort(([,a],[,b]) => b - a).map(([phase, count]) => (
+                          <div key={phase} style={{
+                            display: 'flex', alignItems: 'center', gap: 5, padding: '4px 9px',
+                            borderRadius: 99, fontSize: 10, fontWeight: 700, fontFamily: 'Geist Mono, monospace',
+                            background: 'var(--bg-secondary)', border: '1px solid var(--border)', color: 'var(--text-secondary)',
+                          }}>
+                            <span style={{ color: 'var(--accent-purple)' }}>{count}</span>
+                            <span>{phase}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+                {/* Brignull Taxonomy Distribution */}
+                {dp.findings.some((f: any) => f.brignullPattern) && (
+                  <div style={{ marginTop: 14, paddingTop: 14, borderTop: '1px solid var(--border)' }}>
+                    <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-muted)', marginBottom: 8, fontFamily: 'Geist Mono, monospace', textTransform: 'uppercase' }}>Brignull Taxonomy Distribution</div>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5 }}>
+                      {(() => {
+                        const brignullCounts: Record<string, { count: number; number: number }> = {};
+                        for (const f of dp.findings) {
+                          const bp = (f as any).brignullPattern;
+                          const bn = (f as any).brignullNumber;
+                          if (bp) brignullCounts[bp] = { count: (brignullCounts[bp]?.count || 0) + 1, number: bn || 0 };
+                        }
+                        return Object.entries(brignullCounts).sort(([,a],[,b]) => b.count - a.count).map(([pattern, { count, number }]) => (
+                          <div key={pattern} style={{
+                            display: 'flex', alignItems: 'center', gap: 5, padding: '4px 9px',
+                            borderRadius: 99, fontSize: 10, fontWeight: 700,
+                            background: 'rgba(205,171,254,0.1)', border: '1px solid rgba(205,171,254,0.3)',
+                            color: 'var(--pillar-dp)',
+                          }}>
+                            {number > 0 && <span style={{ opacity: 0.6 }}>#{number}</span>}
+                            <span>{pattern}</span>
+                            <span style={{ background: 'rgba(205,171,254,0.2)', borderRadius: 99, padding: '0 5px', minWidth: 16, textAlign: 'center' }}>{count}</span>
+                          </div>
+                        ));
+                      })()}
+                    </div>
+                  </div>
+                )}
+              </div>
+            ) : null}
+
             {/* ── Audience-Segmented Report Toggle ── */}
             <div style={{ marginBottom: 20 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8, flexWrap: 'wrap' }}>
@@ -1321,13 +1408,33 @@ export default function AuditResultPage() {
             {/* Findings List */}
             <h3 style={{ fontSize: 14, fontWeight: 700, marginBottom: 12 }}>🕵️ Dark Pattern Findings ({dp.totalFindings})</h3>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-              {dp.findings.map((f: DPFinding) => (
+              {dp.findings.map((f: DPFinding) => {
+                const sourceMeta: Record<string, { icon: string; color: string; label: string }> = {
+                  'rule':       { icon: '📋', color: '#0091DA', label: 'DOM/NLP' },
+                  'ai-vision':  { icon: '👁️', color: '#9B59B6', label: 'Visual AI' },
+                  'temporal':   { icon: '⏱️', color: '#E67E22', label: 'Temporal' },
+                  'cta-scorer': { icon: '⚖️', color: '#E74C3C', label: 'CTA Scorer' },
+                  'ai':         { icon: '🤖', color: '#27AE60', label: 'AI' },
+                  'journey':    { icon: '🗺️', color: '#F39C12', label: 'Journey' },
+                };
+                const srcMeta = sourceMeta[(f as any).source] || sourceMeta['rule'];
+                return (
                 <div key={f.id} className="dp-finding-card">
                   {/* Header: always shown */}
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6, flexWrap: 'wrap' }}>
                     <span style={{ fontWeight: 700, fontSize: 13 }}>{f.title}</span>
                     <span className={`badge badge-${f.severity}`}>{f.severity}</span>
                     <span className="dp-category-badge">{catIcons[f.category] || '📋'} {f.category}</span>
+                    {/* Source badge */}
+                    <span style={{ fontSize: 9, padding: '2px 6px', borderRadius: 99, background: `${srcMeta.color}18`, color: srcMeta.color, border: `1px solid ${srcMeta.color}35`, fontWeight: 700, fontFamily: 'Geist Mono, monospace' }}>
+                      {srcMeta.icon} {srcMeta.label}
+                    </span>
+                    {/* Brignull badge */}
+                    {(f as any).brignullPattern && (
+                      <span style={{ fontSize: 9, padding: '2px 6px', borderRadius: 99, background: 'rgba(205,171,254,0.1)', color: 'var(--pillar-dp)', border: '1px solid rgba(205,171,254,0.25)', fontWeight: 600 }}>
+                        {(f as any).brignullNumber ? `#${(f as any).brignullNumber} ` : ''}{(f as any).brignullPattern}
+                      </span>
+                    )}
                     {(f as any).findingVerdict && (
                       <span style={{
                         fontSize: 9, padding: '2px 7px', borderRadius: 99, fontWeight: 700,
@@ -1338,18 +1445,49 @@ export default function AuditResultPage() {
                         {(f as any).findingVerdict === 'verdict' ? '✓ Verdict' : '⚑ Signal'}
                       </span>
                     )}
-                    {(f as any).detectionBasis && (
-                      <span style={{ fontSize: 9, padding: '2px 6px', borderRadius: 99, background: 'rgba(155,89,182,0.1)', color: '#9B59B6', border: '1px solid rgba(155,89,182,0.25)', fontWeight: 600 }}>
-                        {(f as any).detectionBasis}
+                    {/* Fix priority */}
+                    {(f as any).fixPriority && (
+                      <span style={{ fontSize: 9, fontWeight: 700, padding: '2px 7px', borderRadius: 99, fontFamily: 'Geist Mono, monospace', marginLeft: 'auto',
+                        background: (f as any).fixPriority === 'P0' ? 'rgba(232,0,45,0.12)' : (f as any).fixPriority === 'P1' ? 'rgba(254,113,65,0.12)' : 'rgba(217,119,6,0.1)',
+                        color: (f as any).fixPriority === 'P0' ? '#E8002D' : (f as any).fixPriority === 'P1' ? '#FE7141' : '#D97706',
+                        border: `1px solid ${(f as any).fixPriority === 'P0' ? 'rgba(232,0,45,0.3)' : (f as any).fixPriority === 'P1' ? 'rgba(254,113,65,0.3)' : 'rgba(217,119,6,0.25)'}`,
+                      }}>
+                        {(f as any).fixPriority}
                       </span>
                     )}
                   </div>
-                  <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginBottom: 8 }}>{f.description}</div>
+                  <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginBottom: 8, lineHeight: 1.5 }}>{f.description}</div>
+                  {/* Temporal T=0→T=30 diff strip */}
+                  {(f as any).source === 'temporal' && (f as any).temporalT0Value && (
+                    <div style={{ marginBottom: 8, padding: '6px 10px', borderRadius: 6, background: 'rgba(230,126,34,0.07)', border: '1px solid rgba(230,126,34,0.25)', fontSize: 11 }}>
+                      <span style={{ fontWeight: 700, color: '#E67E22', marginRight: 8 }}>⏱️ Temporal diff:</span>
+                      <span style={{ color: 'var(--text-secondary)' }}>T=0s: <code style={{ background: 'rgba(0,0,0,0.2)', padding: '1px 4px', borderRadius: 4 }}>{(f as any).temporalT0Value}</code></span>
+                      <span style={{ margin: '0 6px', color: 'var(--text-muted)' }}>→</span>
+                      <span style={{ color: 'var(--text-secondary)' }}>T=30s: <code style={{ background: 'rgba(0,0,0,0.2)', padding: '1px 4px', borderRadius: 4 }}>{(f as any).temporalT30Value}</code></span>
+                    </div>
+                  )}
+                  {/* CTA area ratio bar */}
+                  {(f as any).source === 'cta-scorer' && (f as any).ctaAreaRatio && (
+                    <div style={{ marginBottom: 8, padding: '6px 10px', borderRadius: 6, background: 'rgba(231,76,60,0.07)', border: '1px solid rgba(231,76,60,0.25)', fontSize: 11 }}>
+                      <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 5 }}>
+                        <span style={{ fontWeight: 700, color: '#E74C3C' }}>⚖️ CTA Prominence:</span>
+                        <span style={{ color: 'var(--text-secondary)' }}>"{(f as any).ctaPrimaryLabel}" is <strong style={{ color: '#E74C3C' }}>{(f as any).ctaAreaRatio?.toFixed(1)}×</strong> larger than "{(f as any).ctaSecondaryLabel}"</span>
+                      </div>
+                      <div style={{ display: 'flex', gap: 4, height: 8, borderRadius: 99, overflow: 'hidden' }}>
+                        <div style={{ flex: (f as any).ctaAreaRatio, background: '#E74C3C', borderRadius: '99px 0 0 99px' }} />
+                        <div style={{ flex: 1, background: '#27AE60', borderRadius: '0 99px 99px 0' }} />
+                      </div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 9, color: 'var(--text-muted)', marginTop: 3 }}>
+                        <span style={{ color: '#E74C3C' }}>Primary (accept)</span>
+                        <span style={{ color: '#27AE60' }}>Secondary (reject)</span>
+                      </div>
+                    </div>
+                  )}
 
                   {/* ── DEVELOPER VIEW ── */}
                   {audienceView === 'developer' && (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                      {/* Priority badge */}
+                      {/* Priority + effort row */}
                       <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
                         <span style={{
                           fontSize: 9, fontWeight: 700, padding: '2px 8px', borderRadius: 99, fontFamily: 'Geist Mono, monospace',
@@ -1357,23 +1495,43 @@ export default function AuditResultPage() {
                           color: f.severity === 'critical' ? '#E8002D' : f.severity === 'high' ? '#FE7141' : '#D97706',
                           border: `1px solid ${f.severity === 'critical' ? 'rgba(232,0,45,0.3)' : f.severity === 'high' ? 'rgba(254,113,65,0.3)' : 'rgba(217,119,6,0.3)'}`,
                         }}>
-                          {f.severity === 'critical' ? 'P0 — Fix immediately' : f.severity === 'high' ? 'P1 — Fix this sprint' : f.severity === 'medium' ? 'P2 — Fix this quarter' : 'P3 — Backlog'}
+                          {(f as any).fixPriority || (f.severity === 'critical' ? 'P0' : f.severity === 'high' ? 'P1' : 'P2')} — {f.severity === 'critical' ? 'Fix immediately' : f.severity === 'high' ? 'Fix this sprint' : f.severity === 'medium' ? 'Fix this quarter' : 'Backlog'}
                         </span>
-                        {f.regulation.map(r => <span key={r} className="dp-regulation-badge">{r}</span>)}
+                        {(f as any).estimatedEffort && (
+                          <span style={{ fontSize: 9, fontWeight: 700, padding: '2px 7px', borderRadius: 99, background: 'rgba(0,145,218,0.1)', color: '#0091DA', border: '1px solid rgba(0,145,218,0.25)', fontFamily: 'Geist Mono, monospace' }}>
+                            ⏳ Effort: {(f as any).estimatedEffort}
+                          </span>
+                        )}
+                        {(f as any).dsaArticle && (
+                          <span style={{ fontSize: 9, fontWeight: 600, padding: '2px 7px', borderRadius: 99, background: 'rgba(254,113,65,0.1)', color: '#FE7141', border: '1px solid rgba(254,113,65,0.25)' }}>
+                            DSA {(f as any).dsaArticle}
+                          </span>
+                        )}
                         <span style={{ fontSize: 10, color: 'var(--text-muted)', marginLeft: 'auto' }}>🎯 {f.confidence} confidence</span>
                       </div>
+                      {/* Regulation articles */}
+                      <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+                        {f.regulation.map(r => <span key={r} className="dp-regulation-badge">{r}</span>)}
+                      </div>
                       {/* Evidence */}
-                      <div style={{ fontSize: 11, color: 'var(--text-secondary)', padding: '5px 9px', background: 'rgba(0,0,0,0.18)', borderRadius: 6 }}>
+                      <div style={{ fontSize: 11, color: 'var(--text-secondary)', padding: '5px 9px', background: 'rgba(0,0,0,0.18)', borderRadius: 6, lineHeight: 1.5 }}>
                         <strong>Evidence:</strong> {f.evidence.summary}
+                        {f.evidence.details.length > 0 && (
+                          <div style={{ marginTop: 4, display: 'flex', flexDirection: 'column', gap: 2 }}>
+                            {f.evidence.details.slice(0, 3).map((d, i) => (
+                              <div key={i} style={{ fontSize: 10, color: 'var(--text-muted)' }}>• {d}</div>
+                            ))}
+                          </div>
+                        )}
                       </div>
                       {/* Code fix */}
                       {(f as any).developerFix ? (
                         <div style={{ padding: '6px 10px', borderRadius: 6, background: 'rgba(0,145,218,0.06)', border: '1px solid rgba(0,145,218,0.2)' }}>
                           <div style={{ fontSize: 9, fontWeight: 700, color: '#0091DA', marginBottom: 3, fontFamily: 'Geist Mono, monospace', textTransform: 'uppercase' }}>👨‍💻 Code Fix</div>
-                          <div style={{ fontSize: 11, color: 'var(--text-secondary)', lineHeight: 1.5 }}>{(f as any).developerFix}</div>
+                          <div style={{ fontSize: 11, color: 'var(--text-secondary)', lineHeight: 1.6 }}>{(f as any).developerFix}</div>
                         </div>
                       ) : (
-                        <div style={{ fontSize: 11, color: '#00BA8C' }}>💡 {f.recommendation}</div>
+                        <div style={{ fontSize: 11, color: '#00BA8C', lineHeight: 1.5 }}>💡 {f.recommendation}</div>
                       )}
                     </div>
                   )}
@@ -1384,7 +1542,7 @@ export default function AuditResultPage() {
                       <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
                         {(f as any).brignullPattern && (
                           <span style={{ fontSize: 9, fontWeight: 700, padding: '2px 8px', borderRadius: 99, background: 'rgba(205,171,254,0.12)', color: 'var(--pillar-dp)', border: '1px solid rgba(205,171,254,0.3)', fontFamily: 'Geist Mono, monospace' }}>
-                            🎭 Brignull: {(f as any).brignullPattern}
+                            🎭 Brignull {(f as any).brignullNumber ? `#${(f as any).brignullNumber}` : ''}: {(f as any).brignullPattern}
                           </span>
                         )}
                         <span className="dp-principle-badge">📐 {principleLabels[f.principle] || f.principle}</span>
@@ -1428,22 +1586,30 @@ export default function AuditResultPage() {
                           {(f as any).dsaArticle && <span className="dp-regulation-badge">{(f as any).dsaArticle}</span>}
                         </div>
                       </div>
-                      {/* Enforcement context */}
+                      {/* Enforcement context — use legalSummary if available */}
                       <div style={{ fontSize: 11, color: 'var(--text-secondary)', padding: '5px 9px', background: 'rgba(0,0,0,0.18)', borderRadius: 6, lineHeight: 1.5 }}>
-                        <strong>Finding summary:</strong> {f.description}
+                        {(f as any).legalSummary || f.description}
                       </div>
                       {/* Remediation framing */}
                       <div style={{ padding: '6px 10px', borderRadius: 6, background: 'rgba(0,186,140,0.05)', border: '1px solid rgba(0,186,140,0.2)' }}>
                         <div style={{ fontSize: 9, fontWeight: 700, color: '#00BA8C', marginBottom: 3, fontFamily: 'Geist Mono, monospace', textTransform: 'uppercase' }}>Recommended Remediation</div>
                         <div style={{ fontSize: 11, color: 'var(--text-secondary)', lineHeight: 1.5 }}>{f.recommendation}</div>
-                        <div style={{ fontSize: 10, color: 'var(--text-muted)', marginTop: 4 }}>
-                          {f.severity === 'critical' ? '⏱ Remediate within 30 days — critical regulatory risk' : f.severity === 'high' ? '⏱ Remediate within 90 days — high enforcement risk' : '⏱ Remediate within 6 months — compliance gap'}
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 6, flexWrap: 'wrap', gap: 4 }}>
+                          <span style={{ fontSize: 10, color: 'var(--text-muted)' }}>
+                            {f.severity === 'critical' ? '⏱ Remediate within 30 days — critical regulatory risk' : f.severity === 'high' ? '⏱ Remediate within 90 days — high enforcement risk' : '⏱ Remediate within 6 months — compliance gap'}
+                          </span>
+                          {(f as any).estimatedEffort && (
+                            <span style={{ fontSize: 9, fontWeight: 700, padding: '2px 7px', borderRadius: 99, background: 'rgba(0,186,140,0.12)', color: '#00BA8C', border: '1px solid rgba(0,186,140,0.25)', fontFamily: 'Geist Mono, monospace' }}>
+                              Effort: {(f as any).estimatedEffort}
+                            </span>
+                          )}
                         </div>
                       </div>
                     </div>
                   )}
                 </div>
-              ))}
+              );
+              })}
 
               {dp.totalFindings === 0 && (
                 <div className="glass-card" style={{ textAlign: 'center', padding: 40 }}>
