@@ -72,11 +72,41 @@ export async function runJourneyTests(
  * - Pre-ticked add-ons that appear during checkout
  * - Roach Motel (cancel requires more steps than subscribe)
  */
+/** Navigate a page with bot-detection fallback — uses cached HTML when live navigation fails */
+async function gotoWithFallback(
+  page: Page,
+  url: string,
+  htmlCache?: Map<string, string>
+): Promise<void> {
+  try {
+    await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30000 });
+    // Check if we got a bot challenge page
+    const html = await page.content().catch(() => '');
+    const isChallenge = html.length < 3000 || ['just a moment', 'checking your browser', 'cf-browser-verification', '_cf_chl_', 'enable javascript and cookies'].some(s => html.toLowerCase().includes(s));
+    if (isChallenge && htmlCache) {
+      const cached = htmlCache.get(url) || htmlCache.get(url.replace(/\/$/, '')) || htmlCache.get(url + '/');
+      if (cached && cached.length > 3000) {
+        await page.setContent(cached, { waitUntil: 'domcontentloaded' }).catch(() => {});
+      }
+    }
+  } catch {
+    if (htmlCache) {
+      const cached = htmlCache.get(url) || htmlCache.get(url.replace(/\/$/, '')) || htmlCache.get(url + '/');
+      if (cached && cached.length > 3000) {
+        await page.setContent(cached, { waitUntil: 'domcontentloaded' }).catch(() => {});
+        return;
+      }
+    }
+    throw new Error(`Navigation failed for ${url} and no cached HTML available`);
+  }
+}
+
 export async function runDarkPatternJourney(
   context: BrowserContext,
   baseUrl: string,
   journeySteps?: { url: string; label: string }[],
-  onProgress?: (msg: string) => void
+  onProgress?: (msg: string) => void,
+  htmlCache?: Map<string, string>
 ): Promise<{ journeyName: string; findings: DarkPatternJourneyFinding[] }> {
   const findings: DarkPatternJourneyFinding[] = [];
   const page = await context.newPage();
@@ -84,7 +114,7 @@ export async function runDarkPatternJourney(
   try {
     // Step 1: Load the base/product page and record initial cart state
     onProgress?.('Dark pattern journey: loading product page...');
-    await page.goto(baseUrl, { waitUntil: 'domcontentloaded', timeout: 30000 });
+    await gotoWithFallback(page, baseUrl, htmlCache);
     await page.waitForLoadState('networkidle', { timeout: 10000 }).catch(() => {});
 
     const initialCartState = await page.evaluate(() => {
@@ -101,17 +131,23 @@ export async function runDarkPatternJourney(
 
     // Step 2: Click Add to Cart / Buy if present and record what changed
     onProgress?.('Dark pattern journey: interacting with add-to-cart...');
-    const addToCartClicked = await page.evaluate(async () => {
-      const selectors = [
+    const addToCartClicked = await page.evaluate(() => {
+      // Note: :has-text() is Playwright-only — use native DOM selectors + text matching
+      const cssSels = [
         'button[id*="add-to-cart"]', 'button[name*="add-to-cart"]',
         'button[class*="add-to-cart"]', 'button[class*="addToCart"]',
         '[data-action="add-to-cart"]', 'input[value*="Add to Cart"]',
-        'button:has-text("Add to Cart")', 'button:has-text("Add to Bag")',
-        'button:has-text("Add to Basket")',
       ];
-      for (const sel of selectors) {
+      for (const sel of cssSels) {
         const btn = document.querySelector(sel) as HTMLElement | null;
         if (btn) { btn.click(); return true; }
+      }
+      // Text-matching fallback (native DOM, no Playwright pseudo-selectors)
+      const addTexts = ['add to cart', 'add to bag', 'add to basket', 'buy now', 'add to wishlist'];
+      const allBtns = Array.from(document.querySelectorAll('button, [role="button"]')) as HTMLElement[];
+      for (const btn of allBtns) {
+        const txt = (btn.textContent || '').trim().toLowerCase();
+        if (addTexts.some(t => txt.includes(t))) { btn.click(); return true; }
       }
       return false;
     });
@@ -168,7 +204,7 @@ export async function runDarkPatternJourney(
       for (const step of journeySteps) {
         stepCount++;
         try {
-          await page.goto(step.url, { waitUntil: 'domcontentloaded', timeout: 25000 });
+          await gotoWithFallback(page, step.url, htmlCache);
           await page.waitForTimeout(1500);
 
           const stepFindings = await page.evaluate((stepLabel: string) => {

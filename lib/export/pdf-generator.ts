@@ -277,8 +277,11 @@ export async function generatePdf(audit: AuditResult): Promise<Buffer> {
   }
 
   // ══════════════════════════════════════════════
-  // SECTION 2: SUMMARY OF FINDINGS
+  // SECTIONS 2-7: ACCESSIBILITY-ONLY SECTIONS
   // ══════════════════════════════════════════════
+  if (isA11y) {
+
+  // ── Section 2: Summary of Findings ──
   doc.addPage();
   y = 18;
   y = sectionHeading(doc, '2', 'Summary of Findings', y);
@@ -654,14 +657,17 @@ export async function generatePdf(audit: AuditResult): Promise<Buffer> {
     margin: { left: 20, right: 20 },
   });
 
+  } // end isA11y sections
+
   // ══════════════════════════════════════════════
-  // SECTION 8: DARK PATTERN FINDINGS (if DP pillar)
+  // DARK PATTERN FINDINGS (pillar-aware section num)
   // ══════════════════════════════════════════════
+  const dpSectionNum = isA11y ? '8' : '2';
   const dpFindings: DarkPatternFinding[] = (audit as any).pillarResults?.darkpatterns?.findings || [];
   if (isDP && dpFindings.length > 0) {
     doc.addPage();
     y = 18;
-    y = sectionHeading(doc, '8', 'Dark Pattern Findings', y);
+    y = sectionHeading(doc, dpSectionNum, 'Dark Pattern Findings', y);
 
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(9);
@@ -706,7 +712,7 @@ export async function generatePdf(audit: AuditResult): Promise<Buffer> {
     // Detailed dark pattern finding blocks
     doc.addPage();
     y = 18;
-    y = sectionHeading(doc, '8.1', 'Dark Pattern Detail Cards', y);
+    y = sectionHeading(doc, dpSectionNum + '.1', 'Dark Pattern Detail Cards', y);
 
     dpFindings.forEach((f, idx) => {
       if (y > ph - 80) { doc.addPage(); y = 18; }
@@ -794,6 +800,19 @@ export async function generatePdf(audit: AuditResult): Promise<Buffer> {
         const legalLines = doc.splitTextToSize(f.legalSummary.substring(0, 250), pw - 48);
         doc.text(legalLines, 24, y);
         y += legalLines.length * 3.5 + 3;
+      }
+
+      // Evidence screenshot
+      if ((f.evidence as any)?.screenshotDataUrl) {
+        const imgData: string = (f.evidence as any).screenshotDataUrl;
+        const imgW = pw - 44;
+        const imgH = Math.round(imgW * 0.45);
+        if (y + imgH + 14 > ph - 20) { doc.addPage(); y = 18; }
+        doc.setFont('helvetica', 'italic'); doc.setFontSize(7.5); doc.setTextColor(...K.midGrey);
+        doc.text(`Evidence Screenshot — ${(f.evidence as any).pageUrl || f.pageUrl || ''}`, 24, y);
+        y += 4;
+        try { doc.addImage(imgData, 'JPEG', 22, y, imgW, imgH, undefined, 'MEDIUM'); } catch (_) { /* skip if image fails */ }
+        y += imgH + 4;
       }
 
       // Separator

@@ -23,14 +23,23 @@ export interface PageIntentResult {
 
 // Ordered by descending score — first match wins
 const INTENT_RULES: { pattern: RegExp; score: number; label: PageIntentLabel; signal: string }[] = [
+  // ── Homepage (5) — always include; homepages have cookie banners, consent walls, urgency banners ──
+  // Matches full URLs like https://example.com or https://example.com/ (no path) OR /home, /index.html
+  { pattern: /^https?:\/\/[^/]+\/?$|\/home\/?$|\/index\.(?:html?|php|aspx?|cfm|jsp)$/i, score: 5, label: 'transactional-medium', signal: 'homepage — highest dark pattern density' },
+
   // ── Transactional Critical (8–10) ──
   { pattern: /\/(checkout|payment|pay|order-confirm|order-complete|purchase-complete)/i, score: 10, label: 'transactional-critical', signal: 'checkout/payment page' },
   { pattern: /\/(cancel|cancell?ation|unsubscribe|delete-account|close-account|deactivate)/i, score: 9,  label: 'transactional-critical', signal: 'cancellation/off-boarding page' },
   { pattern: /\/(billing|invoice|receipt|refund)/i,                                         score: 8,  label: 'transactional-critical', signal: 'billing/invoice page' },
 
-  // ── Transactional High (6–7) ──
+  // ── Transactional High (6–7) — Insurance/BFSI product & purchase pages ──
+  { pattern: /\/(get-quotes?|buy-online|buy-now|renew-policy|renew-now|apply-now|apply-online)/i, score: 8, label: 'transactional-critical', signal: 'insurance/BFSI buy/apply page' },
+  { pattern: /\/(quotes?|premium-calculator|calculate|calculator|compare-plans?|compare-quotes?)/i, score: 7, label: 'transactional-high', signal: 'insurance quote/compare page' },
   { pattern: /\/(pricing|plans?|subscribe|subscription|upgrade|downgrade|get-started)/i,    score: 7,  label: 'transactional-high', signal: 'pricing/plans page' },
   { pattern: /\/(cart|basket|bag|add-to-cart)/i,                                            score: 7,  label: 'transactional-high', signal: 'cart/basket page' },
+  { pattern: /\/(term-insurance|health-insurance|life-insurance|motor-insurance|car-insurance|bike-insurance|travel-insurance|home-insurance|critical-illness)/i, score: 6, label: 'transactional-high', signal: 'insurance product page' },
+  { pattern: /\/(mutual-fund|mf|sip|stocks?|demat|trading|credit-card|personal-loan|home-loan|business-loan)/i, score: 6, label: 'transactional-high', signal: 'financial product page' },
+  { pattern: /\/(insurance|policy|cover|coverage|enrol|enroll|nominee|rider|add-on)/i,      score: 6,  label: 'transactional-high', signal: 'insurance policy page' },
   { pattern: /\/(consent|cookie|cookie-settings|gdpr|ccpa|privacy-choices)/i,               score: 6,  label: 'transactional-high', signal: 'consent/cookie settings' },
 
   // ── Transactional Medium (4–5) ──
@@ -54,6 +63,9 @@ const DOM_BOOST_SIGNALS: { pattern: RegExp; boost: number; signal: string }[] = 
   { pattern: /(?:checkbox|radio)[^>]*checked/i,                              boost: 2, signal: 'pre-checked input detected' },
   { pattern: /(?:urgency|limited.time|only.*left|selling.fast)/i,           boost: 1, signal: 'urgency language in DOM' },
   { pattern: /(?:free.trial|cancel.anytime|no.commitment)/i,                 boost: 1, signal: 'subscription language in DOM' },
+  // Insurance/BFSI DOM boosts
+  { pattern: /(?:get.quote|buy.now|renew|premium|sum.assured|insured)/i,    boost: 2, signal: 'insurance transaction language in DOM' },
+  { pattern: /(?:₹|rs\.?|inr)\s*[\d,]+/i,                                   boost: 1, signal: 'INR pricing detected' },
 ];
 
 export function classifyPageIntent(url: string, html?: string): PageIntentResult {
@@ -115,7 +127,7 @@ export function sortByIntent(pages: { url: string; html?: string }[]): { url: st
 export function getTransactionalPages<T extends { url: string; html?: string }>(pages: T[]): T[] {
   const transactional = pages.filter(p => {
     const result = classifyPageIntent(p.url, p.html);
-    return result.score >= 4; // transactional-medium and above
+    return result.score >= 3; // informational and above — includes product/listing pages (scarcity patterns) and homepage
   });
   return transactional.length > 0 ? transactional : pages;
 }

@@ -456,6 +456,84 @@ export const DARK_PATTERN_RULES: DarkPatternRule[] = [
     description: 'The reject/decline button is smaller than WCAG 2.5.8 minimum touch target (24×24px), making it difficult for users with motor impairments.',
     severity: 'medium', regulation: ['EU-DSA', 'IN-DPDPA'], detect: 'visual',
   },
+
+  // ═══════════════════════════════════════════════════════════
+  // COOKIE CONSENT MANIPULATION (DP-CC)
+  // Covers CMP platform dark patterns: OneTrust, Cookiebot, etc.
+  // Mapped to: EDPB Guidelines 3/2022, ICO Cookie Guidance 2023
+  // ═══════════════════════════════════════════════════════════
+  {
+    id: 'DP-CC-01', category: 'interface-interference', principle: 'symmetry-of-choice',
+    title: 'No "Reject All" on Initial Consent Banner',
+    description: 'The cookie consent banner shows no "Reject All" button on the first screen. Users must navigate to "Manage Preferences" to find any rejection mechanism, creating asymmetric friction that violates EDPB Guidelines 3/2022 (Reject should be as easy as Accept) and the CJEU Planet49 ruling (Case C-673/17).',
+    severity: 'critical', regulation: ['EU-GDPR', 'EU-DSA', 'UK-PECR'], detect: 'dom',
+  },
+  {
+    id: 'DP-CC-02', category: 'sneaking', principle: 'informed-consent',
+    title: 'Non-Essential Cookies Pre-Enabled in Consent Manager',
+    description: 'Marketing, analytics, or advertising cookie categories are pre-enabled (toggled ON) by default in the consent preferences panel. GDPR Art. 7 and Recital 32 explicitly prohibit pre-ticked consent — every non-essential cookie category requires an affirmative opt-in action from the user.',
+    severity: 'critical', regulation: ['EU-GDPR', 'UK-PECR', 'US-CCPA'], detect: 'dom',
+  },
+  {
+    id: 'DP-CC-03', category: 'obstruction', principle: 'symmetry-of-choice',
+    title: 'Reject All Requires More Steps Than Accept All',
+    description: 'Accepting cookies requires one click while rejecting requires multiple steps: "Manage Preferences" → toggle each category → "Confirm My Choices". EDPB Guidelines 3/2022 require equivalent ease for consent and refusal — asymmetric friction is prohibited.',
+    severity: 'high', regulation: ['EU-GDPR', 'EU-DSA', 'UK-PECR'], detect: 'dom',
+  },
+  {
+    id: 'DP-CC-04', category: 'sneaking', principle: 'transparency',
+    title: '"Legitimate Interest" Abuse — Advertising Vendors Pre-Enabled',
+    description: 'The consent banner\'s "Legitimate Interest" section contains pre-enabled vendor toggles for advertising or targeting. Companies cannot invoke legitimate interest for marketing/advertising without explicit consent — violates GDPR Art. 6(1)(f), EDPB Opinion 08/2023, and multiple DPA enforcement decisions (CNIL, ICO, DPC).',
+    severity: 'critical', regulation: ['EU-GDPR', 'UK-ICO'], detect: 'dom',
+  },
+  {
+    id: 'DP-CC-05', category: 'interface-interference', principle: 'informed-consent',
+    title: 'Consent by Scrolling / Browsing — Implied Consent Language',
+    description: 'The consent notice implies that scrolling, clicking, or continuing to use the site constitutes cookie consent. GDPR Recital 32 and the CJEU Planet49 judgment explicitly prohibit silence, inactivity, or pre-ticked boxes as valid consent mechanisms.',
+    severity: 'critical', regulation: ['EU-GDPR', 'EU-DSA', 'UK-PECR'], detect: 'dom',
+  },
+  {
+    id: 'DP-CC-06', category: 'misdirection', principle: 'symmetry-of-choice',
+    title: 'Accept Button Appears Before Reject in DOM Order',
+    description: 'In the consent banner\'s DOM structure, the Accept button appears before the Reject button. For screen reader users, this means the biased option is encountered first. ICO and CNIL guidance require neutral or alphabetical ordering of consent options.',
+    severity: 'medium', regulation: ['EU-GDPR', 'EU-DSA'], detect: 'dom',
+  },
+
+  // ═══════════════════════════════════════════════════════════
+  // PRICING MANIPULATION (DP-PM)
+  // Annual billing obfuscation, plan anchoring, drip pricing
+  // Mapped to: FTC Act §5, EU Consumer Rights Directive, UK CPR
+  // ═══════════════════════════════════════════════════════════
+  {
+    id: 'DP-PM-01', category: 'misdirection', principle: 'transparency',
+    title: 'Annual Plan Shown as Monthly Equivalent (Billing Obfuscation)',
+    description: 'Pricing is advertised as a monthly rate (e.g., "£4/month") while actual billing is annual (£48 upfront). The true annual charge is displayed in smaller text or hidden in T&Cs. This billing obfuscation violates FTC Act §5 clear pricing requirements and EU Consumer Rights Directive Art. 6.',
+    severity: 'high', regulation: ['US-FTC', 'EU-DSA', 'UK-CPR', 'IN-CCPA'], detect: 'dom',
+  },
+  {
+    id: 'DP-PM-02', category: 'interface-interference', principle: 'symmetry-of-choice',
+    title: 'Plan Anchoring — Most Expensive Plan Marked as "Recommended"',
+    description: 'In a pricing comparison, the most expensive or most profitable plan is visually highlighted with a "Most Popular", "Best Value", or "Recommended" badge, exploiting the decoy effect and centre-stage bias to steer users away from cheaper options. Violates EU DSA Art. 25(1)(a) interface manipulation provisions.',
+    severity: 'high', regulation: ['EU-DSA', 'US-FTC', 'IN-CCPA'], detect: 'dom',
+  },
+  {
+    id: 'DP-PM-03', category: 'sneaking', principle: 'transparency',
+    title: 'Free Trial Requires Credit Card Without Clear Conversion Notice',
+    description: 'A "free trial" requires credit card entry but lacks a prominent, upfront notice of: what price the trial converts to, when it converts, and how to cancel before conversion. Violates FTC Click-to-Cancel Rule (2024), EU Consumer Rights Directive Art. 6(1)(h), and India Consumer Protection Act.',
+    severity: 'high', regulation: ['US-FTC', 'EU-DSA', 'IN-CCPA'], detect: 'dom',
+  },
+  {
+    id: 'DP-PM-04', category: 'sneaking', principle: 'transparency',
+    title: 'Drip Pricing — Mandatory Fees Added Only at Checkout',
+    description: 'The advertised price excludes mandatory fees (service fees, convenience charges, booking fees, environmental levies) that are only revealed at checkout. The final price significantly exceeds the advertised price. Violates FTC Act §5, EU Omnibus Directive, and Australian Consumer Law.',
+    severity: 'critical', regulation: ['US-FTC', 'EU-DSA', 'UK-CPR'], detect: 'dom',
+  },
+  {
+    id: 'DP-PM-05', category: 'obstruction', principle: 'symmetry-of-choice',
+    title: 'Cancellation Requires Phone Call or Email — Online Cancel Absent',
+    description: 'Users who subscribed online cannot cancel online. Cancellation requires calling a phone number or sending an email, adding significant friction. Violates the FTC Click-to-Cancel Rule (2024) which mandates that cancellation must be as simple as signup.',
+    severity: 'critical', regulation: ['US-FTC', 'EU-DSA', 'UK-CPR'], detect: 'dom',
+  },
 ];
 
 // ── Visual AI Rules (Phase 8 — GPT-4o Screenshot Analysis) ──
@@ -533,6 +611,65 @@ export const VISUAL_AI_RULES: DarkPatternRule[] = [
     description: 'A crossed-out "original" price is displayed prominently next to a sale price with no verification that the item was ever sold at that price. Creates false anchoring.',
     severity: 'high', regulation: ['US-FTC', 'UK-CPR', 'EU-DSA'], detect: 'visual',
   },
+
+  // ── India-Specific Rules (added post-PolicyBazaar audit, May 2026) ──
+  {
+    id: 'DP-MD-09', category: 'misdirection', principle: 'transparency',
+    title: 'Asterisked / Qualified Promotional Claim',
+    description: 'A headline price or discount claim (e.g. "Upto 91%* Off", "@₹10/day*", "Starting from ₹X*") is qualified by an asterisk whose conditions are buried in fine print or a tooltip. The headline figure is unrepresentative of the actual price most users will pay. Violates India CPA Dark Pattern Guidelines 2023, ASCI Guidelines, and FTC Act §5.',
+    severity: 'high', regulation: ['IN-CPA', 'IN-ASCI', 'US-FTC', 'IN-CCPA'], detect: 'textual',
+  },
+  {
+    id: 'DP-FA-07', category: 'forced-action', principle: 'informed-consent',
+    title: 'Phone Number / Mobile Gate Before Product Information',
+    description: 'A mobile phone number is required before the user can view any price, plan, or product information. The gate collects personal data as a condition of access to publicly available product details. Violates IN-DPDPA 2023 (data minimisation), India CPA Dark Pattern Guidelines 2023 (Forced Action), and FTC Act §5.',
+    severity: 'critical', regulation: ['IN-DPDPA', 'IN-CPA', 'US-FTC', 'IN-RBI'], detect: 'dom',
+    complianceExemptible: true,  // BFSI context: RBI KYC-linked underwriting may justify
+  },
+  {
+    id: 'DP-SP-05', category: 'social-pressure', principle: 'transparency',
+    title: 'Unverifiable Crore-Scale Trust Claim',
+    description: 'A claim of the form "X crore Indians trust us" or "trusted by X lakh families" is displayed without a verifiable source, audit date, or methodology. Scale is used to manufacture authority. Violates ASCI Guidelines and IN-CPA Guidelines 2023.',
+    severity: 'medium', regulation: ['IN-ASCI', 'IN-CPA', 'US-FTC'], detect: 'textual',
+  },
+  {
+    id: 'DP-CS-05', category: 'confirmshaming', principle: 'user-autonomy',
+    title: 'Family / Dependant Protection Guilt Framing',
+    description: 'A decline CTA or opt-out uses emotional guilt tied to family safety (e.g. "I don\'t want to protect my family", "I\'ll leave my family unprotected") — common in Indian insurance and fintech dark patterns. Violates IN-CPA Guidelines 2023 and ASCI Guidelines on emotional manipulation.',
+    severity: 'high', regulation: ['IN-CPA', 'IN-ASCI', 'EU-DSA'], detect: 'textual',
+  },
+
+  // ── Disguised Ads / Native Ad Deception ──
+  {
+    id: 'DP-DA-01', category: 'misdirection', principle: 'transparency',
+    title: 'Disguised Ads — Sponsored Content Without Clear Ad Label',
+    description: 'Sponsored, promoted, or paid placement content lacks a visible "Ad" or "Sponsored" label, making it indistinguishable from editorial content. Violates DSA Art. 26(2) which mandates clear identification of commercial communications, and FTC Endorsement Guides.',
+    severity: 'high', regulation: ['EU-DSA', 'US-FTC', 'IN-ASCI'], detect: 'dom',
+  },
+
+  // ── Bait & Switch ──
+  {
+    id: 'DP-BS-01', category: 'misdirection', principle: 'transparency',
+    title: 'Bait & Switch — Dismissal Link Redirects Externally',
+    description: 'A link or button labelled with dismissal language ("No thanks", "Skip", "Cancel", "Dismiss") actually navigates the user externally rather than dismissing the element. The visible text implies a safe exit but the action performs a different function. Violates EU DSA Art. 25(1)(a) and FTC Act §5 deceptive practices.',
+    severity: 'high', regulation: ['EU-DSA', 'US-FTC', 'IN-CPA'], detect: 'dom',
+  },
+
+  // ── Friend Spam / Contact Harvesting ──
+  {
+    id: 'DP-FS-01', category: 'privacy-zuckering', principle: 'informed-consent',
+    title: 'Friend Spam — Contact Harvesting Without Granular Consent',
+    description: 'A call-to-action invites users to import contacts or send social invites in a way that may access and message contacts without explicit per-contact consent. Violates GDPR Art. 6, IN-DPDPA 2023 data minimisation, and DSA Art. 25(3)(d).',
+    severity: 'high', regulation: ['EU-GDPR', 'EU-DSA', 'IN-DPDPA'], detect: 'dom',
+  },
+
+  // ── Hidden Costs ──
+  {
+    id: 'DP-HC-01', category: 'sneaking', principle: 'transparency',
+    title: 'Hidden Costs — Price Excludes Mandatory Fees or Tax',
+    description: 'A price is prominently displayed but excludes mandatory fees, taxes, or charges that are only disclosed later in the flow. The drip pricing technique violates EU Omnibus Directive Art. 6(1)(e), FTC Act §5, and UK Consumer Rights Act 2015.',
+    severity: 'high', regulation: ['EU-DSA', 'US-FTC', 'IN-CPA', 'IN-CCPA'], detect: 'dom',
+  },
 ];
 
 // ══════════════════════════════════════════════════════════════════
@@ -579,6 +716,16 @@ export const URGENCY_PATTERNS = [
   /invite.?only/i,
   /limited\s+access/i,
   /claim\s+(your|this)\s+(offer|deal|discount)/i,
+  // ── Indian insurance / fintech urgency (added post-PolicyBazaar audit) ──
+  /offer\s+(valid|available)\s+(till|until|only\s+till)\s+\d/i,
+  /offer\s+(valid|available)\s+till\s+(today|tomorrow|tonight|midnight|end\s+of\s+(day|month))/i,
+  /last\s+\d+\s+(spots?|seats?|slots?)\s+at\s+this\s+price/i,
+  /\d+\s+people\s+(bought|purchased|renewed|took)\s+this\s+(plan|policy|cover)\s+(today|this\s+week|this\s+month)/i,
+  /price\s+(increases?|goes?\s+up|hiked?)\s+(after|from)\s+(today|tomorrow|midnight|\d)/i,
+  /premium\s+(increases?|goes?\s+up|rises?)\s+(with\s+)?(age|time|delay)/i,
+  /cover\s+(decreases?|reduces?)\s+if\s+you\s+wait/i,
+  /get\s+insured\s+(before|now|today)\s+(you|it'?s?)\s+(turn|too\s+late|harder)/i,
+  /\d+\s+(lakh|crore|lac)\s+(people|families|customers|Indians)\s+(are|have)\s+(protected|insured|covered|trusted)/i,
 ];
 
 // ── Confirmshaming on decline/reject buttons ──
@@ -601,6 +748,13 @@ export const CONFIRMSHAMING_PATTERNS = [
   /no,?\s+i'?m?\s+not?\s+interested/i,
   /i'?m\s+okay\s+(paying|with|without)/i,
   /maybe\s+later\s*(,|\s)*i'?ll?\s+pay/i,
+  // ── Indian insurance confirmshaming — family/protection guilt framing ──
+  /i\s+(don'?t|do\s+not)\s+want\s+to\s+(protect|secure|safeguard|cover)\s+(my\s+)?(family|loved\s+ones?|children|parents?)/i,
+  /i'?ll?\s+(take\s+the\s+risk|leave\s+my\s+family\s+(unprotected|uncovered|vulnerable))/i,
+  /my\s+family\s+(can|will)\s+(manage|be\s+fine)\s+without\s+(cover|insurance|protection)/i,
+  /i\s+(don'?t\s+care|am\s+not\s+worried)\s+about\s+(my\s+)?(health|life|future|family)/i,
+  /no\s+thanks?,?\s+i'?ll?\s+(risk\s+it|stay\s+uninsured|skip\s+(the\s+)?(cover|protection))/i,
+  /i\s+(understand|accept)\s+(the\s+risk|that\s+my\s+family\s+(won'?t|will\s+not)\s+be\s+(covered|protected))/i,
 ];
 
 // ── Social pressure / fake proof ──
@@ -621,6 +775,13 @@ export const SOCIAL_PRESSURE_PATTERNS = [
   /\d+\s+(sold|bought)\s+(this\s+)?(week|month|today)/i,
   /people\s+are\s+buying\s+this\s+(fast|quickly|right\s+now)/i,
   /this\s+(product|item)\s+is\s+(hot|on\s+fire|flying\s+off)/i,
+  // ── Indian insurance / fintech social proof ──
+  /\d+\s*(?:\+\s*)?(?:lakh|crore|lac)\s+(?:Indians?|customers?|families|people|clients?)\s+(?:trust|insured\s+with|covered\s+by|rely\s+on|secured?|protected?|helped?)/i,
+  /\d+\s+people\s+(bought|purchased|took|renewed)\s+this\s+(plan|policy|cover|insurance)\s+(today|this\s+week|this\s+month|in\s+the\s+last)/i,
+  /recommended\s+by\s+\d+\s+(financial\s+(advisors?|experts?)|doctors?|experts?)/i,
+  /\d+[\d,]+\s+(happy|satisfied|protected|insured)\s+(customers?|families|policy\s+holders?)/i,
+  /(india'?s?\s+)?(no\.?\s*1|number\s+(one|1))\s+(insurance|insurer|aggregator|platform|app)/i,
+  /\d+\s+plans?\s+(sold|bought|taken)\s+(today|this\s+(hour|week|month))/i,
 ];
 
 // ── Confirmshaming + Fear-based language ──
@@ -698,4 +859,103 @@ export const FAKE_REVIEW_PATTERNS = [
   /award.?winning/i,
   /industry.?leading/i,
   /world.?class/i,
+];
+
+// ── Annual billing / billing obfuscation ──
+// Auditor signal: shows monthly price for annual plan without clear disclosure
+export const ANNUAL_BILLING_PATTERNS = [
+  /[\$£€₹]\s*[\d.]+\s*\/\s*mo(nth)?\s*(when\s+billed|billed|paid|charged|if\s+paid)\s+(annually|yearly|per\s+year|\/year)/i,
+  /[\$£€₹]\s*[\d.]+\s*(per|\/)\s*mo(nth)?\s*\(?billed\s+(annually|yearly)\)?/i,
+  /save\s+\d+%?\s+(with|on)\s+(annual|yearly|12.?month)\s+(billing|plan|subscription)/i,
+  /billed\s+(as|at)\s+[\$£€₹][\d.,]+\s+(per\s+year|annually|\/year|\/yr|per\s+annum)/i,
+  /(annual|yearly)\s+(billing|plan|subscription|commitment)\s+at\s+[\$£€₹][\d.]+/i,
+  /[\$£€₹][\d.]+\s+(billed\s+)?(per|\/)\s*(year|annum|yr|annually)/i,
+  /one\s+(annual|yearly)\s+(payment|charge|billing)\s+of\s+[\$£€₹][\d.]+/i,
+  /pay\s+(yearly|annually)\s+(and\s+)?(save|get|earn)\s+\d+%/i,
+  /annual\s+plan.*[\$£€₹][\d.]+.*\/mo/i,
+];
+
+// ── Subscription trap patterns ──
+// Auditor signal: hard-to-cancel, retention manipulation, pause dominance
+export const SUBSCRIPTION_TRAP_PATTERNS = [
+  /cancel\s+(by|via|through|using|with)\s+(call(ing)?|phone|email|chat|mail)/i,
+  /to\s+cancel.*please\s+(call|contact|email|write\s+to)/i,
+  /call\s+us\s+to\s+cancel/i,
+  /cancellations?\s+(must\s+be|should\s+be|can\s+only\s+be)\s+(made|processed|requested)\s+(by\s+phone|via\s+phone|over\s+the\s+phone|by\s+calling)/i,
+  /pause\s+(your|the|a)\s+(membership|subscription|account)\s+instead/i,
+  /(would\s+you\s+like\s+to\s+pause|before\s+you\s+cancel.*pause)/i,
+  /are\s+you\s+sure\s+you\s+want\s+to\s+cancel/i,  // multi-step cancel confirmation
+  /we'?re?\s+sorry\s+to\s+see\s+you\s+go.*offer/i,  // cancel-prevention offer
+  /special\s+(retention|loyalty|save)\s+offer/i,  // retention bribery
+  /you'?ll?\s+(lose|miss|forfeit|give\s+up)\s+.{0,50}(if\s+you\s+cancel|upon\s+cancellation)/i,
+  /cancel\s+at\s+end\s+of\s+(billing\s+period|current\s+period|cycle)/i,  // not immediate cancel
+  /no\s+refund\s+(after|once)\s+(cancel|cancellation)/i,
+];
+
+// ── Plan anchoring patterns ──
+// Auditor signal: most expensive plan visually or textually pushed as "recommended"
+export const PLAN_ANCHORING_PATTERNS = [
+  /most\s+popular\s+(plan|option|tier|choice)?/i,
+  /best\s+value\s+(plan|option|tier|choice)?/i,
+  /recommended\s+(plan|option|tier|for\s+(you|most|teams))?/i,
+  /perfect\s+for\s+most\s+(users|customers|teams|businesses)/i,
+  /chosen\s+by\s+\d+%?\s+(of\s+)?(our\s+)?(customers|users|teams)/i,
+  /upgrading\s+is\s+(worth\s+it|recommended)/i,
+  /get\s+(the\s+)?(most|maximum|best)\s+value/i,
+  /unlock\s+(full|all|premium|pro|advanced)\s+(features?|access|capabilities)/i,
+  /why\s+(go|stay)\s+(basic|free|starter)/i,  // steering away from free tier
+];
+
+// ── India: Asterisk/hash-qualified promotional claims ──
+// Auditor signal: "Upto X%* off", "Upto X%# off", "@₹10/day*", "Starting from ₹X*"
+// Note: PolicyBazaar and many Indian sites use # as footnote marker instead of *
+export const ASTERISK_PROMO_PATTERNS = [
+  /upto\s+[\d]+\s*%\s*[*#†]?/i,                                          // "upto 15%#", "upto 17%*", "upto 15%"
+  /discount\s+upto\s+[\d]+\s*%/i,                                         // "discount upto 15%"
+  /get\s+(exclusive\s+)?[\d]+\s*%\s+(off|discount)/i,                     // "get exclusive 15% discount"
+  /@\s*₹\s*[\d.,]+\s*(\/\s*(day|month|year))?\s*[*#†]?/i,
+  /starting\s+(from|at)\s+(?:just\s+)?₹\s*[\d.,]+/i,                     // "starting at just ₹16/day"
+  /only\s+₹\s*[\d.,]+\s*\/\s*(day|mo|year)\s*[*#†]?/i,
+  /from\s+₹\s*[\d.,]+\s*[*#†]?/i,
+  /as\s+low\s+as\s+₹\s*[\d.,]+\s*[*#†]?/i,
+  /plans?\s+(from|starting)\s+₹\s*[\d.,]+\s*[*#†]?/i,
+  /[*#†]\s*(t&c|terms?\s+apply|conditions?\s+apply|see\s+terms)/i,        // footnote marker + fine print
+  /[*#†]\s*(exclu?d(es?|ing)|subject\s+to|basis\s+of)/i,
+  /\d+[*#†]\s*for\s+buying\s+online/i,                                    // "15%# for buying online"
+];
+
+// ── India: Crore-scale / lakh-scale trust manufacturing ──
+// Auditor signal: "2 crore Indians trust us", "15 lakh Families Secured", "trusted by 1 lakh families"
+// Note: PolicyBazaar uses "Secured/Covered/Protected" not "trust/choose" — patterns broadened
+export const CRORE_TRUST_PATTERNS = [
+  /[\d.]+\s*(?:\+\s*)?(?:crore|lakh|lac)\s*\+?\s+(?:indians?|customers?|families?|people|users?|clients?)\s+(?:trust|choose|rely|use|secured?|covered?|protected?|helped?|insured?|serve[ds]?)/i,
+  /[\d.]+\s*(?:\+\s*)?(?:crore|lakh|lac)\s*\+?\s+(?:happy|satisfied|delighted|loyal)\s+(?:customers?|families?|users?)/i,
+  /[\d.]+\s*(?:\+\s*)?(?:crore|lakh|lac)\s+(?:claims?|policies?|lives?|insured)\s+(?:settled|issued|served|covered|secured)/i,
+  /(trusted|chosen|used|relied\s+on)\s+by\s+[\d.]+\s*(?:\+\s*)?(?:crore|lakh|lac)/i,
+  /[\d.]+\s*(?:crore|lakh|lac)\s*[+]?\s+(?:of\s+)?(?:life\s+cover|coverage|sum\s+assured)/i,  // "₹13,50,000 Crore of Life Cover"
+  /india'?s?\s+(#1|number\s+one|largest|most\s+trusted)\s+(insurer|bank|app|platform|provider)/i,
+  /(ranked|rated|voted)\s+(#1|no\.?\s*1)\s+(by|in)\s+india/i,
+  /[\d.]+\s*(million|billion)\s+(indians?|customers?)\s+(trust|rely|secured|covered)/i,
+];
+
+// ── India: Family / dependant protection guilt framing ──
+// Auditor signal: "I don't want to protect my family" on decline CTA
+export const FAMILY_GUILT_PATTERNS = [
+  /i\s+(don'?t\s+want|refuse|won'?t|choose\s+not)\s+to\s+(protect|secure|safeguard|insure)\s+(my\s+)?(family|dependants?|loved\s+ones?|children|spouse)/i,
+  /i'?ll?\s+(leave|risk\s+leaving|let)\s+(my\s+)?(family|dependants?|loved\s+ones?|spouse)\s+(unprotected|at\s+risk|without\s+cover)/i,
+  /no\s+thanks?,?\s+i\s+(don'?t\s+care|am\s+not\s+concerned)\s+about\s+(my\s+)?(family'?s?|children'?s?)\s+(future|protection|security|health)/i,
+  /i\s+(don'?t\s+want|refuse)\s+(life|health|term)\s+(insurance|cover|protection)\s+for\s+(my\s+)?(family|dependants?)/i,
+  /skip,?\s+my\s+family\s+(doesn'?t\s+need|can\s+manage\s+without)\s+(insurance|coverage|protection)/i,
+];
+
+// ── Cookie consent manipulation patterns ──
+// Auditor signal: implied consent, scroll-to-accept, ambiguous consent language
+export const COOKIE_CONSENT_PATTERNS = [
+  /by\s+(continuing|scrolling|browsing|clicking|using)\s+(this\s+)?(site|page|website|app),?\s*(you\s+)?(agree|accept|consent)/i,
+  /continuing\s+to\s+(use|browse|access|navigate)\s+(this\s+)?(site|page|website)\s+(means?|implies?|constitutes?)\s+(your\s+)?(agreement|acceptance|consent)/i,
+  /your\s+continued\s+use\s+(of\s+this\s+site\s+)?(constitutes|implies|means)\s+(your\s+)?(acceptance|agreement|consent)/i,
+  /by\s+(scrolling\s+past|clicking\s+anywhere|pressing\s+any\s+key)\s*(,\s*you)?\s*(are\s+)?(agreeing|accepting|consenting)/i,
+  /i\s+accept\s+(all\s+)?cookies/i,  // accept-only CTA without reject visible
+  /we\s+use\s+cookies\s+to\s+improve\s+your\s+experience/i,  // vague purpose statement
+  /reject\s+(all\s+)?non.?essential\s+cookies/i,  // hidden reject all (signal to check position)
 ];

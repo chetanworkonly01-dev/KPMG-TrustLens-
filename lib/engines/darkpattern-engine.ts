@@ -9,12 +9,31 @@ import {
   URGENCY_PATTERNS, SOCIAL_PRESSURE_PATTERNS,
   CONFIRMSHAMING_PATTERNS, FEAR_LANGUAGE_PATTERNS, TRICK_QUESTION_PATTERNS,
   AUTO_RENEWAL_PATTERNS, DRIP_PRICING_PATTERNS, FAKE_REVIEW_PATTERNS,
+  ANNUAL_BILLING_PATTERNS, SUBSCRIPTION_TRAP_PATTERNS, PLAN_ANCHORING_PATTERNS,
+  COOKIE_CONSENT_PATTERNS,
+  ASTERISK_PROMO_PATTERNS, CRORE_TRUST_PATTERNS, FAMILY_GUILT_PATTERNS,
 } from './darkpattern-rules';
 import { applyComplianceExemptions } from './compliance-exemptions';
 import type { TestLogEntry } from '../types/audit';
 
-interface PageData { url: string; title: string; }
+interface PageData { url: string; title: string; html?: string; }
 type ProgressFn = (entry: TestLogEntry) => void;
+
+// ── Bot/challenge page detection — returns true if the page content is a WAF challenge ──
+function isBotChallengedPage(html: string): boolean {
+  if (html.length < 3000) return true;
+  const lc = html.toLowerCase();
+  return (
+    lc.includes('just a moment') ||
+    lc.includes('checking your browser') ||
+    lc.includes('cf-browser-verification') ||
+    lc.includes('_cf_chl_') ||
+    lc.includes('enable javascript and cookies') ||
+    lc.includes('access denied') ||
+    lc.includes('attention required') ||
+    (lc.includes('<html') && !lc.includes('<body') && html.length < 5000)
+  );
+}
 
 // ── Main Entry Point ──
 export async function runDarkPatternAudit(
@@ -32,10 +51,50 @@ export async function runDarkPatternAudit(
   for (const pageData of pages) {
     let page: Page | null = null;
     let pageScreenshotDataUrl: string | undefined;
+    let usingCachedHtml = false;
     try {
       page = await context.newPage();
-      await page.goto(pageData.url, { waitUntil: 'domcontentloaded', timeout: 30000 });
-      await page.waitForTimeout(2000);
+
+      // ── Navigate with bot-detection fallback ──
+      try {
+        await page.goto(pageData.url, { waitUntil: 'domcontentloaded', timeout: 30000 });
+        await page.waitForTimeout(2000);
+        // Allow SPA hydration to complete — ensures React/Vue/Angular render dark pattern elements
+        await page.waitForLoadState('networkidle', { timeout: 5000 }).catch(() => {});
+
+        // Check if we got a bot challenge page
+        const liveHtml = await page.content().catch(() => '');
+        if (isBotChallengedPage(liveHtml) && pageData.html && !isBotChallengedPage(pageData.html)) {
+          log('DP-BOT', 'warn',
+            `  ⚠ WAF/bot challenge detected on ${pageData.url} — falling back to pre-crawled HTML for NLP/DOM scan`,
+            'Bot Detection Recovery', 'Page Load');
+          await page.setContent(pageData.html, { waitUntil: 'domcontentloaded' }).catch(() => {});
+          usingCachedHtml = true;
+        }
+      } catch (navErr) {
+        // Navigation failed — use cached HTML if available.
+        // IMPORTANT: navigate to about:blank first to settle the execution context
+        // before calling setContent — otherwise "Execution context was destroyed" error occurs.
+        if (pageData.html && !isBotChallengedPage(pageData.html)) {
+          log('DP-BOT', 'warn',
+            `  ⚠ Navigation failed for ${pageData.url} (${(navErr as Error).message}) — using pre-crawled HTML`,
+            'Bot Detection Recovery', 'Page Load');
+          // Settle the context first, then inject the cached HTML
+          await page.goto('about:blank', { waitUntil: 'domcontentloaded', timeout: 5000 }).catch(() => {});
+          await page.setContent(pageData.html, { waitUntil: 'domcontentloaded' }).catch(e => {
+            console.log(`[TrustLens:BOT] setContent error after about:blank: ${e}`);
+          });
+          usingCachedHtml = true;
+        } else {
+          throw navErr; // no fallback — rethrow to catch block
+        }
+      }
+
+      if (usingCachedHtml) {
+        log('DP-BOT', 'pass',
+          `  ✓ Using crawl-time HTML snapshot for pattern analysis (WAF evasion mode)`,
+          'Bot Detection Recovery', 'Page Load');
+      }
 
       // ── Capture viewport screenshot as physical evidence for all findings ──
       try {
@@ -81,7 +140,8 @@ export async function runDarkPatternAudit(
       log('DP-NLP-CS', 'running', '  → Confirmshaming (Brignull #8): Guilt-inducing decline copy ("No thanks, I hate saving")', 'Brignull #8 — Confirmshaming', 'Phase 3: NLP Scan');
       log('DP-NLP-LA', 'running', '  → Loss Aversion Framing: "Don\'t miss out", "Lose access to X" language patterns', 'Cognitive Bias — Loss Aversion', 'Phase 3: NLP Scan');
       log('DP-NLP-AB', 'running', '  → Authority Bias: Fake trust badges, unverified award logos, fabricated accreditations', 'Cognitive Bias — Authority Bias', 'Phase 3: NLP Scan');
-      const textFindings = await runTextPatternScans(page, pageData.url);
+      log('DP-NLP-IN', 'running', '  → India-Specific (IN-CPA/ASCI): Asterisk promos, crore-trust claims, family guilt framing', 'IN-CPA Dark Pattern Guidelines 2023 + ASCI Guidelines', 'Phase 3: NLP Scan');
+      const textFindings = await runTextPatternScans(page, pageData.url, usingCachedHtml ? pageData.html : undefined);
       for (const f of textFindings) {
         f.id = `dp-${++findingId}`;
         if (pageScreenshotDataUrl) f.evidence.screenshotDataUrl = pageScreenshotDataUrl;
@@ -129,6 +189,21 @@ export async function runDarkPatternAudit(
         findings.push(f);
       }
       log('DP-FLOW', flowFindings.length > 0 ? 'fail' : 'pass', `  ✓ Phase 6 complete — ${flowFindings.length} finding(s) detected`, 'Ethical Friction Score', 'Phase 6: Flow Analysis');
+
+      // ── Phase 9: Cookie Consent Management Platform (CMP) Deep Audit ──
+      log('DP-CMP', 'running', '━━━ Phase 9: Cookie Consent Management Platform Audit', 'EDPB Guidelines 3/2022 + ICO Cookie Guidance', 'Phase 9: CMP Audit');
+      log('DP-CMP-RJ', 'running', '  → Reject All Presence: Is Reject All on first screen? (EDPB equal ease requirement)', 'EDPB Guidelines 3/2022', 'Phase 9: CMP Audit');
+      log('DP-CMP-PR', 'running', '  → Pre-Enabled Categories: Marketing/analytics toggles enabled by default?', 'GDPR Art. 7 — Explicit Opt-In Required', 'Phase 9: CMP Audit');
+      log('DP-CMP-LI', 'running', '  → Legitimate Interest Abuse: Ad vendors pre-enabled under LI basis?', 'GDPR Art. 6(1)(f) + EDPB Opinion 08/2023', 'Phase 9: CMP Audit');
+      log('DP-CMP-SC', 'running', '  → Scroll/Browsing Consent: Implied consent via continued use?', 'GDPR Recital 32 — Explicit Active Consent Required', 'Phase 9: CMP Audit');
+      log('DP-CMP-DO', 'running', '  → DOM Order Bias: Accept placed before Reject in DOM structure?', 'ICO Guidance — Neutral Option Ordering', 'Phase 9: CMP Audit');
+      const cmpFindings = await runCookieConsentAudit(page, pageData.url);
+      for (const f of cmpFindings) {
+        f.id = `dp-${++findingId}`;
+        if (pageScreenshotDataUrl) f.evidence.screenshotDataUrl = pageScreenshotDataUrl;
+        findings.push(f);
+      }
+      log('DP-CMP', cmpFindings.length > 0 ? 'fail' : 'pass', `  ✓ Phase 9 complete — ${cmpFindings.length} CMP finding(s) detected`, 'EDPB + GDPR Cookie Compliance', 'Phase 9: CMP Audit');
 
       // ── Phase 8: Visual AI Dark Pattern Analysis (GPT-4o Vision) — always-on ──
       if (process.env.OPENAI_API_KEY) {
@@ -237,18 +312,84 @@ async function runDOMScans(page: Page, pageUrl: string): Promise<DarkPatternFind
   }
 
   // DP-FA-01: Login/registration wall blocking content
-  const loginWall = await page.$$eval(
-    '[class*="login-wall"], [class*="signup-wall"], [class*="registration-wall"], [class*="paywall"], [class*="gate"], [id*="login-modal"], [class*="auth-modal"]',
+  // Selector-based: class names, IDs, data attributes
+  const loginWallByClass = await page.$$eval(
+    '[class*="login-wall"], [class*="signup-wall"], [class*="registration-wall"], [class*="paywall"], [class*="gate"], [id*="login-modal"], [class*="auth-modal"], [data-testid*="paywall"], [data-testid*="login-gate"], [data-testid*="auth-wall"], [aria-label*="login required"], [aria-label*="sign in to"]',
     els => els.filter(el => {
       const style = window.getComputedStyle(el);
       return style.display !== 'none' && style.visibility !== 'hidden';
     }).map(el => el.outerHTML.substring(0, 200))
   ).catch(() => []);
 
+  // Fallback: detect high-z-index fixed/absolute overlays containing login/subscribe copy
+  const loginWallByPosition = loginWallByClass.length === 0
+    ? await page.evaluate(() => {
+        const results: string[] = [];
+        const els = document.querySelectorAll('div, section, aside, article');
+        for (const el of els) {
+          const style = window.getComputedStyle(el);
+          const zIndex = parseInt(style.zIndex || '0');
+          if (zIndex >= 50 &&
+              (style.position === 'fixed' || style.position === 'absolute') &&
+              style.display !== 'none' && style.visibility !== 'hidden') {
+            const text = (el.textContent || '').toLowerCase();
+            if (/log.?in|sign.?in|sign.?up|create.?account|subscribe to read|continue reading/i.test(text) &&
+                /(button|input|form)/i.test(el.innerHTML)) {
+              results.push(el.outerHTML.substring(0, 200));
+              if (results.length >= 2) break;
+            }
+          }
+        }
+        return results;
+      }).catch(() => [] as string[])
+    : [];
+
+  const loginWall = [...loginWallByClass, ...loginWallByPosition];
+
   if (loginWall.length > 0) {
     findings.push(makeFinding('DP-FA-01', pageUrl, loginWall[0], {
       summary: 'Login/registration wall detected blocking content access',
       details: [`${loginWall.length} blocking overlay(s) found`, `Element: ${loginWall[0]}`],
+    }));
+  }
+
+  // DP-FA-07: Phone number / mobile gate before product information
+  // Detects single-field phone-only forms that gate price/quote access — common in Indian BFSI
+  const phoneGateFound = await page.evaluate(() => {
+    const phoneInputs = document.querySelectorAll(
+      'input[type="tel"], input[name*="mobile"], input[name*="phone"], input[name*="mob"], ' +
+      'input[placeholder*="mobile"], input[placeholder*="phone number"], input[placeholder*="enter mobile"], ' +
+      'input[id*="mobile"], input[id*="phone"]'
+    );
+    for (const input of phoneInputs) {
+      const style = window.getComputedStyle(input);
+      if (style.display === 'none' || style.visibility === 'hidden') continue;
+      // Check if this phone field is the primary/only required gate (form has 1-2 visible fields)
+      const form = input.closest('form') || input.closest('[class*="form"]') || input.closest('section');
+      if (!form) continue;
+      const visibleInputs = form.querySelectorAll(
+        'input:not([type="hidden"]):not([type="submit"]):not([type="button"]):not([type="checkbox"])'
+      );
+      // Phone gate: 1 or 2 fields (phone + maybe name/DOB), leading to a quote/get-started CTA
+      if (visibleInputs.length <= 2) {
+        const formText = (form.textContent || '').toLowerCase();
+        const isGating = /get\s*(a\s*)?(quote|price|plan|premium)|see\s*(plans?|quotes?|price)|compare\s*plans?|check\s*(premium|price)|start|proceed|continue|next/i.test(formText);
+        if (isGating) {
+          return (form as HTMLElement).outerHTML?.substring(0, 300) || input.outerHTML.substring(0, 200);
+        }
+      }
+    }
+    return null;
+  }).catch(() => null);
+  if (phoneGateFound) {
+    findings.push(makeFinding('DP-FA-07', pageUrl, phoneGateFound, {
+      summary: 'Phone number gate: mobile required before price/quote information is shown',
+      details: [
+        'User must provide mobile number before accessing any product price or plan details',
+        'Collects personal data as a condition of viewing publicly available product information',
+        'Violates India DPDPA 2023 (data minimisation principle), IN-CPA Dark Pattern Guidelines 2023 (Forced Action category)',
+        'RBI Digital Lending Guidelines 2022 require upfront disclosure before data collection in lending context',
+      ],
     }));
   }
 
@@ -301,9 +442,9 @@ async function runDOMScans(page: Page, pageUrl: string): Promise<DarkPatternFind
     }));
   }
 
-  // DP-SU-01: Countdown timers
-  const countdowns = await page.$$eval(
-    '[class*="countdown"], [class*="timer"], [class*="clock"], [data-countdown], [class*="time-left"]',
+  // DP-SU-01: Countdown timers — class-name selectors + text-content fallback for styled-components/Tailwind/CSS modules
+  const countdowns: { html: string; text: string }[] = await page.$$eval(
+    '[class*="countdown"], [class*="timer"], [class*="clock"], [data-countdown], [class*="time-left"], [id*="countdown"], [id*="timer"], [aria-label*="time"], [aria-label*="countdown"]',
     els => els.filter(el => {
       const s = window.getComputedStyle(el);
       return s.display !== 'none' && el.textContent && /\d+\s*[:\-]\s*\d+/.test(el.textContent);
@@ -312,6 +453,26 @@ async function runDOMScans(page: Page, pageUrl: string): Promise<DarkPatternFind
       text: el.textContent?.trim()?.substring(0, 80) || '',
     }))
   ).catch(() => []);
+
+  // Fallback: text-content scan for HH:MM:SS / MM:SS patterns (catches SPAs with no class-name hints)
+  if (countdowns.length === 0) {
+    const textCountdowns = await page.evaluate(() => {
+      const results: { html: string; text: string }[] = [];
+      const candidates = document.querySelectorAll('div, span, p, strong, b, time');
+      for (const el of candidates) {
+        const text = el.textContent?.trim() || '';
+        if (/\b\d{1,2}\s*:\s*\d{2}(?:\s*:\s*\d{2})?\b/.test(text) && text.length < 60) {
+          const style = window.getComputedStyle(el);
+          if (style.display !== 'none' && style.visibility !== 'hidden') {
+            results.push({ html: el.outerHTML.substring(0, 200), text: text.substring(0, 80) });
+            if (results.length >= 3) break;
+          }
+        }
+      }
+      return results;
+    }).catch(() => [] as { html: string; text: string }[]);
+    countdowns.push(...textCountdowns);
+  }
 
   if (countdowns.length > 0) {
     findings.push(makeFinding('DP-SU-01', pageUrl, countdowns[0].html, {
@@ -433,8 +594,8 @@ async function runDOMScans(page: Page, pageUrl: string): Promise<DarkPatternFind
     els.filter(el => {
       if (el.children.length > 20) return false;
       const text = el.textContent || '';
-      const hasPrice = /\$[\d,]+|\d+\.\d{2}|£[\d,]+|€[\d,]+/.test(text);
-      const hasFeeLanguage = /excl\. tax|plus tax|before tax|taxes? not included|additional fees?|processing fee|service fee|booking fee/i.test(text);
+      const hasPrice = /[\$£€₹¥₩₦₺₴₸]\s*[\d,]+|\d+[\d,]*\.\d{2}/.test(text);
+      const hasFeeLanguage = /excl\.?\s*tax|plus\s*tax|before\s*tax|taxes?\s*not\s*included|additional\s*fees?|processing\s*fee|service\s*fee|booking\s*fee|GST\s*(extra|excluded|additional|not\s*included)|excl\.?\s*GST/i.test(text);
       return hasPrice && hasFeeLanguage && text.length < 500;
     }).slice(0, 3).map(el => ({ text: el.textContent?.trim().substring(0, 200) || '', html: el.outerHTML.substring(0, 250) }))
   ).catch(() => []);
@@ -591,7 +752,11 @@ async function runDOMScans(page: Page, pageUrl: string): Promise<DarkPatternFind
       if (el.children.length > 5) return false;
       const text = el.textContent || '';
       return /\d+\s+(people|others?|shoppers?)\s+(are\s+)?(viewing|watching|looking|in\s+their\s+cart)/i.test(text)
-          || /\d+\s+(bought|purchased|added)\s+(this\s+)?(today|in\s+the\s+last|this\s+hour)/i.test(text);
+          || /\d+\s+(bought|purchased|added)\s+(this\s+)?(today|in\s+the\s+last|this\s+hour)/i.test(text)
+          // Indian insurance/fintech live counter variants
+          || /\d+\s+(people|customers?|users?)\s+(bought|purchased|took|renewed)\s+(this\s+)?(plan|policy|cover|insurance)\s+(today|this\s+week|this\s+month|in\s+the\s+last)/i.test(text)
+          || /\d+\s+plans?\s+(sold|bought|taken)\s+(today|this\s+(hour|week|month))/i.test(text)
+          || /\d+\s+(people|customers?)\s+are\s+(currently\s+)?(viewing|comparing|checking)\s+(this\s+)?(plan|policy|quote)/i.test(text);
     }).slice(0, 5).map(el => ({ text: el.textContent?.trim().substring(0, 120) || '', html: el.outerHTML.substring(0, 200) }))
   ).catch(() => []);
   for (const lc of liveCounters) {
@@ -606,7 +771,11 @@ async function runDOMScans(page: Page, pageUrl: string): Promise<DarkPatternFind
     els.filter(el => {
       if (el.children.length > 3) return false;
       const text = el.textContent?.trim() || '';
-      return /best.?seller|#1\s+(rated|choice|pick|selling)|editor.?s\s+choice|top\s+rated|award.?winning|most\s+(popular|loved|chosen)/i.test(text) && text.length < 80;
+      return /best.?seller|#1\s+(rated|choice|pick|selling)|editor.?s\s+choice|top\s+rated|award.?winning|most\s+(popular|loved|chosen)/i.test(text)
+          // Indian fintech/insurance badge variants
+          || /\b(recommended|india'?s?\s+(no\.?\s*1|number\s+one)|claim\s+settled|highest\s+claim\s+settlement)\b/i.test(text)
+          || /\d+[\d,]*\s*(cr(ore)?|lakh?)\s*(Indians?|customers?|families)\s*(trust|insured)/i.test(text)
+          && text.length < 120;
     }).slice(0, 5).map(el => ({ text: el.textContent?.trim().substring(0, 80) || '', html: el.outerHTML.substring(0, 200) }))
   ).catch(() => []);
   for (const b of bestSellerBadges) {
@@ -628,6 +797,57 @@ async function runDOMScans(page: Page, pageUrl: string): Promise<DarkPatternFind
     findings.push(makeFinding('DP-MD-08', pageUrl, sp.html, {
       summary: `Strikethrough "original" price "${sp.text}" — reference pricing may be fabricated`,
       details: [`Crossed-out price: "${sp.text}"`, 'No evidence this item was sold at this "original" price', 'Violates FTC Act §5 and UK Consumer Protection Regulations'],
+    }));
+  }
+
+  // ── DP-MD-09: Asterisked / qualified promotional claim ──
+  // Catches "Upto 91%* Off", "@₹10/day*", "From ₹X*", "Starting at X*"
+  const asteriskedClaims = await page.$$eval(
+    'h1, h2, h3, h4, title, [class*="hero"], [class*="headline"], [class*="banner"], [class*="promo"], [class*="offer"], [class*="badge"], meta[name="description"]',
+    els => els.filter(el => {
+      const text = el.tagName === 'META'
+        ? (el.getAttribute('content') || '')
+        : (el.textContent || '');
+      // Asterisk qualifier on a price/discount claim
+      return /(?:upto|up\s+to|from|starting\s+(at|from)|as\s+low\s+as|@|just)\s*[\$£€₹¥]?\s*[\d,]+[%₹$]?\s*(?:\/\s*\w+)?\s*\*/i.test(text)
+          || /[\d,]+\s*%\s*off\s*\*/i.test(text)
+          || /[\$£€₹]\s*[\d,.]+\s*(?:\/\s*\w+)?\s*\*/i.test(text);
+    }).map(el => ({
+      text: (el.tagName === 'META' ? el.getAttribute('content') : el.textContent)?.trim().substring(0, 200) || '',
+      html: el.outerHTML.substring(0, 250),
+      tag: el.tagName.toLowerCase(),
+    }))
+  ).catch(() => [] as { text: string; html: string; tag: string }[]);
+  for (const ac of asteriskedClaims) {
+    findings.push(makeFinding('DP-MD-09', pageUrl, ac.html, {
+      summary: `Asterisked promotional claim: "${ac.text.substring(0, 100)}"`,
+      details: [
+        `Claim: "${ac.text}"`,
+        'Headline figure qualified by asterisk (*) — conditions buried in fine print',
+        'Actual price most users pay is significantly higher than the headline number',
+        'Violates India CPA Dark Pattern Guidelines 2023 (False Urgency / Basket Sneaking), ASCI Guidelines, and FTC Act §5',
+      ],
+      measurements: { tag: ac.tag },
+    }));
+  }
+
+  // ── DP-SP-04: Crore/lakh-scale unverifiable trust claim ──
+  const croreTrustClaims = await page.$$eval('*', els =>
+    els.filter(el => {
+      if (el.children.length > 5) return false;
+      const text = el.textContent || '';
+      return /\d+[\d.,]*\s*(cr(ore)?|lakh?|lac|million)\s*\+?\s*(Indians?|customers?|families|people|policy\s*holders?|users?)/i.test(text)
+          && text.length < 200;
+    }).slice(0, 3).map(el => ({ text: el.textContent?.trim().substring(0, 120) || '', html: el.outerHTML.substring(0, 200) }))
+  ).catch(() => []);
+  for (const ct of croreTrustClaims) {
+    findings.push(makeFinding('DP-SP-05', pageUrl, ct.html, {
+      summary: `Unverifiable scale trust claim: "${ct.text.substring(0, 80)}"`,
+      details: [
+        `Claim: "${ct.text}"`,
+        'No source, audit date, or methodology cited for this figure',
+        'Violates ASCI Guidelines and India CPA Dark Pattern Guidelines 2023',
+      ],
     }));
   }
 
@@ -658,6 +878,156 @@ async function runDOMScans(page: Page, pageUrl: string): Promise<DarkPatternFind
     findings.push(makeFinding('DP-SN-09', pageUrl, '', {
       summary: 'Free trial auto-converts to paid without clear pre-expiry cancellation instructions',
       details: ['Page mentions free trial with auto-conversion', 'No clear cancel-before instructions found', 'Violates FTC Click-to-Cancel Rule 2024 and EU Consumer Rights Directive Art. 6'],
+    }));
+  }
+
+  // ── DP-PM-01: Annual billing obfuscation — price shown monthly but charged annually ──
+  const annualBillingObfuscation = await page.evaluate(() => {
+    const results: { text: string; html: string }[] = [];
+    const els = document.querySelectorAll('*');
+    for (const el of els) {
+      if ((el as HTMLElement).offsetHeight === 0) continue; // skip hidden
+      const text = el.textContent?.trim() || '';
+      if (text.length < 300 && el.children.length <= 5) {
+        // Pattern: monthly price + "billed annually" or "per year" context
+        const hasMonthly = /[\$£€₹][\d.,]+\s*\/\s*mo(nth)?/i.test(text);
+        const hasAnnualBilling = /billed\s+(annually|yearly)|per\s+(year|annum)|\/\s*year/i.test(text);
+        if (hasMonthly && hasAnnualBilling) {
+          results.push({ text: text.substring(0, 150), html: el.outerHTML.substring(0, 200) });
+          if (results.length >= 3) break;
+        }
+      }
+    }
+    return results;
+  }).catch(() => [] as { text: string; html: string }[]);
+  for (const item of annualBillingObfuscation) {
+    findings.push(makeFinding('DP-PM-01', pageUrl, item.html, {
+      summary: `Billing obfuscation: monthly price shown for annual plan: "${item.text.substring(0, 80)}"`,
+      details: [
+        `Text: "${item.text}"`,
+        'Monthly equivalent price is advertised but user is billed annually (full year upfront)',
+        'Violates FTC Act §5 clear pricing — total charge must be prominently disclosed',
+      ],
+    }));
+  }
+
+  // ── DP-PM-02: Plan anchoring — "Most Popular" / "Best Value" badge on recommended plan ──
+  const planAnchoringBadges = await page.$$eval(
+    '[class*="popular"], [class*="recommended"], [class*="best-value"], [class*="best_value"], [class*="featured-plan"], [class*="highlight"], [data-plan*="popular"], [data-tier*="recommended"]',
+    els => els.filter(el => {
+      const s = window.getComputedStyle(el);
+      return s.display !== 'none' && s.visibility !== 'hidden';
+    }).map(el => ({
+      text: el.textContent?.trim().substring(0, 150) || '',
+      html: el.outerHTML.substring(0, 250),
+      classes: el.className.substring(0, 100),
+    }))
+  ).catch(() => [] as { text: string; html: string; classes: string }[]);
+
+  // Also text-content scan for pricing pages with anchoring copy
+  const anchoringTextEls = await page.$$eval('*', els =>
+    els.filter(el => {
+      if ((el as HTMLElement).children.length > 3) return false;
+      const text = el.textContent?.trim() || '';
+      return text.length < 100 &&
+        /most\s+popular|best\s+value|recommended|perfect\s+for\s+most|chosen\s+by\s+\d+%/i.test(text);
+    }).slice(0, 5).map(el => ({
+      text: el.textContent?.trim().substring(0, 100) || '',
+      html: el.outerHTML.substring(0, 200),
+      classes: el.className.substring(0, 100),
+    }))
+  ).catch(() => [] as { text: string; html: string; classes: string }[]);
+
+  const allAnchoringEls = [...planAnchoringBadges, ...anchoringTextEls];
+  if (allAnchoringEls.length > 0) {
+    findings.push(makeFinding('DP-PM-02', pageUrl, allAnchoringEls[0].html, {
+      summary: `Plan anchoring badge detected: "${allAnchoringEls[0].text.substring(0, 80)}"`,
+      details: [
+        ...allAnchoringEls.slice(0, 3).map(e => `Badge/text: "${e.text}"`),
+        'Exploits decoy effect and centre-stage bias to steer users toward premium plans',
+        'EU DSA Art. 25(1)(a) prohibits interface manipulation that biases user choice',
+      ],
+      measurements: { count: allAnchoringEls.length },
+    }));
+  }
+
+  // ── DP-PM-03: Free trial + credit card required ──
+  const trialCardRequired = await page.evaluate(() => {
+    const body = (document.body?.textContent || '').toLowerCase();
+    const hasFreeTrialCta = /start\s+(your\s+)?(free\s+trial|trial)|try\s+(for\s+)?free|free\s+trial/i.test(body);
+    const hasCardCapture = !!document.querySelector(
+      'input[name*="card"], input[name*="credit"], input[name*="payment"], ' +
+      'input[placeholder*="card"], input[placeholder*="credit card"], ' +
+      '[class*="stripe"], [class*="braintree"], [class*="card-element"]'
+    );
+    const hasNoCreditCardMsg = /no\s+(credit\s+card|payment)\s+(required|needed)/i.test(body);
+    return hasFreeTrialCta && hasCardCapture && !hasNoCreditCardMsg;
+  }).catch(() => false);
+  if (trialCardRequired) {
+    findings.push(makeFinding('DP-PM-03', pageUrl, '', {
+      summary: 'Free trial requires credit card without clear conversion notice',
+      details: [
+        'Page offers "free trial" but captures payment details upfront',
+        'No "no credit card required" reassurance found',
+        'FTC Click-to-Cancel Rule 2024: trial must clearly disclose conversion price, date, and cancel method',
+        'Users often forget to cancel and are auto-charged — a known subscription trap',
+      ],
+    }));
+  }
+
+  // ── DP-PM-05: Phone-only cancellation (more robust than DP-OB-06) ──
+  // Covered by DP-OB-06 above, but adding DP-PM-05 as pricing/subscription context
+  const subscriptionPhoneCancel = await page.evaluate(() => {
+    const body = (document.body?.textContent || '').toLowerCase();
+    const hasSub = /subscri(be|ption|bing)|membership|plan|billing/i.test(body);
+    const hasPhoneCancel = /cancel.*call\s+us|call.*to\s+cancel|cancel.*by\s+(phone|calling)|cancel.*email\s+(us|to)/i.test(body);
+    const hasOnlineCancel = /cancel\s+(your\s+)?(account|subscription|plan|membership)\s+(online|here|below|from\s+your)/i.test(body);
+    return hasSub && hasPhoneCancel && !hasOnlineCancel;
+  }).catch(() => false);
+  if (subscriptionPhoneCancel) {
+    findings.push(makeFinding('DP-PM-05', pageUrl, '', {
+      summary: 'Subscription cancellation requires phone or email — no online cancel option',
+      details: [
+        'Page mentions subscription/membership but cancellation requires calling or emailing',
+        'FTC Click-to-Cancel Rule (2024): online signup must allow online cancellation',
+        'This creates intentional friction — a classic Roach Motel dark pattern',
+      ],
+    }));
+  }
+
+  // ── DP-PM-04: Drip pricing — mandatory fees revealed at checkout only ──
+  const dripPricing = await page.evaluate(() => {
+    const body = (document.body?.textContent || '').toLowerCase();
+    // Only flag on checkout/payment/order pages — not on listing pages (reduces false positives)
+    const isCheckoutPage = /checkout|payment|order\s+summary|place\s+order|review\s+order|book(ing)?|confirm\s+order/i.test(
+      window.location.pathname + ' ' + document.title
+    );
+    if (!isCheckoutPage) return null;
+    const feePatterns = [
+      /service\s+fee[:\s]+[\$£€₹][\d.]+/i,
+      /convenience\s+(fee|charge)[:\s]+[\$£€₹][\d.]+/i,
+      /booking\s+fee[:\s]+[\$£€₹][\d.]+/i,
+      /processing\s+fee[:\s]+[\$£€₹][\d.]+/i,
+      /platform\s+fee[:\s]+[\$£€₹][\d.]+/i,
+      /environmental\s+(levy|surcharge|fee)[:\s]+[\$£€₹][\d.]+/i,
+      /handling\s+(fee|charge)[:\s]+[\$£€₹][\d.]+/i,
+    ];
+    const matched: string[] = [];
+    for (const p of feePatterns) {
+      const m = body.match(p);
+      if (m) matched.push(m[0].substring(0, 60));
+    }
+    return matched.length > 0 ? matched : null;
+  }).catch(() => null);
+  if (dripPricing && dripPricing.length > 0) {
+    findings.push(makeFinding('DP-PM-04', pageUrl, '', {
+      summary: `Drip pricing: ${dripPricing.length} mandatory fee(s) revealed at checkout`,
+      details: [
+        ...dripPricing.map(f => `Fee detected: "${f}"`),
+        'Mandatory fees not disclosed in initial pricing — only revealed at checkout',
+        'FTC Act §5 and EU Omnibus Directive require full price disclosure upfront',
+        'ACCC (Australia) and CMA (UK) have fined travel/entertainment sites for drip pricing',
+      ],
     }));
   }
 
@@ -777,23 +1147,68 @@ async function runVisualScans(page: Page, pageUrl: string): Promise<DarkPatternF
 // ═══════════════════════════════════════════════════════════
 // PHASE 3: Text/NLP Pattern Detection
 // ═══════════════════════════════════════════════════════════
-async function runTextPatternScans(page: Page, pageUrl: string): Promise<DarkPatternFinding[]> {
+async function runTextPatternScans(page: Page, pageUrl: string, rawHtml?: string): Promise<DarkPatternFinding[]> {
   const findings: DarkPatternFinding[] = [];
 
-  // Extract all visible text from interactive and content elements
-  const textElements = await page.$$eval(
-    'button, a, [role="button"], [class*="cta"], [class*="banner"], [class*="promo"], p, span, h1, h2, h3, h4, h5, h6, label, [class*="alert"], [class*="notice"]',
-    els => els
-      .filter(el => { const s = window.getComputedStyle(el); return s.display !== 'none' && s.visibility !== 'hidden'; })
-      .map(el => ({
-        text: el.textContent?.trim()?.substring(0, 200) || '',
-        tag: el.tagName.toLowerCase(),
-        html: el.outerHTML.substring(0, 200),
-        isButton: el.tagName === 'BUTTON' || el.getAttribute('role') === 'button',
-        isLink: el.tagName === 'A',
-      }))
-      .filter(el => el.text.length > 3)
-  ).catch(() => []);
+  type TextEl = { text: string; tag: string; html: string; isButton: boolean; isLink: boolean };
+  let textElements: TextEl[] = [];
+
+  // Fast path: when raw HTML is available (WAF evasion / setContent mode),
+  // parse text directly in Node.js — avoids empty-DOM issues from setContent without CSS.
+  if (rawHtml && rawHtml.length > 100) {
+    // Strip script/style/noscript blocks, then extract text nodes
+    const stripped = rawHtml
+      .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, ' ')
+      .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, ' ')
+      .replace(/<noscript[^>]*>[\s\S]*?<\/noscript>/gi, ' ')
+      .replace(/<!--[\s\S]*?-->/g, ' ');
+
+    // Extract tag+text pairs: captures the tag name and its inner text
+    const tagTextRe = /<(a|button|span|p|h[1-6]|label|li|td|div|strong|em|b|i)\b[^>]*>([\s\S]*?)<\/\1>/gi;
+    let m: RegExpExecArray | null;
+    const seen = new Set<string>();
+    while ((m = tagTextRe.exec(stripped)) !== null) {
+      const tag = m[1].toLowerCase();
+      // strip inner HTML tags to get plain text
+      const text = m[2].replace(/<[^>]+>/g, ' ').replace(/&[a-z]+;/g, ' ').replace(/\s+/g, ' ').trim();
+      if (text.length < 4 || text.length > 500 || seen.has(text)) continue;
+      seen.add(text);
+      textElements.push({
+        text: text.substring(0, 200),
+        tag,
+        html: m[0].substring(0, 200),
+        isButton: tag === 'button',
+        isLink: tag === 'a',
+      });
+    }
+
+    // Also capture bare text nodes (content between > and <) for broader coverage
+    const bareTextRe = />([^<]{5,200})</g;
+    while ((m = bareTextRe.exec(stripped)) !== null) {
+      const text = m[1].replace(/&[a-z]+;/g, ' ').replace(/\s+/g, ' ').trim();
+      if (text.length < 4 || text.length > 500 || seen.has(text)) continue;
+      seen.add(text);
+      textElements.push({ text: text.substring(0, 200), tag: 'text', html: `<text>${text.substring(0, 200)}</text>`, isButton: false, isLink: false });
+    }
+  }
+
+  // Live-page path: use Playwright DOM evaluation (no setContent / live page)
+  if (textElements.length < 10) {
+    const domElements = await page.$$eval(
+      'button, a, [role="button"], [class*="cta"], [class*="banner"], [class*="promo"], p, span, h1, h2, h3, h4, h5, h6, label, [class*="alert"], [class*="notice"]',
+      els => els
+        .map(el => ({
+          text: (el.textContent?.trim() || '').substring(0, 200),
+          tag: el.tagName.toLowerCase(),
+          html: el.outerHTML.substring(0, 200),
+          isButton: el.tagName === 'BUTTON' || el.getAttribute('role') === 'button',
+          isLink: el.tagName === 'A',
+        }))
+        .filter(el => el.text.length > 3)
+    ).catch(() => [] as TextEl[]);
+    if (domElements.length > textElements.length) textElements = domElements;
+  }
+
 
   // DP-SU-02/03: Urgency/scarcity language
   for (const el of textElements) {
@@ -822,9 +1237,28 @@ async function runTextPatternScans(page: Page, pageUrl: string): Promise<DarkPat
     }
   }
 
-  // DP-CS-01/02: Confirmshaming in button/link text
+  // DP-CS-05: Family/dependant protection guilt framing (Indian insurance pattern)
   for (const el of textElements) {
-    if ((el.isButton || el.isLink) && el.text.length > 5) {
+    for (const pattern of FAMILY_GUILT_PATTERNS) {
+      if (pattern.test(el.text)) {
+        findings.push(makeFinding('DP-CS-05', pageUrl, el.html, {
+          summary: `Family protection guilt framing: "${el.text.substring(0, 100)}"`,
+          details: [
+            `Text: "${el.text}"`,
+            'Uses family safety as emotional lever to shame users who decline',
+            'India CPA Dark Pattern Guidelines 2023 (Confirmshaming): prohibited notified dark pattern',
+            'ASCI Guidelines: advertising must not exploit guilt or fear to deny rational choice',
+          ],
+        }));
+        break;
+      }
+    }
+  }
+
+  // DP-CS-01: Confirmshaming in button/link text (Western-style guilt language)
+  for (const el of textElements) {
+    // DP-CS-01: Classic Western confirmshaming — buttons/links only
+    if (el.isButton || el.isLink) {
       for (const pattern of CONFIRMSHAMING_PATTERNS) {
         if (pattern.test(el.text)) {
           findings.push(makeFinding('DP-CS-01', pageUrl, el.html, {
@@ -861,6 +1295,118 @@ async function runTextPatternScans(page: Page, pageUrl: string): Promise<DarkPat
           }));
           break;
         }
+      }
+    }
+  }
+
+  // DP-PM-01: Annual billing obfuscation — NLP scan for text-based signals
+  for (const el of textElements) {
+    for (const pattern of ANNUAL_BILLING_PATTERNS) {
+      if (pattern.test(el.text)) {
+        findings.push(makeFinding('DP-PM-01', pageUrl, el.html, {
+          summary: `Annual billing obfuscation: "${el.text.substring(0, 80)}"`,
+          details: [
+            `Text: "${el.text}"`,
+            'Monthly price shown for annually-billed plan — true annual cost not prominently disclosed',
+            'Violates FTC Act §5 — total charge must be clear before purchase',
+          ],
+        }));
+        break;
+      }
+    }
+  }
+
+  // DP-PM-02: Plan anchoring — NLP scan for "most popular / best value" copy
+  for (const el of textElements) {
+    for (const pattern of PLAN_ANCHORING_PATTERNS) {
+      if (pattern.test(el.text)) {
+        findings.push(makeFinding('DP-PM-02', pageUrl, el.html, {
+          summary: `Plan anchoring copy: "${el.text.substring(0, 80)}"`,
+          details: [
+            `Text: "${el.text}"`,
+            'Exploits decoy effect — "Most Popular" badge steers users toward premium options',
+            'EU DSA Art. 25(1)(a) prohibits biasing user choice through interface design',
+          ],
+        }));
+        break;
+      }
+    }
+  }
+
+  // DP-PM-05: Subscription cancellation friction — NLP scan for phone/email cancel
+  for (const el of textElements) {
+    for (const pattern of SUBSCRIPTION_TRAP_PATTERNS) {
+      if (pattern.test(el.text)) {
+        findings.push(makeFinding('DP-PM-05', pageUrl, el.html, {
+          summary: `Subscription trap language: "${el.text.substring(0, 80)}"`,
+          details: [
+            `Text: "${el.text}"`,
+            'Cancellation friction or phone-only cancel detected in text',
+            'FTC Click-to-Cancel Rule 2024 requires online cancel for online signups',
+          ],
+        }));
+        break;
+      }
+    }
+  }
+
+  // DP-CC-05: Cookie consent by scrolling/browsing — NLP scan
+  for (const el of textElements) {
+    for (const pattern of COOKIE_CONSENT_PATTERNS) {
+      if (pattern.test(el.text)) {
+        findings.push(makeFinding('DP-CC-05', pageUrl, el.html, {
+          summary: `Implied consent via browsing: "${el.text.substring(0, 80)}"`,
+          details: [
+            `Text: "${el.text}"`,
+            'Implies consent through continued browsing — GDPR requires explicit opt-in',
+            'CJEU Planet49 (Case C-673/17): scrolling/browsing does NOT constitute valid consent',
+          ],
+        }));
+        break;
+      }
+    }
+  }
+
+  // DP-MD-09: Asterisk/hash-qualified promotional claims (India-specific: "Upto X%*", "@₹X/day#")
+  const seenAsteriskTexts = new Set<string>();
+  for (const el of textElements) {
+    if (seenAsteriskTexts.has(el.text)) continue;
+    for (const pattern of ASTERISK_PROMO_PATTERNS) {
+      if (pattern.test(el.text)) {
+        seenAsteriskTexts.add(el.text);
+        findings.push(makeFinding('DP-MD-09', pageUrl, el.html, {
+          summary: `Asterisk-qualified promotional claim: "${el.text.substring(0, 100)}"`,
+          details: [
+            `Text: "${el.text}"`,
+            'Headline discount/price is qualified by an asterisk or hash marker — conditions buried in fine print',
+            'India CPA Dark Pattern Guidelines 2023: bait advertising / misleading claims',
+            'ASCI Guidelines: unqualified superlatives and claims without substantiation are prohibited',
+          ],
+          measurements: { matchedPattern: pattern.source },
+        }));
+        break;
+      }
+    }
+  }
+
+  // DP-SP-05: Crore/lakh-scale unverifiable trust claims (India-specific: "2 crore Indians trust us")
+  const seenCroreTexts = new Set<string>();
+  for (const el of textElements) {
+    if (seenCroreTexts.has(el.text)) continue;
+    for (const pattern of CRORE_TRUST_PATTERNS) {
+      if (pattern.test(el.text)) {
+        seenCroreTexts.add(el.text);
+        findings.push(makeFinding('DP-SP-05', pageUrl, el.html, {
+          summary: `Unverifiable crore-scale trust claim: "${el.text.substring(0, 100)}"`,
+          details: [
+            `Text: "${el.text}"`,
+            'Scale figure (crore/lakh customers) displayed without verifiable source, audit date, or methodology',
+            'ASCI Guidelines 2023: testimonials/statistics must be capable of substantiation',
+            'IN-CPA Dark Pattern Guidelines 2023: social proof used to manufacture artificial authority',
+          ],
+          measurements: { matchedPattern: pattern.source },
+        }));
+        break;
       }
     }
   }
@@ -1169,6 +1715,132 @@ const RULE_AUDIENCE_MAP: Record<string, AudienceFixEntry> = {
     legalSummary: 'Contact harvesting without granular consent violates GDPR Art. 6 and many national spam regulations. Multiple social networks have been fined hundreds of millions for Friend Spam patterns.',
     estimatedEffort: 'L',
   },
+
+  // ── Cookie Consent Manipulation (DP-CC) ──
+  'DP-CC-01': {
+    brignullPattern: 'Interface Interference', brignullNumber: 12,
+    dsaArticle: 'Art. 25(1)(a)',
+    developerFix: 'Add a "Reject All" button to the initial consent banner at the same hierarchy level as "Accept All". For OneTrust: ensure #onetrust-reject-all-handler is visible on the first screen without requiring the user to click "Manage Preferences".',
+    designerFix: 'Place Reject All and Accept All buttons side-by-side on the first screen with identical styling. Neither option should require extra steps. The banner layout must present both choices equally.',
+    legalSummary: 'EDPB Guidelines 3/2022 §2.1.3: refusing consent must be as easy as giving it. CJEU Planet49 (C-673/17) prohibits requiring more steps to refuse than to accept. ICO, CNIL, and DPC have fined companies for this pattern.',
+    estimatedEffort: 'S',
+  },
+  'DP-CC-02': {
+    brignullPattern: 'Trick Questions', brignullNumber: 1,
+    dsaArticle: 'Art. 25(1)(b)',
+    developerFix: 'Set all non-essential cookie category toggles to OFF/unchecked by default in your CMP configuration. Marketing, analytics, and advertising categories must start disabled. Users must actively toggle them ON to consent.',
+    designerFix: 'Non-essential cookie toggles must be OFF by default. Use a clear visual OFF state (e.g., grey toggle) and require user to slide ON to consent. Never pre-populate with ON state.',
+    legalSummary: 'GDPR Art. 7 + Recital 32 prohibit pre-ticked consent. CNIL fined Google €150M and Meta €60M partly for this pattern. Consent must be freely given via unambiguous affirmative action — not opt-out.',
+    estimatedEffort: 'XS',
+  },
+  'DP-CC-03': {
+    brignullPattern: 'Roach Motel', brignullNumber: 3,
+    dsaArticle: 'Art. 25(1)(c)',
+    developerFix: 'Add a top-level "Reject All" button to the primary banner that completes rejection in one click — no Manage Preferences required. Implement parity: Accept All = 1 click, Reject All = 1 click.',
+    designerFix: 'Consent banner must offer symmetrical one-click options: [Reject All] [Accept All]. Any "Manage Preferences" option is additional and must not be the only path to rejection.',
+    legalSummary: 'EDPB Guidelines 3/2022 explicitly require that refusing consent is as easy as giving it. Multi-step rejection vs single-step acceptance is a documented dark pattern enforced by CNIL (Cookie Banner cases, 2022).',
+    estimatedEffort: 'S',
+  },
+  'DP-CC-04': {
+    brignullPattern: 'Trick Questions', brignullNumber: 1,
+    dsaArticle: 'Art. 25(2)(b)',
+    developerFix: 'Remove all advertising/targeting vendors from the "Legitimate Interest" section of your CMP. LI cannot serve as legal basis for marketing. These must move to the explicit consent section and be OFF by default.',
+    designerFix: 'The "Legitimate Interest" section should only contain genuinely necessary processing (security, fraud prevention). Advertising and analytics must be in the explicit consent section with pre-disabled toggles.',
+    legalSummary: 'GDPR Art. 6(1)(f) requires a balancing test — advertising rarely satisfies this. EDPB Opinion 08/2023 and Belgian APD IAB TCF enforcement (2022) established that LI cannot be used for advertising tracking.',
+    estimatedEffort: 'M',
+  },
+  'DP-CC-05': {
+    brignullPattern: 'Trick Questions', brignullNumber: 1,
+    dsaArticle: 'Art. 25(1)(b)',
+    developerFix: 'Remove any text or script that implies consent through browsing/scrolling. Require an explicit button click on the consent banner. Never auto-close or auto-accept on scroll, timer, or page interaction.',
+    designerFix: 'Consent banners must persist until the user actively accepts or rejects. Do not auto-dismiss. Remove all copy that implies scrolling = consent. Add clear explicit [Accept] / [Reject] options.',
+    legalSummary: 'GDPR Recital 32 explicitly: "silence, pre-ticked boxes, or inactivity should not constitute consent." CJEU Planet49 (C-673/17): browsing or scrolling is NOT valid consent.',
+    estimatedEffort: 'XS',
+  },
+  'DP-CC-06': {
+    brignullPattern: 'Interface Interference', brignullNumber: 12,
+    dsaArticle: 'Art. 25(1)(a)',
+    developerFix: 'Reorder DOM elements so Reject appears before or at the same position as Accept. In HTML: <button>Reject All</button> <button>Accept All</button>. Tab index should reach rejection option first or simultaneously.',
+    designerFix: 'Place Reject All and Accept All in neutral left-right order or alphabetical. For screen reader and keyboard users, the rejection option should be encountered no later than the acceptance option.',
+    legalSummary: 'DOM order bias creates accessibility-based dark pattern — screen reader users default to the first option encountered. ICO guidance and EDPB recommend neutral ordering for consent options.',
+    estimatedEffort: 'XS',
+  },
+
+  // ── Pricing Manipulation (DP-PM) ──
+  'DP-PM-01': {
+    brignullPattern: 'Hidden Costs', brignullNumber: 4,
+    dsaArticle: 'Art. 25(1)(a)',
+    developerFix: 'Display the full annual billing amount prominently alongside the monthly equivalent. Example: "£4/month — billed as £48/year". The annual charge must appear in the same font size as the monthly figure, not in grey fine print.',
+    designerFix: 'Pricing cards must show the actual billing amount and frequency prominently. Monthly equivalent is informational only — the true charge (annual) must be the primary displayed price.',
+    legalSummary: 'FTC Act §5 requires clear disclosure of total price including billing period. EU Consumer Rights Directive Art. 6(1)(e): total price including all charges must be disclosed before purchase. UK CPR 2008 Reg. 5 — misleading pricing.',
+    estimatedEffort: 'S',
+  },
+  'DP-PM-02': {
+    brignullPattern: 'Misdirection', brignullNumber: 5,
+    dsaArticle: 'Art. 25(1)(a)',
+    developerFix: 'Remove "Most Popular" or "Best Value" badges from pricing plans, or apply them based on genuine data. If used, all plans should have an equal badge or none. Avoid disproportionate visual size or highlight on the most expensive plan.',
+    designerFix: 'Apply equal visual weight to all pricing tiers. No plan should be visually "featured" without corresponding user-proven value. If a plan is genuinely most popular, provide a data citation.',
+    legalSummary: 'EU DSA Art. 25(1)(a) prohibits interface manipulation that biases user choices. "Most Popular" badges without verification exploit the decoy effect. FTC Act §5 — deceptive labeling without factual basis.',
+    estimatedEffort: 'S',
+  },
+  'DP-PM-03': {
+    brignullPattern: 'Forced Continuity', brignullNumber: 10,
+    dsaArticle: 'Art. 25(1)(c)',
+    developerFix: 'On free trial signup pages: show a prominent notice of trial end date, conversion price, and one-click cancel link. Send a pre-expiry email reminder. Implement FTC Click-to-Cancel compliant cancellation (16 CFR Part 425).',
+    designerFix: 'Design a "trial terms" callout box above the credit card form stating: trial duration, what you will be charged, when, and a cancel link. This must be the most visible element on the signup screen.',
+    legalSummary: 'FTC Click-to-Cancel Rule 2024 (16 CFR Part 425): trial terms must be clearly disclosed at signup. EU Consumer Rights Directive Art. 6(1)(h): total price and billing period are mandatory pre-contract disclosures. India CPA 2019 §17.',
+    estimatedEffort: 'S',
+  },
+  'DP-PM-04': {
+    brignullPattern: 'Hidden Costs', brignullNumber: 4,
+    dsaArticle: 'Art. 25(1)(b)',
+    developerFix: 'Show the full total price including all mandatory fees at the product listing stage. If fees vary, show a worst-case estimate with breakdown. Never add new mandatory fees at checkout that were not disclosed earlier.',
+    designerFix: 'Price displayed on product/listing pages must match checkout total (or show a clearly visible "+ fees" estimate). If there are mandatory service/booking fees, show them in the initial price display.',
+    legalSummary: 'FTC Act §5 deceptive drip pricing. EU Omnibus Directive (2021) Art. 6(1)(e): final price including all compulsory taxes and charges must be disclosed upfront. ACCC (Australia) has fined airlines for drip pricing.',
+    estimatedEffort: 'M',
+  },
+  'DP-PM-05': {
+    brignullPattern: 'Roach Motel', brignullNumber: 3,
+    dsaArticle: 'Art. 25(1)(c)',
+    developerFix: 'Implement a self-serve cancellation flow at /account/settings/cancel or equivalent. If signup is online, FTC 2024 mandates online cancellation in ≤ same steps as signup. Remove phone/email-only cancellation for digitally-signed users.',
+    designerFix: 'Add "Cancel Membership" or "Cancel Subscription" as a visible, first-level option in account settings. It must not be buried under help/support. The cancel flow should take no more than 2 screens.',
+    legalSummary: 'FTC Click-to-Cancel Rule 2024 (16 CFR Part 425): if signup was online, cancellation must be online with the same ease. EU Consumer Rights Directive Art. 9: right to cancel must be exercised without undue difficulty.',
+    estimatedEffort: 'M',
+  },
+
+  // ── India-Specific Rules ──
+  'DP-MD-09': {
+    brignullPattern: 'Hidden Costs', brignullNumber: 4,
+    dsaArticle: 'Art. 25(1)(b)',
+    developerFix: 'Remove asterisks from headline price/discount claims. Either state the actual price most users will pay in the headline, or clearly show qualifying conditions in the same font size and prominence as the headline. Tooltip or fine-print conditions do not satisfy transparency requirements.',
+    designerFix: 'Headline price or discount must represent the actual experience for a typical user. If conditions apply (minimum sum insured, specific policy term, new customers only), surface them in the same visual layer as the headline — not behind an asterisk or tooltip.',
+    legalSummary: 'India CPA Dark Pattern Guidelines 2023 (MCA notification): asterisked claims misrepresenting the actual price are a notified dark pattern. ASCI Guidelines Section 4: qualifying conditions must be prominently displayed. FTC Act §5: material conditions must be clear and conspicuous.',
+    estimatedEffort: 'S',
+  },
+  'DP-FA-07': {
+    brignullPattern: 'Forced Action', brignullNumber: 5,
+    dsaArticle: 'Art. 25(3)(d)',
+    developerFix: 'Remove the mobile gate from product/pricing pages. Phone collection is only appropriate at the quote or purchase step. Implement progressive disclosure: show product information freely, collect mobile only when required for personalised underwriting or OTP.',
+    designerFix: 'Product pages (plans, pricing, coverage) must be accessible without personal data entry. If a phone number is needed for personalised quotes, offer a "Browse Plans" mode with indicative pricing before the mobile gate.',
+    legalSummary: 'IN-DPDPA 2023 §4(1)(b): data collection must be limited to what is necessary. India CPA Dark Pattern Guidelines 2023 (Forced Action): conditioning access to publicly available product info on personal data = dark pattern. FTC Act §5: requiring unnecessary data as a condition of service is an unfair practice.',
+    estimatedEffort: 'M',
+  },
+  'DP-SP-05': {
+    brignullPattern: 'Social Proof Inflation', brignullNumber: 7,
+    dsaArticle: 'Art. 25(1)(e)',
+    developerFix: 'Either remove crore/lakh-scale trust claims or add a verifiable data citation (source, date, methodology). Example tooltip: "As per IRDAI Annual Report 2023-24, claims settled: X lakh." Never display large round numbers without auditable backing.',
+    designerFix: 'Trust scale claims must have a visible citation or verifiable source badge. Use actual audited figures (e.g., "Claim settlement ratio: 98.3% — IRDAI Annual Report 2023") rather than manufactured crore customer numbers.',
+    legalSummary: 'ASCI Guidelines 2023: scale or market leadership claims must be supported by verifiable data with disclosed source. India CPA Dark Pattern Guidelines 2023: unverifiable authority claims to manipulate consumer trust = dark pattern. FTC Endorsement Guides 16 CFR Part 255: trust claims must be truthful and verifiable.',
+    estimatedEffort: 'S',
+  },
+  'DP-CS-05': {
+    brignullPattern: 'Confirmshaming', brignullNumber: 8,
+    dsaArticle: 'Art. 25(1)(b)',
+    developerFix: 'Replace all family-guilt decline CTAs with neutral alternatives. Acceptable: "No thanks" / "Skip for now". Prohibited: "I don\'t want to protect my family" / "I\'ll risk leaving my family unprotected". Audit all modal and exit-intent copy for emotional manipulation language.',
+    designerFix: 'Decline CTAs must be neutral and non-judgmental. Never tie opt-out copy to family harm, financial risk, or personal inadequacy. Guilt-trip copy is never acceptable UX even if it improves conversion — it is explicitly prohibited under Indian and EU regulation.',
+    legalSummary: 'India CPA Dark Pattern Guidelines 2023 (Confirmshaming): guilt-based decline CTAs using family/safety framing are a notified dark pattern under the Consumer Protection Act 2019. ASCI Guidelines on emotional appeal: advertising must not exploit fear or guilt to deny rational choice. EU DSA Art. 25(1)(b): interface manipulation exploiting emotional vulnerabilities is prohibited.',
+    estimatedEffort: 'XS',
+  },
 };
 
 // ── Per-category fallback audience content ──
@@ -1188,7 +1860,7 @@ const CATEGORY_AUDIENCE_FALLBACK: Record<string, Pick<AudienceFixEntry, 'brignul
 function makeFinding(
   ruleId: string, pageUrl: string, elementHtml: string, evidence: DarkPatternEvidence
 ): DarkPatternFinding {
-  const rule = DARK_PATTERN_RULES.find(r => r.id === ruleId);
+  const rule = DARK_PATTERN_RULES.find(r => r.id === ruleId) ?? VISUAL_AI_RULES.find(r => r.id === ruleId);
   if (!rule) throw new Error(`Unknown dark pattern rule: ${ruleId}`);
 
   // Signal vs Verdict model — DOM/visual = verdict (provable), AI/text = signal (needs review)
@@ -1316,7 +1988,22 @@ function buildResult(
     weightedSum += principleScores[p] * w;
     totalWeight += w;
   }
-  const ethicsScore = totalWeight > 0 ? Math.round(weightedSum / totalWeight) : 100;
+  let ethicsScore = totalWeight > 0 ? Math.round(weightedSum / totalWeight) : 100;
+
+  // ── Coverage Confidence Penalty ──
+  // A site audited at <10% page coverage with no interaction simulation cannot credibly
+  // score 100. Cap the score and surface an explicit warning.
+  // NOTE: pagesScanned is passed in; we don't have totalDiscovered here but we can
+  // signal low-interaction confidence via finding count vs page count ratio.
+  const avgFindingsPerPage = pagesScanned > 0 ? findings.length / pagesScanned : 0;
+  // If 0 findings on multiple pages of a transactional/BFSI site — apply confidence cap
+  // This prevents false-perfect scores masking interaction-layer dark patterns
+  const coverageCapApplied = findings.length === 0 && pagesScanned >= 3;
+  if (coverageCapApplied) {
+    // Cap at 82 — reflects "no issues found in static scan, but funnel not verified"
+    // Auditor must manually verify transactional flows before full trust score is issued
+    ethicsScore = Math.min(ethicsScore, 82);
+  }
 
   // Consent integrity: focused on informed-consent + symmetry
   const consentIntegrity = Math.round(
@@ -1348,6 +2035,8 @@ function buildResult(
       f.source === 'ai-vision'    ? 'Phase 8: Visual AI'       :
       f.source === 'temporal'     ? 'Gap 3: Temporal'           :
       f.source === 'cta-scorer'   ? 'Gap 4: CTA Prominence'     :
+      /DP-CC/.test(f.ruleId)      ? 'Phase 9: CMP Audit'        :
+      /DP-PM/.test(f.ruleId)      ? 'Phase 1: DOM Scan'         :
       /DP-SN|DP-OB|DP-FA|DP-NG|DP-PZ/.test(f.ruleId) ? 'Phase 1: DOM Scan'       :
       /DP-IF/.test(f.ruleId)      ? 'Phase 2: Visual Scan'      :
       /DP-SU|DP-SP|DP-CS|DP-MD|DP-BS|DP-DA|DP-FS|DP-HC/.test(f.ruleId) ? 'Phase 3: NLP Scan' :
@@ -1374,6 +2063,8 @@ function buildResult(
     findingsByPhase,
     complianceExemptions,
     complianceExemptionsByCategory,
+    coverageCapApplied,
+    funnelVerified: false, // static scan only — set to true when interaction engine runs
   };
 }
 
@@ -1776,6 +2467,192 @@ ${ruleDescriptions}
       legalSummary:    audienceFix?.legalSummary,
       estimatedEffort: audienceFix?.estimatedEffort,
     });
+  }
+
+  return findings;
+}
+
+// ═══════════════════════════════════════════════════════════
+// PHASE 9: Cookie Consent Management Platform (CMP) Audit
+// Detects known CMPs (OneTrust, Cookiebot, Didomi, etc.) and
+// audits them against EDPB Guidelines 3/2022 dark pattern rules:
+// — Equal ease for accept and reject
+// — No pre-ticked non-essential categories
+// — No legitimate interest abuse
+// — No consent by scrolling/inactivity
+// ═══════════════════════════════════════════════════════════
+async function runCookieConsentAudit(page: Page, pageUrl: string): Promise<DarkPatternFinding[]> {
+  const findings: DarkPatternFinding[] = [];
+
+  // ── Step 1: Detect CMP platform ──
+  const cmpInfo = await page.evaluate(() => {
+    type CmpDef = { name: string; signature: string; rejectSel: string; prefSel: string };
+    const cmps: CmpDef[] = [
+      { name: 'OneTrust',     signature: '#onetrust-consent-sdk, .ot-sdk-container, #onetrust-banner-sdk',  rejectSel: '#onetrust-reject-all-handler',             prefSel: '#onetrust-pc-btn-handler' },
+      { name: 'Cookiebot',    signature: '#CybotCookiebotDialog, .CybotCookiebotDialogBody',                 rejectSel: '#CybotCookiebotDialogBodyButtonDecline',    prefSel: '#CybotCookiebotDialogBodyLevelButtonCustomize' },
+      { name: 'CookiePro',    signature: '[class*="optanon-"], #optanon-popup-wrapper, #optanon',             rejectSel: '[class*="optanon-reject"]',                 prefSel: '[class*="optanon-show-settings"]' },
+      { name: 'Didomi',       signature: '#didomi-host, #didomi-notice, .didomi-popup',                      rejectSel: '#didomi-notice-disagree-button',            prefSel: '#didomi-notice-learn-more-button' },
+      { name: 'Usercentrics', signature: '[data-testid*="uc-"], #usercentrics-cmp',                          rejectSel: '[data-testid="uc-deny-all-button"]',        prefSel: '[data-testid="uc-customize-button"]' },
+      { name: 'CookieYes',    signature: '[class*="cky-"], #cky-consent, .cky-consent-container',            rejectSel: '.cky-btn-reject, [data-cky-tag="reject-button"]', prefSel: '.cky-btn-customize' },
+      { name: 'Quantcast',    signature: '#qc-cmp2-container, [class*="qc-cmp"]',                           rejectSel: '[class*="qc-cmp2-buttons"] button:first-child', prefSel: '' },
+      { name: 'TrustArc',     signature: '[class*="truste_"], #truste-consent-track',                        rejectSel: '[class*="truste_notallow"]',                prefSel: '' },
+      { name: 'Osano',        signature: '.osano-cm-window, [class*="osano-"]',                              rejectSel: '.osano-cm-deny',                           prefSel: '.osano-cm-manage' },
+      { name: 'Termly',       signature: '#termly-code-snippet-support, [class*="termly-"]',                 rejectSel: '[class*="termly-"][class*="deny"]',         prefSel: '[class*="termly-"][class*="prefer"]' },
+    ];
+    for (const cmp of cmps) {
+      const el = document.querySelector(cmp.signature);
+      if (el) {
+        const style = window.getComputedStyle(el);
+        if (style.display !== 'none' && style.visibility !== 'hidden') {
+          const rejectEl = cmp.rejectSel ? document.querySelector(cmp.rejectSel) : null;
+          const rejectVisible = rejectEl
+            ? (() => { const s = window.getComputedStyle(rejectEl); return s.display !== 'none' && s.visibility !== 'hidden'; })()
+            : false;
+          return { detected: true, name: cmp.name, rejectSel: cmp.rejectSel, prefSel: cmp.prefSel, rejectVisible };
+        }
+      }
+    }
+    // Generic fallback
+    const generic = document.querySelector(
+      '[class*="cookie-banner"], [class*="cookie-notice"], [class*="consent-banner"], ' +
+      '[id*="cookie-consent"], [id*="gdpr-consent"], [role="dialog"][aria-label*="cookie"]'
+    );
+    if (generic && window.getComputedStyle(generic).display !== 'none') {
+      const allBtns = Array.from(generic.querySelectorAll('button, a[role="button"]')) as HTMLElement[];
+      const rejectBtn = allBtns.find(b => /reject|decline|deny|no\s*thanks?/i.test(b.textContent || ''));
+      return { detected: true, name: 'Generic CMP', rejectSel: '', prefSel: '', rejectVisible: !!rejectBtn };
+    }
+    return { detected: false, name: '', rejectSel: '', prefSel: '', rejectVisible: false };
+  }).catch(() => ({ detected: false, name: '', rejectSel: '', prefSel: '', rejectVisible: false }));
+
+  if (!cmpInfo.detected) return findings;
+
+  // ── Check 1: No "Reject All" on first screen ──
+  if (!cmpInfo.rejectVisible) {
+    findings.push(makeFinding('DP-CC-01', pageUrl, '', {
+      summary: `${cmpInfo.name}: No "Reject All" button visible on initial consent banner`,
+      details: [
+        `CMP Detected: ${cmpInfo.name}`,
+        cmpInfo.rejectSel
+          ? `Reject selector "${cmpInfo.rejectSel}" not visible on first screen`
+          : 'No Reject All button found in initial banner',
+        'EDPB Guidelines 3/2022 — Reject must be as easy as Accept (equal prominence, equal steps)',
+        'CJEU Planet49 (C-673/17): refusal must not require more steps than acceptance',
+      ],
+    }));
+    // ── Check 1b: If Accept=1 click, Reject requires Manage Prefs → DP-CC-03 ──
+    if (cmpInfo.prefSel) {
+      findings.push(makeFinding('DP-CC-03', pageUrl, '', {
+        summary: `${cmpInfo.name}: Accept=1 click, Reject requires navigating to Manage Preferences`,
+        details: [
+          'Accepting all cookies: 1 click on the banner',
+          'Rejecting all cookies: click "Manage Preferences" → configure each category → save',
+          'EDPB Guidelines 3/2022 §2.1.3: equivalent ease of rejection is legally required',
+          'This asymmetric click-depth is cited in ICO, CNIL, and DPC enforcement decisions',
+        ],
+      }));
+    }
+  }
+
+  // ── Check 2: Non-essential categories pre-enabled in consent preferences ──
+  const preEnabledCategories = await page.evaluate(() => {
+    const selectors = [
+      '.ot-tgl input:checked',                              // OneTrust
+      '.CybotCookiebotDialogBodyLevelButton:not([disabled]):checked', // Cookiebot
+      '[class*="category-switch"] input:checked',
+      '[class*="purpose-item"] input:checked',
+      '[aria-label*="statistics"][aria-checked="true"]',
+      '[aria-label*="marketing"][aria-checked="true"]',
+      '[aria-label*="analytics"][aria-checked="true"]',
+      '[data-purpose*="ANALYTICS"][aria-checked="true"]',
+      '[data-purpose*="MARKETING"][aria-checked="true"]',
+    ].join(', ');
+    const results: string[] = [];
+    try {
+      document.querySelectorAll(selectors).forEach(el => {
+        const container = el.closest('[class*="category"], [class*="purpose"], li');
+        const label = container?.querySelector('[class*="title"], [class*="name"], h3, h4, label')?.textContent?.trim()
+          || el.getAttribute('aria-label') || el.getAttribute('name') || el.id || '';
+        if (/market|analyt|advertis|target|statistic|personali|social|partner|third.?party/i.test(label)) {
+          results.push(label.substring(0, 60));
+        }
+      });
+    } catch { /* skip */ }
+    return results;
+  }).catch(() => [] as string[]);
+
+  if (preEnabledCategories.length > 0) {
+    findings.push(makeFinding('DP-CC-02', pageUrl, '', {
+      summary: `${cmpInfo.name}: ${preEnabledCategories.length} non-essential category(s) pre-enabled`,
+      details: [
+        `Pre-enabled: ${preEnabledCategories.join(', ')}`,
+        'GDPR Art. 7 + Recital 32: consent must be an affirmative act — pre-ticked is strictly prohibited',
+        'Each non-essential cookie category requires explicit opt-in, not opt-out',
+        'CNIL (Google €150M), ICO (TikTok), and DPC have issued fines for pre-enabled marketing cookies',
+      ],
+    }));
+  }
+
+  // ── Check 3: Legitimate Interest abuse — ad vendors pre-enabled under LI ──
+  const liAbuse = await page.evaluate(() => {
+    const liSections = document.querySelectorAll(
+      '[class*="legit"], [class*="legitimate-interest"], [data-consent-type="LEGITIMATE_INTEREST"], ' +
+      '[class*="li-purpose"], #ot-li-title, [aria-label*="legitimate interest"]'
+    );
+    const preEnabled: string[] = [];
+    liSections.forEach(section => {
+      const toggles = section.querySelectorAll('[aria-checked="true"], input:checked');
+      toggles.forEach(t => {
+        const label = (t as HTMLElement).getAttribute('aria-label') || (t as HTMLElement).getAttribute('name') || t.id || '';
+        if (/advertis|target|market|track|profil/i.test(label)) preEnabled.push(label.substring(0, 60));
+      });
+    });
+    return preEnabled;
+  }).catch(() => [] as string[]);
+
+  if (liAbuse.length > 0) {
+    findings.push(makeFinding('DP-CC-04', pageUrl, '', {
+      summary: `${cmpInfo.name}: Legitimate Interest abuse — ${liAbuse.length} advertising vendor(s) pre-enabled`,
+      details: [
+        `LI vendors: ${liAbuse.slice(0, 5).join(', ')}`,
+        'Legitimate Interest CANNOT serve as legal basis for advertising/targeting without balancing test',
+        'GDPR Art. 6(1)(f) + EDPB Opinion 08/2023: LI does not apply to advertising tracking',
+        'Belgian APD and French CNIL have specifically targeted IAB TCF LI abuse in enforcement actions',
+      ],
+    }));
+  }
+
+  // ── Check 4: Accept appears before Reject in DOM order ──
+  const domOrderBiased = await page.evaluate(() => {
+    const bannerSels = [
+      '#onetrust-banner-sdk', '#CybotCookiebotDialog', '#didomi-notice', '#cky-consent',
+      '[class*="cookie-banner"]', '[class*="consent-banner"]', '[role="dialog"][aria-label*="cookie"]',
+    ].join(', ');
+    for (const banner of Array.from(document.querySelectorAll(bannerSels))) {
+      const s = window.getComputedStyle(banner);
+      if (s.display === 'none' || s.visibility === 'hidden') continue;
+      const btns = Array.from(banner.querySelectorAll('button, a[role="button"]'));
+      let firstAccept = -1, firstReject = -1;
+      btns.forEach((btn, i) => {
+        const text = btn.textContent?.trim() || '';
+        if (firstAccept === -1 && /accept|agree|allow|ok|got.?it|enable.?all/i.test(text)) firstAccept = i;
+        if (firstReject === -1 && /reject|decline|deny|refuse|no.?thanks?/i.test(text)) firstReject = i;
+      });
+      if (firstAccept !== -1 && firstReject !== -1 && firstAccept < firstReject) return true;
+    }
+    return false;
+  }).catch(() => false);
+
+  if (domOrderBiased) {
+    findings.push(makeFinding('DP-CC-06', pageUrl, '', {
+      summary: `${cmpInfo.name}: Accept button declared before Reject in DOM — biases screen reader traversal`,
+      details: [
+        'Accept appears before Reject in DOM source order',
+        'Screen reader users encounter the accept option first (default tab order)',
+        'ICO guidance and EDPB recommend neutral or Reject-first ordering',
+        'This exploits default keyboard/screen reader navigation to bias toward acceptance',
+      ],
+    }));
   }
 
   return findings;

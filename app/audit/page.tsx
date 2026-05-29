@@ -16,8 +16,11 @@ interface JourneyStep {
   action?: string; // natural language instruction, e.g. "search for shoes", "click add to cart"
 }
 
+type JourneyDomain = 'ecommerce' | 'banking' | 'insurance' | 'healthcare' | 'lifestyle' | 'saas' | 'travel' | 'media';
+
 interface PredefinedJourneyTemplate {
   id: string;
+  domain: JourneyDomain;
   icon: string;
   label: string;
   description: string;
@@ -31,10 +34,22 @@ interface PredefinedJourneyTemplate {
   stages: JourneyStep[];
 }
 
+const JOURNEY_DOMAINS: { id: JourneyDomain; icon: string; label: string; color: string }[] = [
+  { id: 'ecommerce',  icon: '🛒', label: 'E-Commerce',    color: '#0091DA' },
+  { id: 'banking',    icon: '🏦', label: 'Banking',        color: '#00338D' },
+  { id: 'insurance',  icon: '🛡️', label: 'Insurance',      color: '#00B2A9' },
+  { id: 'healthcare', icon: '🏥', label: 'Healthcare',     color: '#E8002D' },
+  { id: 'lifestyle',  icon: '💪', label: 'Lifestyle',      color: '#9B59B6' },
+  { id: 'saas',       icon: '💻', label: 'SaaS & Tech',    color: '#F0AB00' },
+  { id: 'travel',     icon: '✈️', label: 'Travel',         color: '#06B6D4' },
+  { id: 'media',      icon: '🎬', label: 'Media',          color: '#EC4899' },
+];
+
 // ── Predefined Journey Templates — each has concrete, ordered pages + action instructions ──
 const PREDEFINED_JOURNEYS: PredefinedJourneyTemplate[] = [
   {
     id: 'login',
+    domain: 'ecommerce',
     icon: '🔐',
     label: 'Login Flow',
     description: 'Checks the full authentication journey for dark patterns in access control',
@@ -52,6 +67,7 @@ const PREDEFINED_JOURNEYS: PredefinedJourneyTemplate[] = [
   },
   {
     id: 'account',
+    domain: 'ecommerce',
     icon: '👤',
     label: 'Account Creation',
     description: 'Signup flow analysis for consent bundling and trick questions',
@@ -70,6 +86,7 @@ const PREDEFINED_JOURNEYS: PredefinedJourneyTemplate[] = [
   },
   {
     id: 'checkout',
+    domain: 'ecommerce',
     icon: '🛒',
     label: 'Checkout Flow',
     description: 'E-commerce purchase funnel for hidden costs and urgency manipulation',
@@ -90,6 +107,7 @@ const PREDEFINED_JOURNEYS: PredefinedJourneyTemplate[] = [
   },
   {
     id: 'cancel',
+    domain: 'ecommerce',
     icon: '❌',
     label: 'Cancellation Flow',
     description: 'Subscription or account cancellation path — Roach Motel detection',
@@ -108,6 +126,7 @@ const PREDEFINED_JOURNEYS: PredefinedJourneyTemplate[] = [
   },
   {
     id: 'consent',
+    domain: 'ecommerce',
     icon: '🍪',
     label: 'Consent & Cookie Flow',
     description: 'Cookie consent and privacy settings for GDPR/DSA compliance',
@@ -126,6 +145,7 @@ const PREDEFINED_JOURNEYS: PredefinedJourneyTemplate[] = [
   },
   {
     id: 'subscription',
+    domain: 'ecommerce',
     icon: '📈',
     label: 'Subscription Upgrade',
     description: 'Plan comparison and upgrade flow for pricing anchoring tactics',
@@ -144,6 +164,7 @@ const PREDEFINED_JOURNEYS: PredefinedJourneyTemplate[] = [
   },
   {
     id: 'search',
+    domain: 'ecommerce',
     icon: '🔍',
     label: 'Search & Discovery',
     description: 'Search and product discovery flow for misdirection and fake scarcity',
@@ -162,6 +183,7 @@ const PREDEFINED_JOURNEYS: PredefinedJourneyTemplate[] = [
   },
   {
     id: 'profile',
+    domain: 'ecommerce',
     icon: '⚙️',
     label: 'Profile & Data Settings',
     description: 'Privacy settings and data management for Privacy Zuckering detection',
@@ -176,6 +198,511 @@ const PREDEFINED_JOURNEYS: PredefinedJourneyTemplate[] = [
       { id: crypto.randomUUID(), label: 'Data Sharing Settings', url: '/profile/data-sharing', action: 'Check default states — are data sharing toggles pre-enabled?' },
       { id: crypto.randomUUID(), label: 'Notification Preferences', url: '/profile/notifications', action: 'Verify notification opt-outs are as prominent as opt-ins' },
       { id: crypto.randomUUID(), label: 'Privacy Centre', url: '/privacy', action: 'Measure friction to find and execute data deletion / export rights' },
+    ],
+  },
+
+  // ══════════════════════════════════════════
+  // BANKING & FINANCE
+  // ══════════════════════════════════════════
+  {
+    id: 'bank-account-open',
+    domain: 'banking',
+    icon: '🏦',
+    label: 'Account Opening (KYC)',
+    description: 'Digital bank account opening — KYC friction, mandatory disclosure gates, data capture walls',
+    checksFocus: 'Forced data capture, consent bundling, KYC friction beyond regulatory requirement',
+    primaryPillar: 'darkpatterns',
+    secondaryPillars: ['privacy', 'accessibility'],
+    brignullPatterns: ['Forced Action', 'Privacy Zuckering', 'Trick Questions', 'Interface Interference'],
+    effortAsymmetry: { entryLabel: 'Open Account', exitLabel: 'Abandon Application', entrySteps: 1, exitSteps: 5 },
+    regulationFocus: ['RBI KYC Master Direction 2016', 'PMLA 2002', 'DPDPA 2023', 'IRDAI guidelines'],
+    expectedFindings: ['Pre-ticked marketing consent alongside KYC consent', 'Phone + email + address collected before eligibility check', 'No "Save and Continue Later" option — forcing session completion', 'Misleading urgency on account approval timelines'],
+    stages: [
+      { id: crypto.randomUUID(), label: 'Landing / Product Page', url: '/savings-account', action: 'Scan for urgency messaging ("Limited Period Offer"), pre-selected product features, and misleading APR claims' },
+      { id: crypto.randomUUID(), label: 'Eligibility / Pre-check', url: '/apply/eligibility', action: 'Check if data collected here exceeds eligibility check requirements — phone, PAN before confirming eligibility' },
+      { id: crypto.randomUUID(), label: 'KYC / Aadhaar Step', url: '/apply/kyc', action: 'Verify KYC consent is separate from marketing consent — check for bundled checkboxes' },
+      { id: crypto.randomUUID(), label: 'Document Upload', url: '/apply/documents', action: 'Check for excessive document requests beyond RBI minimum KYC requirements' },
+      { id: crypto.randomUUID(), label: 'Confirmation & Activation', url: '/apply/confirmation', action: 'Verify no auto-subscriptions, pre-selected add-ons (credit card, insurance), or forced upsell on confirmation' },
+    ],
+  },
+  {
+    id: 'bank-fund-transfer',
+    domain: 'banking',
+    icon: '💸',
+    label: 'Fund Transfer Flow',
+    description: 'NEFT/IMPS/UPI transfer — fee disclosure, speed manipulation, cross-sell dark patterns',
+    checksFocus: 'Hidden charges, fee disclosure timing, forced premium speed selection',
+    primaryPillar: 'darkpatterns',
+    secondaryPillars: ['accessibility'],
+    brignullPatterns: ['Hidden Costs', 'Interface Interference', 'Confirmshaming', 'Misdirection'],
+    regulationFocus: ['RBI Payment System Guidelines', 'PCI DSS', 'NPCI UPI Guidelines'],
+    expectedFindings: ['IMPS fee not shown until final confirmation step', 'Instant transfer pre-selected over free NEFT', 'Add beneficiary step with pre-ticked "Save for future" sharing consent', 'Timer pressure on OTP screen'],
+    stages: [
+      { id: crypto.randomUUID(), label: 'Transfer Initiation', url: '/transfer', action: 'Check if fee for NEFT/IMPS/UPI is clearly shown upfront or hidden until confirmation' },
+      { id: crypto.randomUUID(), label: 'Beneficiary Selection', url: '/transfer/beneficiary', action: 'Scan for pre-ticked "share contact details" or implicit data sharing on beneficiary save' },
+      { id: crypto.randomUUID(), label: 'Amount & Mode Selection', url: '/transfer/amount', action: 'Verify transfer mode defaults to fastest (most expensive) option — check for fake urgency around timing' },
+      { id: crypto.randomUUID(), label: 'OTP / Confirmation', url: '/transfer/confirm', action: 'Check countdown timer on OTP — is it creating false urgency? Verify all fees shown before final confirm' },
+    ],
+  },
+  {
+    id: 'bank-loan-apply',
+    domain: 'banking',
+    icon: '📋',
+    label: 'Loan Application',
+    description: 'Personal/home/auto loan application — hidden charges, urgency, cross-sell insurance',
+    checksFocus: 'Hidden processing fees, pre-selected loan insurance, urgency manipulation on approval',
+    primaryPillar: 'darkpatterns',
+    secondaryPillars: ['privacy'],
+    brignullPatterns: ['Hidden Costs', 'Forced Continuity', 'Scarcity Manipulation', 'Sneak Into Basket'],
+    effortAsymmetry: { entryLabel: 'Apply Now', exitLabel: 'Decline Offer', entrySteps: 2, exitSteps: 7 },
+    regulationFocus: ['RBI Fair Practices Code', 'IRDAI Insurance Bundling Guidelines', 'FTC §5'],
+    expectedFindings: ['Loan insurance auto-added without clear opt-out', 'Processing fee buried in terms, not shown in EMI calculator', '"Limited Pre-Approved Offer" urgency without real deadline', 'Rate shown without processing fee in headline APR'],
+    stages: [
+      { id: crypto.randomUUID(), label: 'Loan Products Page', url: '/loans/personal', action: 'Check if interest rate prominently shown includes all fees — look for "as low as" bait rates' },
+      { id: crypto.randomUUID(), label: 'EMI Calculator', url: '/loans/emi-calculator', action: 'Verify calculator includes processing fee, insurance premium in total cost — not just EMI' },
+      { id: crypto.randomUUID(), label: 'Application Form', url: '/loans/apply', action: 'Check for pre-selected loan protection insurance, pre-ticked cross-sell products' },
+      { id: crypto.randomUUID(), label: 'Offer & Disbursement', url: '/loans/offer', action: 'Scan for urgency countdown ("Offer expires in 2 hours"), verify all charges disclosed before signing' },
+    ],
+  },
+  {
+    id: 'bank-demat',
+    domain: 'banking',
+    icon: '📈',
+    label: 'Demat / Trading Account',
+    description: 'Demat and trading account opening — risk disclaimer gates, data capture, brokerage dark patterns',
+    checksFocus: 'Risk disclaimer gates, forced subscription tiers, misleading brokerage fee display',
+    primaryPillar: 'darkpatterns',
+    secondaryPillars: ['accessibility', 'privacy'],
+    brignullPatterns: ['Forced Action', 'Interface Interference', 'Hidden Costs', 'Privacy Zuckering'],
+    regulationFocus: ['SEBI KYC Regulations', 'CDSL/NSDL Guidelines', 'SEBI LODR', 'DPDPA 2023'],
+    expectedFindings: ['Risk acknowledgment bundled with marketing consent', 'AMC charges not displayed upfront', '"Recommended" plan is highest-cost tier', 'Mandatory nominee details creating friction to abandon'],
+    stages: [
+      { id: crypto.randomUUID(), label: 'Account Types / Pricing', url: '/demat/plans', action: 'Verify brokerage fees, AMC, and transaction charges are clearly shown — look for plan highlighting manipulation' },
+      { id: crypto.randomUUID(), label: 'Account Opening Form', url: '/demat/open', action: 'Check for bundled consent — are SEBI risk disclosure and marketing opt-in separate checkboxes?' },
+      { id: crypto.randomUUID(), label: 'KYC / In-Person Verification', url: '/demat/kyc', action: 'Scan for data minimization violations — is more data collected than KYC minimums require?' },
+      { id: crypto.randomUUID(), label: 'Platform Activation', url: '/demat/activate', action: 'Check for auto-enrolled premium features with trial periods that auto-convert to paid' },
+    ],
+  },
+
+  // ══════════════════════════════════════════
+  // INSURANCE
+  // ══════════════════════════════════════════
+  {
+    id: 'ins-quote-compare',
+    domain: 'insurance',
+    icon: '🔍',
+    label: 'Quote & Compare',
+    description: 'Insurance quote comparison — price anchoring, coverage hiding, apples-to-oranges framing',
+    checksFocus: 'Price anchoring, feature obfuscation, recommended plan manipulation',
+    primaryPillar: 'darkpatterns',
+    secondaryPillars: ['accessibility'],
+    brignullPatterns: ['Interface Interference', 'Misdirection', 'Hidden Costs', 'False Urgency'],
+    regulationFocus: ['IRDAI Protection of Policyholders Rules 2017', 'IRDAI Product Regulations', 'FTC §5'],
+    expectedFindings: ['Cheapest plan missing key coverages not flagged clearly', '"Most Popular" badge on highest-margin plan', 'Premium shown per day / per month without total annual cost', 'Comparison table hides important exclusions'],
+    stages: [
+      { id: crypto.randomUUID(), label: 'Product Landing Page', url: '/insurance/health', action: 'Scan for urgency (limited offer, price increase warnings), check if premium shown is complete or misleadingly low' },
+      { id: crypto.randomUUID(), label: 'Quote / Premium Calculator', url: '/insurance/quote', action: 'Check if all riders are pre-selected, verify quote includes GST — not shown as add-on' },
+      { id: crypto.randomUUID(), label: 'Plan Comparison', url: '/insurance/compare', action: 'Verify exclusions are equally visible as inclusions — check for plan highlighting/anchoring on expensive option' },
+    ],
+  },
+  {
+    id: 'ins-policy-purchase',
+    domain: 'insurance',
+    icon: '📜',
+    label: 'Policy Purchase',
+    description: 'Insurance policy purchase — pre-ticked riders, unclear exclusions, consent bundling',
+    checksFocus: 'Pre-ticked riders, unclear exclusions, consent bundling with marketing',
+    primaryPillar: 'darkpatterns',
+    secondaryPillars: ['privacy', 'accessibility'],
+    brignullPatterns: ['Sneak Into Basket', 'Trick Questions', 'Privacy Zuckering', 'Interface Interference'],
+    effortAsymmetry: { entryLabel: 'Buy Policy', exitLabel: 'Remove Add-on Rider', entrySteps: 2, exitSteps: 6 },
+    regulationFocus: ['IRDAI Guidelines on Insurance Products', 'IRDAI Electronic Insurance Guidelines 2020', 'DPDPA 2023'],
+    expectedFindings: ['Critical illness rider auto-added with prominent placement', 'Marketing consent bundled with policy consent checkbox', 'Nominee details required before price shown', 'Free-look period not prominently disclosed'],
+    stages: [
+      { id: crypto.randomUUID(), label: 'Product Details Page', url: '/insurance/term/details', action: 'Check if free-look period and claim settlement ratio are prominently disclosed' },
+      { id: crypto.randomUUID(), label: 'Customisation / Riders', url: '/insurance/customise', action: 'Verify riders are opt-IN not opt-OUT — check pre-ticked add-ons and their prominence' },
+      { id: crypto.randomUUID(), label: 'Proposer Details', url: '/insurance/proposer', action: 'Check data collection scope — is more PII collected than underwriting requires?' },
+      { id: crypto.randomUUID(), label: 'Payment & Summary', url: '/insurance/payment', action: 'Verify full premium (base + riders + GST) shown before payment — no hidden revelation at payment step' },
+    ],
+  },
+  {
+    id: 'ins-claim-file',
+    domain: 'insurance',
+    icon: '📩',
+    label: 'Claims Filing',
+    description: 'Insurance claim filing — friction by design, document overload, status ambiguity',
+    checksFocus: 'Roach Motel for claims, document overload, ambiguous status communication',
+    primaryPillar: 'darkpatterns',
+    secondaryPillars: ['accessibility'],
+    brignullPatterns: ['Roach Motel', 'Interface Interference', 'Obstruction', 'Misdirection'],
+    effortAsymmetry: { entryLabel: 'Buy Policy', exitLabel: 'File Claim', entrySteps: 3, exitSteps: 9 },
+    regulationFocus: ['IRDAI Claim Regulations 2016', 'Consumer Protection Act 2019', 'IRDAI Grievance Guidelines'],
+    expectedFindings: ['Claim form requires 12+ documents not listed upfront', '"Call us to file" forced for large claims — no digital path', 'Claim status page shows no timeline or next step', 'Rejection reason is vague — no appeals path shown'],
+    stages: [
+      { id: crypto.randomUUID(), label: 'Claims Landing Page', url: '/claims', action: 'Measure how many clicks to reach the claim form from homepage — check for forced phone channel' },
+      { id: crypto.randomUUID(), label: 'Claim Initiation Form', url: '/claims/new', action: 'Document all required fields and attachments — check if document checklist shown upfront or revealed progressively' },
+      { id: crypto.randomUUID(), label: 'Document Upload', url: '/claims/documents', action: 'Check upload UX — are unsupported formats flagged clearly? Is max file size disclosed?' },
+      { id: crypto.randomUUID(), label: 'Claim Status / Tracker', url: '/claims/status', action: 'Verify claim status page shows ETA, next action required, and grievance escalation path clearly' },
+    ],
+  },
+  {
+    id: 'ins-renewal',
+    domain: 'insurance',
+    icon: '🔄',
+    label: 'Policy Renewal',
+    description: 'Insurance renewal — auto-debit manipulation, forced continuity, coverage change obfuscation',
+    checksFocus: 'Auto-renewal without explicit consent, forced continuity, premium increase hiding',
+    primaryPillar: 'darkpatterns',
+    secondaryPillars: ['privacy'],
+    brignullPatterns: ['Forced Continuity', 'Interface Interference', 'Hidden Costs', 'Misdirection'],
+    regulationFocus: ['IRDAI Protection of Policyholders Rules 2017', 'RBI e-Mandate Framework', 'DPDPA 2023'],
+    expectedFindings: ['Auto-renewal enabled by default — opt-out buried in settings', 'Premium increase from last year not highlighted in renewal notice', 'Coverage changes (exclusions added) not clearly disclosed', '"Renew Now" button prominent; "Review Coverage" hard to find'],
+    stages: [
+      { id: crypto.randomUUID(), label: 'Renewal Notification Page', url: '/renewal', action: 'Check if premium change from last year is shown prominently — look for visual de-emphasis of increases' },
+      { id: crypto.randomUUID(), label: 'Coverage Review', url: '/renewal/coverage', action: 'Verify any coverage changes, new exclusions, or benefit reductions are clearly disclosed before renewal payment' },
+      { id: crypto.randomUUID(), label: 'Payment / Mandate Setup', url: '/renewal/payment', action: 'Check if auto-debit mandate setup is clearly disclosed — verify opt-out is as prominent as opt-in' },
+      { id: crypto.randomUUID(), label: 'Renewal Confirmation', url: '/renewal/confirmation', action: 'Confirm policy term, coverage, and next renewal date are clearly shown — verify no silent add-ons' },
+    ],
+  },
+
+  // ══════════════════════════════════════════
+  // HEALTHCARE
+  // ══════════════════════════════════════════
+  {
+    id: 'health-patient-reg',
+    domain: 'healthcare',
+    icon: '🏥',
+    label: 'Patient Registration',
+    description: 'Digital patient registration — excessive data collection, consent bundling, health data privacy',
+    checksFocus: 'Excessive PII and health data collection, marketing consent bundled with medical consent',
+    primaryPillar: 'darkpatterns',
+    secondaryPillars: ['privacy', 'accessibility'],
+    brignullPatterns: ['Privacy Zuckering', 'Trick Questions', 'Forced Action', 'Interface Interference'],
+    regulationFocus: ['DPDPA 2023', 'DISHA Bill', 'IT Act 2000 (Health Data)', 'HIPAA (for global context)'],
+    expectedFindings: ['Medical history required before appointment booking is enabled', 'Marketing consent bundled with mandatory health data consent', 'Emergency contact required as mandatory field for routine appointment', 'Health data shared with third parties via pre-ticked consent'],
+    stages: [
+      { id: crypto.randomUUID(), label: 'Registration / Sign-Up', url: '/register', action: 'Check data fields for medical history, health conditions on first registration — is this beyond what is needed?' },
+      { id: crypto.randomUUID(), label: 'Profile Completion', url: '/profile/health', action: 'Verify health data consent is separate from marketing/newsletter consent — are they bundled?' },
+      { id: crypto.randomUUID(), label: 'Insurance Linking', url: '/profile/insurance', action: 'Check if insurance linking is mandatory or optional — look for forced integration dark patterns' },
+    ],
+  },
+  {
+    id: 'health-appointment',
+    domain: 'healthcare',
+    icon: '📅',
+    label: 'Appointment Booking',
+    description: 'Doctor appointment booking — slot scarcity manipulation, upsell to premium, fee reveal timing',
+    checksFocus: 'Fake scarcity on slots, premium doctor upsell, consultation fee reveal timing',
+    primaryPillar: 'darkpatterns',
+    secondaryPillars: ['accessibility'],
+    brignullPatterns: ['Scarcity Manipulation', 'Interface Interference', 'Hidden Costs', 'Misdirection'],
+    regulationFocus: ['Consumer Protection Act 2019', 'NMC Regulations', 'DPDPA 2023'],
+    expectedFindings: ['Only 1 slot left! displayed when more exist', 'Free doctor slots not shown unless scrolled past premium sponsored ones', 'Consultation fee shown after selecting doctor, not in search results', '"Recommended" tag on highest-fee specialists'],
+    stages: [
+      { id: crypto.randomUUID(), label: 'Doctor Search', url: '/doctors', action: 'Scan sponsored vs organic doctor listings — check for fake availability indicators and scarcity badges' },
+      { id: crypto.randomUUID(), label: 'Doctor Profile', url: '/doctor/profile', action: 'Verify consultation fee prominently shown — check if premium add-ons (video call, report review) are pre-selected' },
+      { id: crypto.randomUUID(), label: 'Slot Selection', url: '/book/slots', action: 'Check for "Only N slots left" urgency — verify slots shown include all availability, not just limited window' },
+      { id: crypto.randomUUID(), label: 'Booking Confirmation', url: '/book/confirm', action: 'Verify total charge (consultation + platform fee + taxes) shown before payment — no hidden platform fee' },
+    ],
+  },
+  {
+    id: 'health-prescription',
+    domain: 'healthcare',
+    icon: '💊',
+    label: 'Prescription & Records',
+    description: 'Medical records and prescription access — data wall, forced app install, privacy friction',
+    checksFocus: 'Health record access walls, forced app installation, data portability friction',
+    primaryPillar: 'privacy',
+    secondaryPillars: ['darkpatterns', 'accessibility'],
+    brignullPatterns: ['Roach Motel', 'Forced Action', 'Privacy Zuckering', 'Obstruction'],
+    effortAsymmetry: { entryLabel: 'Share Health Data', exitLabel: 'Download My Records', entrySteps: 2, exitSteps: 8 },
+    regulationFocus: ['ABHA / ABDM Guidelines', 'DPDPA 2023', 'IT Act Sensitive Data Rules'],
+    expectedFindings: ['Prescription download requires app install — no web option', 'Health summary shared with "partner hospitals" by default — opt-out buried', 'ABHA ID linking mandatory for basic prescription access', 'Medical records deletion option not available'],
+    stages: [
+      { id: crypto.randomUUID(), label: 'Records Dashboard', url: '/records', action: 'Measure how many clicks to download a prescription — check for forced app install requirement' },
+      { id: crypto.randomUUID(), label: 'Prescription Download', url: '/records/prescriptions', action: 'Verify download works on web without app — check for "sharing" defaults with partner clinics/labs' },
+      { id: crypto.randomUUID(), label: 'ABHA / Health ID Linking', url: '/records/abha', action: 'Check if ABHA linking is genuinely optional or presented as mandatory for basic features' },
+    ],
+  },
+  {
+    id: 'health-payment',
+    domain: 'healthcare',
+    icon: '💳',
+    label: 'Healthcare Payment',
+    description: 'Hospital or clinic bill payment — hidden fees, insurance claim friction, no-cost EMI dark patterns',
+    checksFocus: 'Hidden facility charges, insurance pre-auth friction, misleading no-cost EMI',
+    primaryPillar: 'darkpatterns',
+    secondaryPillars: ['accessibility'],
+    brignullPatterns: ['Hidden Costs', 'Misdirection', 'Interface Interference', 'Forced Continuity'],
+    regulationFocus: ['Consumer Protection Act 2019', 'IRDA Health Insurance Guidelines', 'NMC Itemised Billing Guidelines'],
+    expectedFindings: ['Facility charges (OT, nursing) not itemised in bill', 'Insurance cashless pre-auth path requires calling — no digital option', 'EMI option shown as "no cost" but processing fee charged', 'Bill payment confirmation shows different amount than quote'],
+    stages: [
+      { id: crypto.randomUUID(), label: 'Bill View / Summary', url: '/billing', action: 'Check if bill is itemised — are facility charges, doctor fees, medicines broken out separately?' },
+      { id: crypto.randomUUID(), label: 'Insurance / Cashless Claim', url: '/billing/insurance', action: 'Verify cashless claim initiation is available digitally — measure friction vs self-pay option' },
+      { id: crypto.randomUUID(), label: 'Payment Options', url: '/billing/pay', action: 'Check EMI terms — is "no cost EMI" actually no cost? Are all payment method fees shown upfront?' },
+    ],
+  },
+
+  // ══════════════════════════════════════════
+  // LIFESTYLE & WELLNESS
+  // ══════════════════════════════════════════
+  {
+    id: 'life-membership',
+    domain: 'lifestyle',
+    icon: '💪',
+    label: 'Membership Sign-up',
+    description: 'Gym / fitness app membership — trial traps, auto-renewal, forced continuity',
+    checksFocus: 'Free trial auto-convert, card required for trial, auto-renewal without clear notice',
+    primaryPillar: 'darkpatterns',
+    secondaryPillars: ['privacy'],
+    brignullPatterns: ['Forced Continuity', 'Hidden Costs', 'False Urgency', 'Interface Interference'],
+    effortAsymmetry: { entryLabel: 'Start Free Trial', exitLabel: 'Cancel Before Charge', entrySteps: 2, exitSteps: 7 },
+    regulationFocus: ['FTC Click-to-Cancel Rule 2024', 'EU Consumer Rights Directive', 'CMA Subscription Guidelines'],
+    expectedFindings: ['Credit card required for free trial — charged on day 1 without reminder', 'Auto-renewal clause buried in step 5 of 6 in registration flow', '"Best Value" annual plan highlighted — monthly shown as more expensive per comparison', 'No trial end reminder email/notification mentioned during sign-up'],
+    stages: [
+      { id: crypto.randomUUID(), label: 'Pricing / Plans Page', url: '/pricing', action: 'Check if free trial terms (card required, auto-charge date) are shown upfront — look for plan anchoring' },
+      { id: crypto.randomUUID(), label: 'Sign-Up Flow', url: '/signup', action: 'Scan for consent to auto-renewal — is it a separate explicit checkbox or buried in terms?' },
+      { id: crypto.randomUUID(), label: 'Payment Details', url: '/signup/payment', action: 'Verify trial end date and first charge date shown at payment step — check for pre-selected annual plan' },
+      { id: crypto.randomUUID(), label: 'Confirmation', url: '/signup/confirmation', action: 'Verify trial terms, cancellation deadline, and auto-renewal amount shown in confirmation' },
+    ],
+  },
+  {
+    id: 'life-subscription',
+    domain: 'lifestyle',
+    icon: '📱',
+    label: 'Content Subscription',
+    description: 'Streaming / content platform subscription — plan confusion, annual lock-in, upgrades',
+    checksFocus: 'Plan anchoring, annual lock-in pressure, HD/4K upsell during signup',
+    primaryPillar: 'darkpatterns',
+    secondaryPillars: ['accessibility'],
+    brignullPatterns: ['Interface Interference', 'Hidden Costs', 'Scarcity Manipulation', 'Misdirection'],
+    regulationFocus: ['EU Consumer Rights Directive', 'FTC Negative Option Rule', 'CMA Online Platforms Review'],
+    expectedFindings: ['Annual plan default-selected saving "X per month" — actual savings math unclear', 'HD/4K option pre-selected adding premium to base price', '"Save 40%" on annual plan headline — monthly option hidden', 'Simultaneous screens benefit framed as urgency to upgrade'],
+    stages: [
+      { id: crypto.randomUUID(), label: 'Plans & Pricing', url: '/plans', action: 'Analyze visual hierarchy — which plan is most prominent? Verify monthly option is equally accessible to annual' },
+      { id: crypto.randomUUID(), label: 'Plan Selection', url: '/subscribe', action: 'Check for pre-selected add-ons (HD, extra screens) — verify price shown is the base, not inflated by pre-selections' },
+      { id: crypto.randomUUID(), label: 'Payment', url: '/subscribe/payment', action: 'Verify total charge is confirmed before payment — check for device/profile add-ons sneaked in' },
+    ],
+  },
+  {
+    id: 'life-cancel',
+    domain: 'lifestyle',
+    icon: '🚫',
+    label: 'Membership Cancellation',
+    description: 'Gym / app membership cancellation — Roach Motel, pause upsell, confirmshaming',
+    checksFocus: 'Roach Motel pattern, pause option dominance over cancel, emotional retention copy',
+    primaryPillar: 'darkpatterns',
+    secondaryPillars: ['accessibility'],
+    brignullPatterns: ['Roach Motel', 'Confirmshaming', 'Interface Interference', 'Obstruction'],
+    effortAsymmetry: { entryLabel: 'Sign Up', exitLabel: 'Cancel Membership', entrySteps: 1, exitSteps: 8 },
+    regulationFocus: ['FTC Click-to-Cancel Rule 2024', 'EU DSA Art. 25', 'CMA Subscription Guidelines'],
+    expectedFindings: ['Cancel option requires calling or in-person visit — no digital path', '"Pause membership" visually dominates over "Cancel" button', 'Confirmation-shaming: "No thanks, I hate staying fit"', 'Multiple retention screens before cancel is confirmed'],
+    stages: [
+      { id: crypto.randomUUID(), label: 'Account / Membership Settings', url: '/account/membership', action: 'Find the cancellation option — measure number of clicks from homepage, check for obfuscation' },
+      { id: crypto.randomUUID(), label: 'Cancel / Manage Page', url: '/account/cancel', action: 'Check visual prominence of Pause vs Cancel — look for confirmshaming copy on decline button' },
+      { id: crypto.randomUUID(), label: 'Retention / Offers Screen', url: '/account/retention', action: 'Scan for false discounts, emotional manipulation, and countdown timers on retention offer' },
+      { id: crypto.randomUUID(), label: 'Cancellation Confirmation', url: '/account/cancelled', action: 'Verify cancellation confirmation is clear — check if account access continues to end of billing cycle' },
+    ],
+  },
+  {
+    id: 'life-data-settings',
+    domain: 'lifestyle',
+    icon: '⚙️',
+    label: 'App Privacy Settings',
+    description: 'Wellness / lifestyle app privacy settings — Privacy Zuckering, hard-to-find opt-outs',
+    checksFocus: 'Privacy Zuckering, health data sharing defaults, notification opt-out friction',
+    primaryPillar: 'privacy',
+    secondaryPillars: ['darkpatterns', 'accessibility'],
+    brignullPatterns: ['Privacy Zuckering', 'Trick Questions', 'Obstruction', 'Interface Interference'],
+    regulationFocus: ['DPDPA 2023', 'GDPR Art. 17', 'App Store Privacy Guidelines'],
+    expectedFindings: ['Workout and health data shared with ad partners by default', 'Notification opt-outs require 6+ taps vs 1-tap opt-in', 'Location access cannot be limited to "while using app" on certain flows', 'Data deletion option not present — only "deactivate account"'],
+    stages: [
+      { id: crypto.randomUUID(), label: 'App / Account Settings', url: '/settings', action: 'Navigate directly to privacy/data settings — measure how many taps/clicks required from homepage' },
+      { id: crypto.randomUUID(), label: 'Data Sharing Preferences', url: '/settings/privacy', action: 'Check all data sharing toggles — are they ON by default? Is health data sharing separate from analytics?' },
+      { id: crypto.randomUUID(), label: 'Notification Settings', url: '/settings/notifications', action: 'Verify notification opt-outs are as easy as opt-ins — check for missing "turn all off" option' },
+      { id: crypto.randomUUID(), label: 'Account / Data Deletion', url: '/settings/account', action: 'Find data deletion or erasure request — measure friction; verify it deletes data not just deactivates' },
+    ],
+  },
+
+  // ══════════════════════════════════════════
+  // SAAS & TECHNOLOGY
+  // ══════════════════════════════════════════
+  {
+    id: 'saas-free-trial',
+    domain: 'saas',
+    icon: '🆓',
+    label: 'Free Trial Sign-up',
+    description: 'SaaS product free trial — credit card requirement, auto-convert, feature gating',
+    checksFocus: 'Card required for trial, auto-convert without reminder, trial feature gating',
+    primaryPillar: 'darkpatterns',
+    secondaryPillars: ['privacy'],
+    brignullPatterns: ['Forced Continuity', 'Forced Action', 'Hidden Costs', 'Misdirection'],
+    effortAsymmetry: { entryLabel: 'Start Free Trial', exitLabel: 'Cancel Before Charge', entrySteps: 3, exitSteps: 6 },
+    regulationFocus: ['FTC Negative Option Rule', 'EU Consumer Rights Directive', 'FTC §5'],
+    expectedFindings: ['Card required for 14-day free trial with no mention of charge date', '"Most Popular" tag on middle plan anchoring users away from cheap option', 'Trial features limited to create upgrade pressure before trial ends', 'Auto-email sequence designed to prevent cancellation vs inform'],
+    stages: [
+      { id: crypto.randomUUID(), label: 'Pricing / Plans', url: '/pricing', action: 'Check if trial terms are clear — is credit card required? When does first charge occur? Verify "Most Popular" plan selection' },
+      { id: crypto.randomUUID(), label: 'Trial Registration', url: '/trial/signup', action: 'Scan for consent to auto-renewal in trial sign-up — is it explicit checkbox or hidden in ToS' },
+      { id: crypto.randomUUID(), label: 'Payment Details', url: '/trial/payment', action: 'Verify charge date, cancellation method, and post-trial plan and price all shown at payment step' },
+      { id: crypto.randomUUID(), label: 'Onboarding', url: '/onboarding', action: 'Check for artificial feature limitations designed to create upgrade urgency during trial' },
+    ],
+  },
+  {
+    id: 'saas-upgrade',
+    domain: 'saas',
+    icon: '⬆️',
+    label: 'Plan Upgrade Flow',
+    description: 'SaaS plan upgrade — price anchoring, feature gate manipulation, annual plan pressure',
+    checksFocus: 'Price anchoring on annual vs monthly, feature gates creating forced upgrades',
+    primaryPillar: 'darkpatterns',
+    secondaryPillars: ['accessibility'],
+    brignullPatterns: ['Interface Interference', 'Misdirection', 'False Urgency', 'Scarcity Manipulation'],
+    regulationFocus: ['EU Consumer Rights Directive', 'FTC §5', 'ACM Netherlands SaaS Guidelines'],
+    expectedFindings: ['Feature usage limit notification designed to create urgency vs inform', 'Upgrade dialog shows annual cost without monthly breakdown', 'Downgrade path requires contacting sales — upgrade is 1-click', '"Save 40% with annual" shown without making 40% calculation transparent'],
+    stages: [
+      { id: crypto.randomUUID(), label: 'Current Plan / Billing Page', url: '/settings/billing', action: 'Check for urgency messages around usage limits — is limit proximity shown as informative or manipulative?' },
+      { id: crypto.randomUUID(), label: 'Plan Comparison', url: '/upgrade', action: 'Verify annual vs monthly comparison is honest — check for pre-selected annual plan' },
+      { id: crypto.randomUUID(), label: 'Upgrade Checkout', url: '/upgrade/payment', action: 'Check prorated charge calculation is shown — verify no hidden activation or setup fees' },
+    ],
+  },
+  {
+    id: 'saas-cancel',
+    domain: 'saas',
+    icon: '❌',
+    label: 'SaaS Cancellation',
+    description: 'SaaS subscription cancellation — multi-step friction, data hold, downgrade alternative forcing',
+    checksFocus: 'Roach Motel cancellation, forced survey before cancel, data export gating',
+    primaryPillar: 'darkpatterns',
+    secondaryPillars: ['privacy'],
+    brignullPatterns: ['Roach Motel', 'Obstruction', 'Confirmshaming', 'Interface Interference'],
+    effortAsymmetry: { entryLabel: 'Subscribe', exitLabel: 'Cancel', entrySteps: 2, exitSteps: 7 },
+    regulationFocus: ['FTC Click-to-Cancel Rule 2024', 'EU Consumer Rights Directive', 'GDPR Art. 20 Data Portability'],
+    expectedFindings: ['Cancel requires "mandatory" exit survey — cannot skip to cancel', 'Data export not available on free plan — creates lock-in to avoid cancellation', 'Cancel button deceptively styled as secondary (grey, small)', '"Pause plan" shown more prominently than "Cancel subscription"'],
+    stages: [
+      { id: crypto.randomUUID(), label: 'Billing / Account Settings', url: '/settings/billing', action: 'Find cancel subscription option — measure clicks from homepage, check for visual deprioritization' },
+      { id: crypto.randomUUID(), label: 'Cancel Flow', url: '/settings/cancel', action: 'Scan for friction: mandatory survey, "are you sure" screens, hard-to-find confirm button' },
+      { id: crypto.randomUUID(), label: 'Data Export / Offboarding', url: '/settings/export', action: 'Verify data export is available and functional — check if it requires paid plan (creates lock-in)' },
+    ],
+  },
+
+  // ══════════════════════════════════════════
+  // TRAVEL & HOSPITALITY
+  // ══════════════════════════════════════════
+  {
+    id: 'travel-flight-book',
+    domain: 'travel',
+    icon: '✈️',
+    label: 'Flight Booking',
+    description: 'Flight booking flow — hidden fees, seat selection dark patterns, fare class confusion',
+    checksFocus: 'Drip pricing on fees, seat selection manipulation, travel insurance auto-add',
+    primaryPillar: 'darkpatterns',
+    secondaryPillars: ['accessibility'],
+    brignullPatterns: ['Hidden Costs', 'Sneak Into Basket', 'Scarcity Manipulation', 'Interface Interference'],
+    regulationFocus: ['DGCA Consumer Guidelines', 'EU Regulation 261/2004', 'FTC Airline Fee Disclosure'],
+    expectedFindings: ['Base fare shown without taxes until final step', 'Seat selection UI designed to confuse free vs paid seats', 'Travel insurance auto-added with confusing opt-out language', '"Only 3 seats left" shown for common economy rows'],
+    stages: [
+      { id: crypto.randomUUID(), label: 'Search Results', url: '/flights/search', action: 'Check if fare shown includes taxes and fees — look for "View price details" hidden disclosure pattern' },
+      { id: crypto.randomUUID(), label: 'Fare Selection', url: '/flights/select', action: 'Verify fare class differences are clearly explained — look for "Recommended" manipulation on expensive fares' },
+      { id: crypto.randomUUID(), label: 'Seat Selection', url: '/flights/seats', action: 'Check seat map for paid seat prominence vs free seat availability — look for urgency on preferred seats' },
+      { id: crypto.randomUUID(), label: 'Add-ons / Extras', url: '/flights/extras', action: 'Check for pre-added travel insurance, meal, or baggage — verify all extras are opt-in not opt-out' },
+      { id: crypto.randomUUID(), label: 'Payment / Booking Review', url: '/flights/payment', action: 'Verify final price matches what was shown at each step — check for last-minute fee reveals' },
+    ],
+  },
+  {
+    id: 'travel-hotel-book',
+    domain: 'travel',
+    icon: '🏨',
+    label: 'Hotel Booking',
+    description: 'Hotel booking — fake scarcity, resort fees hidden, price match manipulation',
+    checksFocus: 'Fake room scarcity, resort/destination fees revealed late, review manipulation',
+    primaryPillar: 'darkpatterns',
+    secondaryPillars: ['accessibility'],
+    brignullPatterns: ['Scarcity Manipulation', 'Hidden Costs', 'Social Proof Inflation', 'Interface Interference'],
+    regulationFocus: ['CMA Online Travel Agents Investigation 2022', 'FTC Endorsement Guidelines', 'EU Consumer Rights Directive'],
+    expectedFindings: ['"Only 1 room left!" shown for multiple room types simultaneously', 'Destination fee / resort fee not shown until checkout', 'Review score sourced from pre-screened stays — methodology not disclosed', 'Free cancellation shown but fine print requires 48h notice — not highlighted'],
+    stages: [
+      { id: crypto.randomUUID(), label: 'Search Results', url: '/hotels/search', action: 'Check scarcity indicators ("1 left", "10 people viewing") — are they real-time or artificial pressure?' },
+      { id: crypto.randomUUID(), label: 'Hotel Detail Page', url: '/hotels/property', action: 'Verify resort/destination/cleaning fees shown prominently — check review sourcing transparency' },
+      { id: crypto.randomUUID(), label: 'Room Selection', url: '/hotels/rooms', action: 'Check free cancellation terms — are conditions (cutoff time, blackout periods) clearly shown?' },
+      { id: crypto.randomUUID(), label: 'Checkout', url: '/hotels/checkout', action: 'Verify total price matches room price shown in listing — check for any hidden fee reveal at final step' },
+    ],
+  },
+  {
+    id: 'travel-insurance',
+    domain: 'travel',
+    icon: '🧳',
+    label: 'Travel Insurance Upsell',
+    description: 'In-flow travel insurance upsell — pre-checked, confusing decline, coverage obfuscation',
+    checksFocus: 'Pre-ticked insurance, confusing decline UI, exaggerated benefit framing',
+    primaryPillar: 'darkpatterns',
+    secondaryPillars: ['accessibility'],
+    brignullPatterns: ['Sneak Into Basket', 'Trick Questions', 'Interface Interference', 'Confirmshaming'],
+    regulationFocus: ['IRDAI Travel Insurance Guidelines', 'EU Insurance Distribution Directive', 'FTC §5'],
+    expectedFindings: ['Travel insurance pre-ticked with confusing opt-out labeled "No, I am willing to risk traveling uninsured"', 'Insurance cost not shown until after email entered', '"Most travelers add this" social proof label on insurance', 'Decline button styled in grey / secondary — accept is primary'],
+    stages: [
+      { id: crypto.randomUUID(), label: 'Insurance Add-On Step', url: '/booking/insurance', action: 'Check pre-selection state of insurance — verify opt-out language is straightforward, not confirmshaming' },
+      { id: crypto.randomUUID(), label: 'Coverage Details', url: '/booking/insurance/details', action: 'Verify coverage exclusions are as prominently shown as inclusions' },
+      { id: crypto.randomUUID(), label: 'Review & Payment', url: '/booking/review', action: 'Confirm insurance is shown in total — verify it was not silently re-added after being declined' },
+    ],
+  },
+
+  // ══════════════════════════════════════════
+  // MEDIA & ENTERTAINMENT
+  // ══════════════════════════════════════════
+  {
+    id: 'media-subscribe',
+    domain: 'media',
+    icon: '🎬',
+    label: 'Streaming Subscription',
+    description: 'Streaming platform subscription — plan confusion, trial traps, ad-tier obfuscation',
+    checksFocus: 'Plan tier confusion, ad-supported tier obfuscation, auto-renew without reminder',
+    primaryPillar: 'darkpatterns',
+    secondaryPillars: ['privacy'],
+    brignullPatterns: ['Interface Interference', 'Misdirection', 'Forced Continuity', 'Hidden Costs'],
+    effortAsymmetry: { entryLabel: 'Start Subscription', exitLabel: 'Cancel', entrySteps: 3, exitSteps: 6 },
+    regulationFocus: ['FTC Negative Option Rule', 'EU Consumer Rights Directive', 'CMA Streaming Investigation 2021'],
+    expectedFindings: ['Ad-supported tier available but not shown on main pricing page', '"Most Popular" badge on 4K plan anchors users to premium tier', 'Trial end date not shown during sign-up flow', 'Password sharing policy changed post-subscription without clear notice'],
+    stages: [
+      { id: crypto.randomUUID(), label: 'Pricing / Plans', url: '/plans', action: 'Check if all tiers including ad-supported are equally discoverable — verify plan comparison is honest' },
+      { id: crypto.randomUUID(), label: 'Sign-Up', url: '/signup', action: 'Check for auto-renewal consent — is it explicit or implied? Verify trial end date displayed' },
+      { id: crypto.randomUUID(), label: 'Payment', url: '/payment', action: 'Verify selected plan cost + any add-ons shown before final charge — no last-minute plan upgrade pre-selection' },
+    ],
+  },
+  {
+    id: 'media-cancel',
+    domain: 'media',
+    icon: '🚫',
+    label: 'Streaming Cancellation',
+    description: 'Streaming service cancellation — pause option dominance, guilt-trip copy, access confusion',
+    checksFocus: 'Pause dominance over cancel, confirmshaming, confusing access end date',
+    primaryPillar: 'darkpatterns',
+    secondaryPillars: ['accessibility'],
+    brignullPatterns: ['Roach Motel', 'Confirmshaming', 'Interface Interference', 'Obstruction'],
+    effortAsymmetry: { entryLabel: 'Subscribe', exitLabel: 'Cancel', entrySteps: 2, exitSteps: 6 },
+    regulationFocus: ['FTC Click-to-Cancel Rule 2024', 'EU DSA Art. 25', 'EU Consumer Rights Directive'],
+    expectedFindings: ['Pause subscription visually dominates over Cancel in retention flow', '"Lose access to X titles" framing alongside cancel confirm button', 'Access end date unclear — does content remain accessible till billing cycle end?', 'Re-subscribe button displayed immediately on cancellation confirmation'],
+    stages: [
+      { id: crypto.randomUUID(), label: 'Account / Membership Page', url: '/account/membership', action: 'Find the cancellation option — measure click depth, check visual prominence vs account retention CTAs' },
+      { id: crypto.randomUUID(), label: 'Cancel Flow', url: '/account/cancel', action: 'Scan for guilt-trip copy, pause option prominence, and any fake discount offers before cancel confirm' },
+      { id: crypto.randomUUID(), label: 'Cancellation Confirmation', url: '/account/cancelled', action: 'Verify access end date clearly shown — check if re-subscribe is the most prominent element on the confirmation' },
+    ],
+  },
+  {
+    id: 'media-parental',
+    domain: 'media',
+    icon: '👨‍👩‍👧',
+    label: 'Parental Controls & Kids',
+    description: 'Kids profiles and parental controls — privacy of minors, default sharing, age verification',
+    checksFocus: 'Privacy of minors, data collection defaults for kids profiles, age-gate bypass',
+    primaryPillar: 'privacy',
+    secondaryPillars: ['darkpatterns', 'accessibility'],
+    brignullPatterns: ['Privacy Zuckering', 'Trick Questions', 'Interface Interference'],
+    regulationFocus: ['COPPA (US)', 'GDPR Article 8 (Child Data)', 'DPDPA 2023 Child Protections', 'UK AADC (Age Appropriate Design Code)'],
+    expectedFindings: ['Kids profile shares viewing data with advertising partners by default', 'Age verification easily bypassed — no robust check', 'Parental controls require re-authentication every session with no persistent setting', 'Content targeting settings for kids profile not separate from adult profile'],
+    stages: [
+      { id: crypto.randomUUID(), label: 'Kids Profile Creation', url: '/profiles/kids/create', action: 'Check data collection for kids profile — verify age-appropriate content consent is robust and separate' },
+      { id: crypto.randomUUID(), label: 'Parental Controls', url: '/settings/parental', action: 'Verify data sharing for minor profiles is off by default — check for hidden tracking of kids viewing' },
+      { id: crypto.randomUUID(), label: 'Content Restrictions', url: '/settings/parental/content', action: 'Test content filtering robustness — check if parental PIN can be easily bypassed' },
     ],
   },
 ];
@@ -211,6 +738,7 @@ export default function AuditPage() {
   const [scopeMode, setScopeMode] = useState<'general' | 'specific' | 'predefined' | 'director'>('general');
   const [specificUrls, setSpecificUrls] = useState('');
   const [selectedJourney, setSelectedJourney] = useState<string | null>(null);
+  const [selectedDomain, setSelectedDomain] = useState<JourneyDomain>('ecommerce');
   const [aiDirection, setAiDirection] = useState('');
   const [journeySteps, setJourneySteps] = useState<JourneyStep[]>([]);
 
@@ -220,11 +748,11 @@ export default function AuditPage() {
   const [wcagLevelAAA, setWcagLevelAAA] = useState(false);
   const [standard, setStandard] = useState('WCAG 2.2');
 
-  // Pillars
+  // Pillars (Performance & Privacy are Coming Soon — disabled)
   const [pillarA11y, setPillarA11y]       = useState(true);
   const [pillarDP, setPillarDP]           = useState(true);
-  const [pillarPerf, setPillarPerf]       = useState(true);
-  const [pillarPrivacy, setPillarPrivacy] = useState(true);
+  const [pillarPerf, setPillarPerf]       = useState(false);
+  const [pillarPrivacy, setPillarPrivacy] = useState(false);
 
   const getEnabledPillars = () => {
     const p: string[] = [];
@@ -407,7 +935,7 @@ export default function AuditPage() {
       {/* Header */}
       <div className="page-header">
         <h1 className="page-title">New TrustLens Audit</h1>
-        <p className="page-subtitle">AI-powered 4-pillar digital trust audit: Accessibility · Dark Patterns · Performance · Privacy</p>
+        <p className="page-subtitle">AI-powered digital trust audit: Accessibility · Dark Patterns — more pillars coming soon</p>
       </div>
 
       {/* ── Pillar Selection ── */}
@@ -416,12 +944,10 @@ export default function AuditPage() {
           <span style={{ fontSize: 14, fontWeight: 700 }}>🛡️ Audit Pillars</span>
           <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>Select compliance domains to audit</span>
         </div>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 10 }}>
           {[
-            { key: 'a11y', icon: '♿', label: 'Accessibility', desc: 'WCAG 2.2 compliance', color: 'var(--pillar-a11y)', checked: pillarA11y, set: setPillarA11y },
-            { key: 'dp',   icon: '🕵️', label: 'Dark Patterns', desc: 'Ethical UX + Visual AI',  color: 'var(--pillar-dp)',   checked: pillarDP,   set: setPillarDP },
-            { key: 'perf', icon: '⚡', label: 'Performance',   desc: 'Core Web Vitals',       color: 'var(--pillar-perf)', checked: pillarPerf, set: setPillarPerf },
-            { key: 'priv', icon: '🔒', label: 'Privacy',       desc: 'Tracker & cookie audit', color: 'var(--pillar-priv)', checked: pillarPrivacy, set: setPillarPrivacy },
+            { key: 'a11y', icon: '♿', label: 'Accessibility', desc: 'WCAG 2.2 · EN 301 549 · Section 508', color: 'var(--pillar-a11y)', checked: pillarA11y, set: setPillarA11y },
+            { key: 'dp',   icon: '🕵️', label: 'Dark Patterns', desc: 'Ethical UX · Visual AI · Brignull taxonomy',  color: 'var(--pillar-dp)',   checked: pillarDP,   set: setPillarDP },
           ].map(p => (
             <label key={p.key} style={{
               display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6,
@@ -440,14 +966,16 @@ export default function AuditPage() {
             </label>
           ))}
         </div>
-        {/* Coming Soon */}
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginTop: 10 }}>
+        {/* Coming Soon — Performance, Privacy, Compliance Intelligence, Design Governance */}
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 10, marginTop: 10 }}>
           {[
-            { icon: '⚖️', label: 'Compliance Intelligence', desc: 'CCPA, RBI, SEBI, DPDPA governance mapping', color: '#06B6D4' },
-            { icon: '🎨', label: 'Design Governance', desc: 'Design tokens, CTA hierarchy, brand compliance', color: '#EC4899' },
+            { icon: '⚡', label: 'Performance',              desc: 'Core Web Vitals · LCP / CLS / TTFB',          color: 'var(--pillar-perf)' },
+            { icon: '🔒', label: 'Privacy',                  desc: 'Tracker detection · Cookie consent audit',    color: 'var(--pillar-priv)' },
+            { icon: '⚖️', label: 'Compliance Intelligence',  desc: 'CCPA · RBI · SEBI · DPDPA governance',        color: '#06B6D4' },
+            { icon: '🎨', label: 'Design Governance',        desc: 'Design tokens · CTA hierarchy · Brand audit', color: '#EC4899' },
           ].map(p => (
-            <div key={p.label} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 14px', borderRadius: 'var(--radius-md)', border: `2px dashed ${p.color}50`, background: `${p.color}06`, opacity: 0.8, position: 'relative' }}>
-              <span style={{ fontSize: 20, flexShrink: 0 }}>{p.icon}</span>
+            <div key={p.label} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px', borderRadius: 'var(--radius-md)', border: `2px dashed ${p.color}50`, background: `${p.color}06`, opacity: 0.75, position: 'relative', cursor: 'not-allowed' }}>
+              <span style={{ fontSize: 18, flexShrink: 0 }}>{p.icon}</span>
               <div style={{ flex: 1 }}>
                 <div style={{ fontSize: 12, fontWeight: 700, color: p.color, marginBottom: 2 }}>{p.label}</div>
                 <div style={{ fontSize: 10, color: 'var(--text-muted)' }}>{p.desc}</div>
@@ -457,7 +985,7 @@ export default function AuditPage() {
           ))}
         </div>
         <div style={{ marginTop: 10, fontSize: 11, color: 'var(--text-muted)', fontFamily: 'Geist Mono, monospace' }}>
-          {getEnabledPillars().length} of 4 active pillars enabled · Unified TrustLens Score across all selected domains
+          {getEnabledPillars().length} of 2 active pillars enabled · Performance · Privacy · more pillars coming soon
         </div>
       </div>
 
@@ -595,6 +1123,25 @@ export default function AuditPage() {
                   Select a Journey Template
                 </div>
 
+                {/* Domain Selector */}
+                <div style={{ marginBottom: 14 }}>
+                  <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-muted)', marginBottom: 8, textTransform: 'uppercase', letterSpacing: '0.05em', fontFamily: 'Geist Mono, monospace' }}>Industry Domain</div>
+                  <div style={{ display: 'flex', gap: 8, overflowX: 'auto', paddingBottom: 4 }}>
+                    {JOURNEY_DOMAINS.map(d => {
+                      const domainJourneyCount = PREDEFINED_JOURNEYS.filter(j => j.domain === d.id).length;
+                      const isActiveDomain = selectedDomain === d.id;
+                      return (
+                        <button key={d.id} onClick={() => { setSelectedDomain(d.id); setSelectedJourney(null); }}
+                          style={{ flexShrink: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4, padding: '10px 14px', borderRadius: 'var(--radius-md)', border: `2px solid ${isActiveDomain ? d.color : 'var(--border)'}`, background: isActiveDomain ? `${d.color}12` : 'var(--bg-secondary)', cursor: 'pointer', transition: 'all 0.2s ease', minWidth: 72 }}>
+                          <span style={{ fontSize: 20 }}>{d.icon}</span>
+                          <span style={{ fontSize: 10, fontWeight: 700, color: isActiveDomain ? d.color : 'var(--text-primary)', whiteSpace: 'nowrap' }}>{d.label}</span>
+                          <span style={{ fontSize: 9, color: isActiveDomain ? d.color : 'var(--text-muted)', fontFamily: 'Geist Mono, monospace' }}>{domainJourneyCount} flows</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
                 {/* Pillar legend */}
                 <div style={{ display: 'flex', gap: 8, marginBottom: 12, flexWrap: 'wrap' }}>
                   {[
@@ -611,16 +1158,14 @@ export default function AuditPage() {
                 </div>
 
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 10, marginBottom: 14 }}>
-                  {PREDEFINED_JOURNEYS.map(j => {
+                  {PREDEFINED_JOURNEYS.filter(j => j.domain === selectedDomain).map(j => {
                     const pillarColors: Record<string, string> = { darkpatterns: 'var(--pillar-dp)', privacy: 'var(--pillar-priv)', accessibility: 'var(--pillar-a11y)', performance: 'var(--pillar-perf)' };
                     const pillarIcons: Record<string, string> = { darkpatterns: '🕵️', privacy: '🔒', accessibility: '♿', performance: '⚡' };
                     const pillarColor = pillarColors[j.primaryPillar] || 'var(--accent-primary)';
                     const isSelected = selectedJourney === j.id;
                     return (
                       <button key={j.id} id={`journey-${j.id}`} onClick={() => selectPredefinedJourney(j.id)}
-                        style={{ textAlign: 'left', borderRadius: 'var(--radius-md)', border: `2px solid ${isSelected ? pillarColor : 'var(--border)'}`, background: isSelected ? `${pillarColor}08` : 'var(--bg-secondary)', cursor: 'pointer', transition: 'all 0.2s ease', overflow: 'hidden', position: 'relative' }}>
-                        {/* Pillar colour strip */}
-                        <div style={{ height: 3, background: pillarColor, width: '100%' }} />
+                        style={{ textAlign: 'left', borderRadius: 'var(--radius-md)', borderTop: `4px solid ${pillarColor}`, borderRight: `1px solid ${isSelected ? pillarColor : 'var(--border)'}`, borderBottom: `1px solid ${isSelected ? pillarColor : 'var(--border)'}`, borderLeft: `1px solid ${isSelected ? pillarColor : 'var(--border)'}`, background: isSelected ? `${pillarColor}08` : 'var(--bg-secondary)', cursor: 'pointer', transition: 'all 0.2s ease', position: 'relative' }}>
                         <div style={{ padding: '10px 12px' }}>
                           {/* Row 1: icon + name + stage count */}
                           <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 6 }}>
@@ -695,8 +1240,7 @@ export default function AuditPage() {
                   })}
                   {/* Custom Journey Card */}
                   <button id="journey-custom" onClick={() => selectPredefinedJourney('custom')}
-                    style={{ textAlign: 'left', borderRadius: 'var(--radius-md)', border: '2px dashed var(--border)', background: 'transparent', cursor: 'pointer', transition: 'all 0.2s ease', overflow: 'hidden' }}>
-                    <div style={{ height: 3, background: 'var(--border)', width: '100%' }} />
+                    style={{ textAlign: 'left', borderRadius: 'var(--radius-md)', borderTop: '4px dashed var(--border)', borderRight: '1px dashed var(--border)', borderBottom: '1px dashed var(--border)', borderLeft: '1px dashed var(--border)', background: 'transparent', cursor: 'pointer', transition: 'all 0.2s ease' }}>
                     <div style={{ padding: '10px 12px', display: 'flex', flexDirection: 'column', gap: 4, height: '100%', justifyContent: 'center' }}>
                       <div style={{ fontSize: 20 }}>➕</div>
                       <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-primary)' }}>Create Custom Journey</div>
@@ -807,6 +1351,16 @@ export default function AuditPage() {
 
                       {/* Editable steps section */}
                       <div style={{ padding: '10px 14px', borderTop: `1px solid ${pillarColor}20` }}>
+                        {/* Template URL warning */}
+                        <div style={{ marginBottom: 10, padding: '8px 12px', borderRadius: 8, background: 'rgba(240,171,0,0.08)', border: '1px solid rgba(240,171,0,0.3)', display: 'flex', gap: 8, alignItems: 'flex-start' }}>
+                          <span style={{ fontSize: 14, flexShrink: 0, marginTop: 1 }}>⚠️</span>
+                          <div>
+                            <div style={{ fontSize: 10, fontWeight: 700, color: '#F0AB00', marginBottom: 2, fontFamily: 'Geist Mono, monospace', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Template URLs — Update for your site</div>
+                            <div style={{ fontSize: 10, color: 'var(--text-muted)', lineHeight: 1.5 }}>
+                              These paths are generic templates. Replace each URL with the actual page URL from your site (e.g. <code style={{ fontFamily: 'Geist Mono, monospace', background: 'rgba(255,255,255,0.06)', padding: '1px 4px', borderRadius: 3 }}>/term-life-insurance</code>). The audit engine will attempt the nearest match automatically.
+                            </div>
+                          </div>
+                        </div>
                         <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 8, fontFamily: 'Geist Mono, monospace' }}>
                           ✏️ Customize URLs &amp; Action Instructions
                         </div>

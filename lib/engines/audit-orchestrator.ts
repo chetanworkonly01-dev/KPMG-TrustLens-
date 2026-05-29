@@ -450,7 +450,11 @@ async function runAuditPipeline(id: string, config: AuditConfig) {
 
     // Get transactional pages for dark pattern engine (Bug 2 fix)
     const transactionalPages = getTransactionalPages(crawlResult.pages.map(p => ({ url: p.url, html: p.html })));
-    const dpPageList = transactionalPages.map(p => ({ url: p.url, title: crawlResult.pages.find(cp => cp.url === p.url)?.title || p.url }));
+    // Pass pre-crawled HTML to DP engine — enables bot-detection fallback (WAF evasion mode)
+    const dpPageList = transactionalPages.map(p => {
+      const crawledPage = crawlResult.pages.find(cp => cp.url === p.url);
+      return { url: p.url, title: crawledPage?.title || p.url, html: crawledPage?.html };
+    });
     const fullPageList = crawlResult.pages.map(p => ({ url: p.url, title: p.title }));
 
     const failedPillars: string[] = [];
@@ -601,12 +605,14 @@ async function runAuditPipeline(id: string, config: AuditConfig) {
           return { url: s.url, label: s.label };
         }
       });
+      const dpHtmlCache = new Map(crawlResult.pages.map(p => [p.url, p.html || '']));
       pillarTasks.push(
         runDarkPatternJourney(
           crawlResult.context,
           config.url!,
           dpJourneySteps,
-          (msg) => addLog({ timestamp: new Date().toISOString(), testId: 'DP-JOURNEY', testName: 'Dark Pattern Journey', wcag: '', status: 'running', pillar: 'darkpatterns', message: msg })
+          (msg) => addLog({ timestamp: new Date().toISOString(), testId: 'DP-JOURNEY', testName: 'Dark Pattern Journey', wcag: '', status: 'running', pillar: 'darkpatterns', message: msg }),
+          dpHtmlCache
         ).then(journeyFindings => {
           if (journeyFindings.findings.length > 0) {
             const converted = journeyFindings.findings.map(f => ({

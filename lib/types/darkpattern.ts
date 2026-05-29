@@ -80,11 +80,16 @@ export type DarkPatternRegulation =
   | 'EU-GDPR'         // General Data Protection Regulation
   | 'US-FTC'          // Federal Trade Commission Act
   | 'US-CCPA'         // California Consumer Privacy Act
-  | 'IN-CCPA'         // India Consumer Protection Act
+  | 'IN-CCPA'         // India Consumer Protection Act 2019
+  | 'IN-CPA'          // India Consumer Protection (Dark Patterns) Guidelines 2023
+  | 'IN-ASCI'         // Advertising Standards Council of India Dark Pattern Guidelines 2023
   | 'IN-DPDPA'        // India Digital Personal Data Protection Act 2023
   | 'IN-RBI'          // Reserve Bank of India Guidelines
   | 'IN-SEBI'         // Securities and Exchange Board of India
-  | 'UK-CPR';         // UK Consumer Protection Regulations
+  | 'UK-CPR'          // UK Consumer Protection Regulations
+  | 'UK-PECR'         // UK Privacy and Electronic Communications Regulations
+  | 'UK-ICO'          // UK Information Commissioner's Office Guidance
+  | 'AU-ACL';         // Australia Consumer Law
 
 // ── Finding Verifiability (Signal vs Verdict model) ──
 export type FindingVerdict = 'verdict' | 'signal';
@@ -159,7 +164,7 @@ export interface DarkPatternRule {
   description: string;
   severity: 'critical' | 'high' | 'medium' | 'low';
   regulation: DarkPatternRegulation[];
-  detect: 'dom' | 'visual' | 'journey' | 'ai' | 'flow';  // Detection method type
+  detect: 'dom' | 'visual' | 'journey' | 'ai' | 'flow' | 'textual';  // Detection method type
   complianceExemptible?: boolean;           // May be compliance-driven in BFSI/fintech (IRDAI/RBI/SEBI)
 }
 
@@ -182,4 +187,7 @@ export interface DarkPatternResult {
   // ── Compliance Exemption Summary ──
   complianceExemptions?: number;                          // Count of findings flagged as compliance-driven
   complianceExemptionsByCategory?: Record<string, number>; // Breakdown by exemption category
+  // ── Coverage Confidence ──
+  coverageCapApplied?: boolean;    // True when static scan found 0 issues but funnel was not verified
+  funnelVerified?: boolean;        // True only when interaction simulation traversed transactional flows
 }

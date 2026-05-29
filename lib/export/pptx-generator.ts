@@ -173,14 +173,16 @@ export async function generatePptx(audit: AuditResult): Promise<Buffer> {
   addLogo(agenda);
   addSlideTitle(agenda, 'Report Agenda');
 
-  const agendaItems = [
-    ['01', 'Executive Summary', 'Score, risk heat map, business impact, KPIs'],
-    ['02', 'Issue Backlog', 'Developer-format issues with WCAG refs, team owner, effort'],
-    ['03', 'Component Findings', 'Issues grouped by UI component — fix once, resolve many'],
-    ['04', 'Remediation Guidance', 'Practical notes per team: Frontend, Designer, Content, QA, PDF'],
-    ['05', 'Priority Matrix', 'Critical → Sprint 1, High → Sprint 2, Medium → Q2, Quick Wins → Today'],
-    ['06', 'Acceptance Criteria', '"Done When" checklist — use as QA regression test cases'],
-  ];
+  const agendaItemsAll = [
+    { always: true,   label: 'Executive Summary', desc: 'Score, risk heat map, business impact, KPIs' },
+    { always: isA11y, label: 'Issue Backlog',      desc: 'Developer-format issues with WCAG refs, team owner, effort' },
+    { always: isA11y, label: 'Component Findings', desc: 'Issues grouped by UI component — fix once, resolve many' },
+    { always: isA11y, label: 'Remediation Guidance', desc: 'Practical notes per team: Frontend, Designer, Content, QA, PDF' },
+    { always: isA11y, label: 'Priority Matrix',    desc: 'Critical → Sprint 1, High → Sprint 2, Medium → Q2, Quick Wins → Today' },
+    { always: isA11y, label: 'Acceptance Criteria', desc: '"Done When" checklist — use as QA regression test cases' },
+    { always: isDP,   label: 'Dark Pattern Findings', desc: `${dpFindings.length} pattern(s) detected — Brignull taxonomy + DSA Article 25` },
+  ].filter(i => i.always);
+  const agendaItems = agendaItemsAll.map((item, i) => [String(i + 1).padStart(2, '0'), item.label, item.desc]);
 
   agendaItems.forEach(([num, heading, desc], i) => {
     const y = 1.2 + i * 0.9;
@@ -245,8 +247,11 @@ export async function generatePptx(audit: AuditResult): Promise<Buffer> {
   addPageNum(exec, n);
 
   // ══════════════════════════════════════════════════
-  // SLIDE 4 — BUSINESS IMPACT
+  // SLIDES 4-N — ACCESSIBILITY-ONLY SLIDES
   // ══════════════════════════════════════════════════
+  if (isA11y) {
+
+  // ── Slide 4: Business Impact ──
   n++;
   const impact = lightSlide(pptx);
   addLogo(impact);
@@ -422,6 +427,8 @@ export async function generatePptx(audit: AuditResult): Promise<Buffer> {
     addPageNum(tableSlide, n);
   }
 
+  } // end isA11y slides
+
   // ══════════════════════════════════════════════════
   // SLIDE — NEXT STEPS & THANK YOU
   // ══════════════════════════════════════════════════
@@ -533,6 +540,21 @@ export async function generatePptx(audit: AuditResult): Promise<Buffer> {
       });
       addPageNum(dpSlide, n);
     }
+
+    // Evidence screenshot slides (one per finding that has a screenshot)
+    dpFindings.forEach((f, idx) => {
+      const screenshotUrl: string | undefined = (f.evidence as any)?.screenshotDataUrl;
+      if (!screenshotUrl) return;
+      n++;
+      const evidSlide = lightSlide(pptx);
+      addLogo(evidSlide);
+      addSlideTitle(evidSlide, `Evidence: #${String(idx+1).padStart(3,'0')} — ${f.title.substring(0, 50)}`, (f.evidence as any)?.pageUrl || f.pageUrl || '');
+      try {
+        evidSlide.addImage({ data: screenshotUrl, x:0.3, y:1.1, w:9.4, h:4.8, sizing:{ type:'contain', w:9.4, h:4.8 } });
+      } catch (_) { /* skip if image data invalid */ }
+      evidSlide.addText(`Severity: ${f.severity.toUpperCase()}   |   Rule: ${f.ruleId || '—'}   |   Pattern: ${f.brignullPattern || 'Custom'}`, { x:0.3, y:6.1, w:9.4, h:0.3, fontSize:8, fontFace:'Calibri', color: K.midGrey });
+      addPageNum(evidSlide, n);
+    });
   }
 
   const data = await pptx.write({ outputType:'nodebuffer' });

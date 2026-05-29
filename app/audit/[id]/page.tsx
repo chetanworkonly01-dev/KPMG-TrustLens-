@@ -14,7 +14,7 @@ interface AuditData {
   // TrustLens
   trustScore?: { overall: number; trustLevel: string; pillarScores: Record<string, { pillar: string; score: number; weight: number; totalFindings: number; status: string }> };
   pillarResults?: {
-    darkpatterns?: { findings: DPFinding[]; ethicsScore: number; principleScores: Record<string, number>; categoryBreakdown: Record<string, number>; consentIntegrity: number; choiceSymmetry: number; manipulationIndex: number; totalFindings: number; findingsBySeverity: Record<string, number>; regulatoryRisks: string[] };
+    darkpatterns?: { findings: DPFinding[]; ethicsScore: number; principleScores: Record<string, number>; categoryBreakdown: Record<string, number>; consentIntegrity: number; choiceSymmetry: number; manipulationIndex: number; totalFindings: number; findingsBySeverity: Record<string, number>; regulatoryRisks: string[]; coverageCapApplied?: boolean; funnelVerified?: boolean };
     performance?: { pages: PerfPage[]; overallScore: number; averageVitals: Record<string, number | null>; totalResourceIssues: number; recommendations: string[] };
     privacy?: { findings: PrivFinding[]; overallScore: number; cookies: any[]; trackers: TrackerInfo[]; totalTrackers: number; hasConsentBanner: boolean; hasPrivacyPolicy: boolean; findingsBySeverity: Record<string, number>; regulatoryRisks: string[] };
   };
@@ -1216,6 +1216,31 @@ export default function AuditResultPage() {
         // Set of actually crawled/audited URLs
         const crawledUrls = new Set<string>(data.pages?.map(p => p.url) || []);
 
+        // Helper: find the closest crawled URL to a template path by matching path segments
+        const findClosestCrawledUrl = (targetUrl: string): string | null => {
+          try {
+            const targetPath = new URL(targetUrl).pathname.toLowerCase().replace(/\/$/, '');
+            const targetSegs = targetPath.split('/').filter(Boolean);
+            if (targetSegs.length === 0) return null;
+            let bestMatch: string | null = null;
+            let bestScore = 0;
+            crawledUrls.forEach(crawledUrl => {
+              try {
+                const crawledPath = new URL(crawledUrl).pathname.toLowerCase().replace(/\/$/, '');
+                const crawledSegs = crawledPath.split('/').filter(Boolean);
+                let score = 0;
+                const minLen = Math.min(targetSegs.length, crawledSegs.length);
+                for (let i = 0; i < minLen; i++) {
+                  if (targetSegs[i] === crawledSegs[i]) score++;
+                  else break;
+                }
+                if (score > bestScore) { bestScore = score; bestMatch = crawledUrl; }
+              } catch { /* skip */ }
+            });
+            return bestScore > 0 ? bestMatch : null;
+          } catch { return null; }
+        };
+
         // Helper: gather per-page findings across all enabled pillars
         const getPageFindings = (url: string) => ({
           a11y:        a11yEnabled ? data.report?.pageBreakdown?.find(p => p.url === url) : undefined,
@@ -1357,13 +1382,13 @@ export default function AuditResultPage() {
                       {scopeMode === 'predefined' ? (journeyMeta?.label || 'Predefined Journey') : 'Director Mode'} — {journeySteps.length} Steps Audited
                     </div>
                     <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>
-                      Each step below shows actual findings from the audited URL. Pages marked ⚠ were not accessible on the target site.
+                      Each step shows findings from the audited URL. Steps marked ⚡ use the nearest matching page when an exact URL was not found.
                     </div>
                   </div>
                 </div>
                 <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
                   <span style={{ fontSize: 10, padding: '2px 8px', borderRadius: 99, background: 'rgba(254,113,65,0.1)', color: 'var(--accent-primary)', border: '1px solid rgba(254,113,65,0.3)', fontWeight: 700 }}>
-                    {journeySteps.filter(s => { try { return crawledUrls.has(new URL(s.url, baseUrl).href); } catch { return crawledUrls.has(s.url); } }).length}/{journeySteps.length} steps audited
+                    {journeySteps.filter(s => { try { const r = new URL(s.url, baseUrl).href; return crawledUrls.has(r) || !!findClosestCrawledUrl(r); } catch { return crawledUrls.has(s.url); } }).length}/{journeySteps.length} steps resolved
                   </span>
                   <span style={{ fontSize: 10, padding: '2px 8px', borderRadius: 99, background: 'rgba(0,178,169,0.1)', color: '#00B2A9', border: '1px solid rgba(0,178,169,0.3)', fontWeight: 700 }}>
                     {enabledPillars.length} pillar{enabledPillars.length !== 1 ? 's' : ''} active
@@ -1376,28 +1401,39 @@ export default function AuditResultPage() {
                 try { resolvedUrl = new URL(step.url, baseUrl).href; } catch { /* keep as-is */ }
 
                 const wasAudited = crawledUrls.has(resolvedUrl);
-                const findings = getPageFindings(resolvedUrl);
-                const score = wasAudited ? computeScore(findings) : null;
+                // Fuzzy fallback: find nearest crawled URL by path-segment prefix match
+                const closestUrl = !wasAudited ? findClosestCrawledUrl(resolvedUrl) : null;
+                const isApproximate = !wasAudited && !!closestUrl;
+                const effectiveUrl = wasAudited ? resolvedUrl : (closestUrl || resolvedUrl);
+                const findings = (wasAudited || isApproximate) ? getPageFindings(effectiveUrl) : getPageFindings(resolvedUrl);
+                const score = (wasAudited || isApproximate) ? computeScore(findings) : null;
                 const scoreColor = score === null ? '#5B7198' : score >= 75 ? '#00BA8C' : score >= 50 ? '#F0AB00' : '#FF3356';
                 const totalIssues = (findings.a11y?.issueCount || 0) + findings.dpFindings.length + (findings.perfPage?.resourceIssues.length || 0) + findings.privFindings.length;
 
                 return (
-                  <div key={step.id || stepIdx} className="glass-card" style={{ borderLeft: `3px solid ${wasAudited ? (totalIssues > 0 ? scoreColor : '#00B2A9') : '#5B7198'}` }}>
+                  <div key={step.id || stepIdx} className="glass-card" style={{ borderLeft: `3px solid ${(wasAudited || isApproximate) ? (totalIssues > 0 ? scoreColor : '#00B2A9') : '#5B7198'}` }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 10 }}>
                       <div style={{ flex: 1, minWidth: 0 }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4, flexWrap: 'wrap' }}>
                           <span style={{ fontSize: 10, fontWeight: 700, padding: '2px 8px', borderRadius: 99, background: 'rgba(255,255,255,0.06)', color: 'var(--text-muted)', border: '1px solid var(--border)', fontFamily: 'Geist Mono, monospace' }}>
                             Step {stepIdx + 1}
                           </span>
                           <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-primary)' }}>{step.label}</span>
                           {wasAudited
                             ? <span style={{ fontSize: 9, padding: '2px 7px', borderRadius: 99, background: 'rgba(0,178,169,0.1)', color: '#00B2A9', border: '1px solid rgba(0,178,169,0.3)', fontWeight: 700 }}>✓ Audited</span>
-                            : <span style={{ fontSize: 9, padding: '2px 7px', borderRadius: 99, background: 'rgba(232,0,45,0.08)', color: '#E8002D', border: '1px solid rgba(232,0,45,0.2)', fontWeight: 700 }}>⚠ Not Accessible</span>
+                            : isApproximate
+                              ? <span style={{ fontSize: 9, padding: '2px 7px', borderRadius: 99, background: 'rgba(240,171,0,0.1)', color: '#F0AB00', border: '1px solid rgba(240,171,0,0.3)', fontWeight: 700 }}>⚡ Nearest Match</span>
+                              : <span style={{ fontSize: 9, padding: '2px 7px', borderRadius: 99, background: 'rgba(232,0,45,0.08)', color: '#E8002D', border: '1px solid rgba(232,0,45,0.2)', fontWeight: 700 }}>⚠ Not Accessible</span>
                           }
                         </div>
-                        <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: step.action ? 6 : 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: (step.action || isApproximate) ? 4 : 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                           {resolvedUrl}
                         </div>
+                        {isApproximate && (
+                          <div style={{ fontSize: 10, color: '#F0AB00', marginBottom: step.action ? 4 : 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontFamily: 'Geist Mono, monospace' }}>
+                            ↳ Showing nearest: {closestUrl}
+                          </div>
+                        )}
                         {step.action && (
                           <div style={{ fontSize: 11, color: 'var(--text-secondary)', fontStyle: 'italic', marginBottom: 6, lineHeight: 1.4 }}>
                             Checks: {step.action}
@@ -1416,7 +1452,7 @@ export default function AuditResultPage() {
                         }
                       </div>
                     </div>
-                    {renderPillarFindings(findings, wasAudited)}
+                    {renderPillarFindings(findings, wasAudited || isApproximate)}
                   </div>
                 );
               })}
@@ -1502,6 +1538,19 @@ export default function AuditResultPage() {
                 <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase' }}>Manipulation Index</div>
               </div>
             </div>
+
+            {/* ── Coverage Confidence Warning — surfaces when static scan found 0 issues but funnel unverified ── */}
+            {dp.coverageCapApplied && (
+              <div style={{ background: 'rgba(240,171,0,0.12)', border: '1px solid rgba(240,171,0,0.5)', borderRadius: 10, padding: '12px 16px', marginBottom: 16, display: 'flex', gap: 12, alignItems: 'flex-start' }}>
+                <span style={{ fontSize: 20, flexShrink: 0 }}>⚠️</span>
+                <div>
+                  <div style={{ fontWeight: 700, fontSize: 13, color: '#F0AB00', marginBottom: 4 }}>Unverified Funnel — Score Capped at 82</div>
+                  <div style={{ fontSize: 12, color: 'var(--text-secondary)', lineHeight: 1.6 }}>
+                    Static page scan found <strong>0 dark patterns</strong>, but no interaction flows were simulated. For transactional sites (insurance, fintech, e-commerce), the most harmful dark patterns — preselected add-ons, drip pricing, phone gates, confirmshaming — only appear during user journeys. The Ethics Score has been capped pending manual funnel verification or interaction simulation. <strong>Do not issue a clean bill of health until quote/checkout flows are tested.</strong>
+                  </div>
+                </div>
+              </div>
+            )}
 
             {/* Principle Scores */}
             <div className="glass-card" style={{ marginBottom: 20 }}>

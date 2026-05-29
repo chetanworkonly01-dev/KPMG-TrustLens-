@@ -2,7 +2,7 @@ import {
   Document, Packer, Paragraph, TextRun, Table, TableRow, TableCell,
   WidthType, BorderStyle, AlignmentType, HeadingLevel,
   ShadingType, Header, Footer, PageNumber, NumberFormat,
-  convertInchesToTwip, LevelFormat, INumberingOptions
+  convertInchesToTwip, LevelFormat, INumberingOptions, ImageRun
 } from 'docx';
 import { AuditResult, AccessibilityIssue } from '../types/audit';
 import type { DarkPatternFinding } from '../types/darkpattern';
@@ -172,6 +172,10 @@ export async function generateDocx(audit: AuditResult): Promise<Buffer> {
   const isDP   = pillars.includes('darkpatterns');
   const isPerf = pillars.includes('performance');
   const isPriv = pillars.includes('privacy');
+  // Dynamic section numbers based on which pillars are active
+  const dpSectionNum  = isA11y ? '7' : '2';
+  const perfSectionNum = isA11y && isDP ? '8' : isA11y || isDP ? '3' : '2';
+  const privSectionNum = isA11y && isDP && isPerf ? '9' : isA11y && isDP ? '8' : isA11y || isDP || isPerf ? '3' : '2';
 
   // ── Pillar-specific column headers for issue table ────────────
   const col3Header = isA11y ? 'WCAG SC'      : isDP ? 'Pattern ID' : isPerf ? 'Metric'      : 'Regulation';
@@ -362,8 +366,9 @@ export async function generateDocx(audit: AuditResult): Promise<Buffer> {
           ]),
 
           // ─────────────────────────────────────────────────────
-          // SECTION 2: ISSUE BACKLOG (DEVELOPER FORMAT)
+          // SECTIONS 2-6: ACCESSIBILITY-ONLY SECTIONS
           // ─────────────────────────────────────────────────────
+          ...(!isA11y ? [] : [
           h1('2. Issue Backlog — Developer Format'),
           body('Each issue below includes all information needed to assign, estimate, implement, and verify the fix. Issues are sorted by severity.', K.darkGrey),
           sp(),
@@ -573,9 +578,10 @@ export async function generateDocx(audit: AuditResult): Promise<Buffer> {
               ] })),
             ],
           }),
+          ]), // end isA11y sections 2-6
 
           // ─────────────────────────────────────────────────────
-          // SECTION 7: DARK PATTERN FINDINGS (if DP pillar)
+          // DARK PATTERN FINDINGS (pillar-aware section num)
           // ─────────────────────────────────────────────────────
           ...(() => {
             if (!isDP) return [];
@@ -585,13 +591,13 @@ export async function generateDocx(audit: AuditResult): Promise<Buffer> {
 
             if (dpFindings.length === 0) {
               return [
-                h1('7. Dark Pattern Findings'),
+                h1(`${dpSectionNum}. Dark Pattern Findings`),
                 body('✓  No dark patterns detected — the interface respects ethical design principles.', K.teal),
               ];
             }
 
             return [
-              h1('7. Dark Pattern Findings'),
+              h1(`${dpSectionNum}. Dark Pattern Findings`),
               body(`${dpFindings.length} dark pattern(s) detected. Each finding is classified against the Brignull taxonomy and EU Digital Services Act Article 25.`, K.darkGrey),
               sp(),
 
@@ -623,7 +629,7 @@ export async function generateDocx(audit: AuditResult): Promise<Buffer> {
 
               // Detail cards
               sp(200),
-              h2('7.1 Dark Pattern Detail Cards'),
+              h2(`${dpSectionNum}.1 Dark Pattern Detail Cards`),
               ...dpFindings.flatMap((f, idx) => {
                 const parts: (Paragraph | Table)[] = [
                   divider(),
@@ -686,6 +692,16 @@ export async function generateDocx(audit: AuditResult): Promise<Buffer> {
                 parts.push(new Paragraph({ spacing: { after: 50 }, children: [new TextRun({ text: 'Recommendation', bold: true, font: 'Calibri', size: 21, color: '047856' })] }));
                 parts.push(body(f.recommendation, '047856'));
 
+                // Evidence screenshot
+                const screenshotUrl: string | undefined = (f.evidence as any)?.screenshotDataUrl;
+                if (screenshotUrl) {
+                  const base64Data = screenshotUrl.replace(/^data:image\/\w+;base64,/, '');
+                  parts.push(new Paragraph({ spacing: { before: 120, after: 40 }, children: [new TextRun({ text: `Evidence Screenshot — ${(f.evidence as any)?.pageUrl || f.pageUrl || ''}`, bold: true, font: 'Calibri', size: 18, color: K.midGrey, italics: true })] }));
+                  try {
+                    parts.push(new Paragraph({ spacing: { after: 160 }, children: [new ImageRun({ data: Buffer.from(base64Data, 'base64'), transformation: { width: 500, height: 250 }, type: 'jpg' })] }));
+                  } catch (_) { /* skip if image data is invalid */ }
+                }
+
                 return parts;
               }),
             ];
@@ -697,16 +713,16 @@ export async function generateDocx(audit: AuditResult): Promise<Buffer> {
           ...(() => {
             if (!isPerf) return [];
             const perfResult = (audit as any).pillarResults?.performance;
-            if (!perfResult) return [h1('8. Performance Findings'), body('Performance pillar data not available.', K.midGrey)];
+            if (!perfResult) return [];
             const perfPages: any[] = perfResult.pages || [];
             const green = '006E51';
             const greenBg = 'E8F9F4';
-            if (perfPages.length === 0) return [h1('8. Performance Findings'), body('✓  No performance data captured.', K.teal)];
+            if (perfPages.length === 0) return [];
 
             const vitalLabel: Record<string, string> = { lcp: 'LCP (ms)', fid: 'FID (ms)', cls: 'CLS', fcp: 'FCP (ms)', ttfb: 'TTFB (ms)', tti: 'TTI (ms)' };
 
             return [
-              h1('8. Performance Findings'),
+              h1(`${perfSectionNum}. Performance Findings`),
               body(`Core Web Vitals and resource analysis across ${perfPages.length} page(s). Overall performance score: ${perfResult.overallScore ?? '—'}/100.`, K.darkGrey),
               sp(),
               new Table({
@@ -737,7 +753,7 @@ export async function generateDocx(audit: AuditResult): Promise<Buffer> {
               }),
               sp(120),
               ...(perfResult.recommendations?.length > 0 ? [
-                h2('8.1 Performance Recommendations'),
+                h2(`${perfSectionNum}.1 Performance Recommendations`),
                 ...(perfResult.recommendations as string[]).slice(0, 10).map((r: string) => bullet(r)),
               ] : []),
             ];
@@ -749,13 +765,13 @@ export async function generateDocx(audit: AuditResult): Promise<Buffer> {
           ...(() => {
             if (!isPriv) return [];
             const privResult = (audit as any).pillarResults?.privacy;
-            if (!privResult) return [h1('9. Privacy & Compliance Findings'), body('Privacy pillar data not available.', K.midGrey)];
+            if (!privResult) return [];
             const privFindings: any[] = privResult.findings || [];
             const orange = 'B45309';
             const orangeBg = 'FFF7ED';
 
             return [
-              h1('9. Privacy & Compliance Findings'),
+              h1(`${privSectionNum}. Privacy & Compliance Findings`),
               body(`${privFindings.length} privacy finding(s) detected. Overall privacy score: ${privResult.overallScore ?? '—'}/100. Trackers detected: ${privResult.totalTrackers ?? 0}. Consent banner: ${privResult.hasConsentBanner ? 'Present' : 'Missing'}.`, K.darkGrey),
               sp(),
               new Table({
@@ -782,7 +798,7 @@ export async function generateDocx(audit: AuditResult): Promise<Buffer> {
               }),
               ...(privFindings.length > 0 ? [
                 sp(120),
-                h2('9.1 Privacy Finding Details'),
+                h2(`${privSectionNum}.1 Privacy Finding Details`),
                 ...privFindings.slice(0, 20).flatMap((f: any, idx: number) => [
                   divider(),
                   new Paragraph({

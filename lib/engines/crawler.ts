@@ -249,10 +249,13 @@ export async function crawlWebsite(options: CrawlOptions): Promise<CrawlResult> 
   }
 
   // Any URL still in queue that we didn't reach → skipped due to cap
+  // Mark as visited while draining to prevent duplicate skippedPages entries
+  // (queue can contain raw URL variants that normalize to the same URL)
   for (const remaining of urlQueue) {
     const norm = normalizeUrl(remaining.url);
     allDiscoveredUrls.add(norm);
     if (!visitedUrls.has(norm)) {
+      visitedUrls.add(norm); // prevent duplicates for the same normalized URL
       skippedPages.push({ url: remaining.url, reason: 'Max page limit reached' });
     }
   }
