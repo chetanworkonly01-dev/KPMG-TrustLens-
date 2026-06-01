@@ -1218,48 +1218,44 @@ async function runTextPatternScans(page: Page, pageUrl: string, rawHtml?: string
   // Fast path: when raw HTML is available (WAF evasion / setContent mode),
   // parse text directly in Node.js — avoids empty-DOM issues from setContent without CSS.
   if (rawHtml && rawHtml.length > 100) {
-    // Cap at 300KB to bound processing time on large pages (privacy policies, T&Cs, etc.)
-    const cappedHtml = rawHtml.length > 300_000 ? rawHtml.substring(0, 300_000) : rawHtml;
+    // Cap at 200KB. PolicyBazaar pages can be 480KB+ with heavy inline JS.
+    const cappedHtml = rawHtml.length > 200_000 ? rawHtml.substring(0, 200_000) : rawHtml;
 
-    // Step 1: strip script/style/noscript/comment blocks using [^]* with no backref — O(n) safe
-    // IMPORTANT: do NOT use [\s\S]*? with backreferences (\1) on arbitrary HTML — catastrophic backtracking
-    const stripped = cappedHtml
-      .replace(/<script\b[^>]*>[^]*?<\/script>/gi, ' ')
-      .replace(/<style\b[^>]*>[^]*?<\/style>/gi, ' ')
-      .replace(/<noscript\b[^>]*>[^]*?<\/noscript>/gi, ' ')
-      .replace(/<!--[^]*?-->/g, ' ');
-
-    // Step 2: single-pass opening-tag scan to extract tag name + surrounding text — no backreferences
-    // Pattern: captures an opening tag and the text immediately following it (up to next tag)
-    const openTagRe = /<(a|button|input)\b([^>]*)>/gi;
+    // ONLY use bare-text extraction — the ONLY provably O(n) approach on arbitrary HTML.
+    // DO NOT use [\s\S]*?, [^]*?, or any lazy quantifier across large inputs — exponential backtracking.
+    // DO NOT try to strip <script>/<style> blocks before this — those replacements are also O(n²) worst-case.
+    // ">([^<]{4,300})<" : [^<] = "not a <", can never backtrack exponentially.
+    // Consequence: some JS/CSS text will slip through; dark pattern patterns are specific enough to not match it.
+    const bareTextRe = />([^<]{4,300})</g;
     let m: RegExpExecArray | null;
     const seen = new Set<string>();
 
-    while ((m = openTagRe.exec(stripped)) !== null) {
-      const tag = m[1].toLowerCase();
-      const attrs = m[2];
-      // Extract value/placeholder/aria-label from attributes (no inner HTML needed)
-      const valueMatch = attrs.match(/(?:value|placeholder|aria-label|title)="([^"]{3,150})"/i);
-      if (valueMatch) {
-        const text = valueMatch[1].replace(/\s+/g, ' ').trim();
-        if (text.length >= 4 && !seen.has(text)) {
-          seen.add(text);
-          textElements.push({ text: text.substring(0, 200), tag, html: m[0].substring(0, 200), isButton: tag === 'button' || (tag === 'input' && /type="(?:submit|button)"/i.test(attrs)), isLink: tag === 'a' });
-        }
-      }
+    while ((m = bareTextRe.exec(cappedHtml)) !== null) {
+      const text = m[1].replace(/&[a-z#0-9]+;/gi, ' ').replace(/\s+/g, ' ').trim();
+      if (text.length < 4 || text.length > 400 || seen.has(text)) continue;
+      // Skip obvious JS/CSS snippets (contain { } ; = which don't appear in natural language)
+      if (/[{}=;]/.test(text) && !/crore|lakh|trust|offer|limited|expires|only \d/i.test(text)) continue;
+      seen.add(text);
+      // Heuristic: look back up to 80 chars for the enclosing opening tag name
+      const before = cappedHtml.substring(Math.max(0, m.index - 80), m.index + 1);
+      const tagHint = before.match(/<(a|button|h[1-6]|p|li|span|label|div|td)\b/i)?.[1]?.toLowerCase() || 'text';
+      textElements.push({
+        text: text.substring(0, 200),
+        tag: tagHint,
+        html: `<${tagHint}>${text.substring(0, 200)}</${tagHint}>`,
+        isButton: tagHint === 'button',
+        isLink: tagHint === 'a',
+      });
     }
 
-    // Step 3: bare text nodes — the only safe O(n) approach for arbitrary HTML
-    // [^<] cannot backtrack exponentially; this is the primary text extraction path
-    const bareTextRe = />([^<]{4,300})</g;
-    while ((m = bareTextRe.exec(stripped)) !== null) {
-      const text = m[1].replace(/&[a-z#0-9]+;/g, ' ').replace(/\s+/g, ' ').trim();
-      if (text.length < 4 || text.length > 500 || seen.has(text)) continue;
-      seen.add(text);
-      // Heuristic tag classification from surrounding context
-      const before = stripped.substring(Math.max(0, m.index - 50), m.index + 1);
-      const tagHint = before.match(/<(a|button|h[1-6]|p|li|span|label)\b/i)?.[1]?.toLowerCase() || 'text';
-      textElements.push({ text: text.substring(0, 200), tag: tagHint, html: `<${tagHint}>${text.substring(0, 200)}</${tagHint}>`, isButton: tagHint === 'button', isLink: tagHint === 'a' });
+    // Also extract attribute values from <a>, <button>, <input> tags — safe with [^"] quantifier
+    const attrRe = /<(?:a|button|input)\b[^>]*(?:value|placeholder|aria-label|title)="([^"]{4,150})"/gi;
+    while ((m = attrRe.exec(cappedHtml)) !== null) {
+      const text = m[1].replace(/\s+/g, ' ').trim();
+      if (!seen.has(text)) {
+        seen.add(text);
+        textElements.push({ text: text.substring(0, 200), tag: 'button', html: m[0].substring(0, 200), isButton: true, isLink: false });
+      }
     }
   }
 
