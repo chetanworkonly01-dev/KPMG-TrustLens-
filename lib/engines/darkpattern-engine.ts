@@ -52,6 +52,8 @@ export async function runDarkPatternAudit(
     let page: Page | null = null;
     let pageScreenshotDataUrl: string | undefined;
     let usingCachedHtml = false;
+    const screenshotTasks: Promise<void>[] = [];
+    const pageDeadlineMs = Date.now() + 4 * 60 * 1000; // 4-minute hard cap per page
     try {
       page = await context.newPage();
 
@@ -114,7 +116,8 @@ export async function runDarkPatternAudit(
       const domFindings = await runDOMScans(page, pageData.url);
       for (const f of domFindings) {
         f.id = `dp-${++findingId}`;
-        f.evidence.screenshotDataUrl = await captureElementScreenshot(page, f, pageScreenshotDataUrl);
+        f.evidence.screenshotDataUrl = pageScreenshotDataUrl;
+        screenshotTasks.push(captureElementScreenshot(page, f, pageScreenshotDataUrl).then(url => { if (url) f.evidence.screenshotDataUrl = url; }).catch(() => {}));
         findings.push(f);
       }
       log('DP-DOM', domFindings.length > 0 ? 'fail' : 'pass', `  ✓ Phase 1 complete — ${domFindings.length} finding(s) detected`, 'Brignull Taxonomy', 'Phase 1: DOM Scan');
@@ -128,7 +131,8 @@ export async function runDarkPatternAudit(
       const visualFindings = await runVisualScans(page, pageData.url);
       for (const f of visualFindings) {
         f.id = `dp-${++findingId}`;
-        f.evidence.screenshotDataUrl = await captureElementScreenshot(page, f, pageScreenshotDataUrl);
+        f.evidence.screenshotDataUrl = pageScreenshotDataUrl;
+        screenshotTasks.push(captureElementScreenshot(page, f, pageScreenshotDataUrl).then(url => { if (url) f.evidence.screenshotDataUrl = url; }).catch(() => {}));
         findings.push(f);
       }
       log('DP-VIS', visualFindings.length > 0 ? 'fail' : 'pass', `  ✓ Phase 2 complete — ${visualFindings.length} finding(s) detected`, 'EU DSA Art. 25', 'Phase 2: Visual Scan');
@@ -144,7 +148,8 @@ export async function runDarkPatternAudit(
       const textFindings = await runTextPatternScans(page, pageData.url, usingCachedHtml ? pageData.html : undefined);
       for (const f of textFindings) {
         f.id = `dp-${++findingId}`;
-        f.evidence.screenshotDataUrl = await captureElementScreenshot(page, f, pageScreenshotDataUrl);
+        f.evidence.screenshotDataUrl = pageScreenshotDataUrl;
+        screenshotTasks.push(captureElementScreenshot(page, f, pageScreenshotDataUrl).then(url => { if (url) f.evidence.screenshotDataUrl = url; }).catch(() => {}));
         findings.push(f);
       }
       log('DP-NLP', textFindings.length > 0 ? 'fail' : 'pass', `  ✓ Phase 3 complete — ${textFindings.length} finding(s) detected`, 'Cognitive Bias Framework', 'Phase 3: NLP Scan');
@@ -159,7 +164,8 @@ export async function runDarkPatternAudit(
       const deepFindings = await runDeepCodeInspection(page, pageData.url);
       for (const f of deepFindings) {
         f.id = `dp-${++findingId}`;
-        f.evidence.screenshotDataUrl = await captureElementScreenshot(page, f, pageScreenshotDataUrl);
+        f.evidence.screenshotDataUrl = pageScreenshotDataUrl;
+        screenshotTasks.push(captureElementScreenshot(page, f, pageScreenshotDataUrl).then(url => { if (url) f.evidence.screenshotDataUrl = url; }).catch(() => {}));
         findings.push(f);
       }
       log('DP-DEEP', deepFindings.length > 0 ? 'fail' : 'pass', `  ✓ Phase 4 complete — ${deepFindings.length} finding(s) detected`, 'FTC + GDPR Art. 6', 'Phase 4: Deep Code Scan');
@@ -172,7 +178,8 @@ export async function runDarkPatternAudit(
       const axFindings = await runA11yCrossMap(page, pageData.url);
       for (const f of axFindings) {
         f.id = `dp-${++findingId}`;
-        f.evidence.screenshotDataUrl = await captureElementScreenshot(page, f, pageScreenshotDataUrl);
+        f.evidence.screenshotDataUrl = pageScreenshotDataUrl;
+        screenshotTasks.push(captureElementScreenshot(page, f, pageScreenshotDataUrl).then(url => { if (url) f.evidence.screenshotDataUrl = url; }).catch(() => {}));
         findings.push(f);
       }
       log('DP-AX', axFindings.length > 0 ? 'fail' : 'pass', `  ✓ Phase 5 complete — ${axFindings.length} finding(s) detected`, 'WCAG + Dark Pattern Intersection', 'Phase 5: A11Y Cross-Map');
@@ -185,7 +192,8 @@ export async function runDarkPatternAudit(
       const flowFindings = await runInteractionFlowAnalysis(page, pageData.url);
       for (const f of flowFindings) {
         f.id = `dp-${++findingId}`;
-        f.evidence.screenshotDataUrl = await captureElementScreenshot(page, f, pageScreenshotDataUrl);
+        f.evidence.screenshotDataUrl = pageScreenshotDataUrl;
+        screenshotTasks.push(captureElementScreenshot(page, f, pageScreenshotDataUrl).then(url => { if (url) f.evidence.screenshotDataUrl = url; }).catch(() => {}));
         findings.push(f);
       }
       log('DP-FLOW', flowFindings.length > 0 ? 'fail' : 'pass', `  ✓ Phase 6 complete — ${flowFindings.length} finding(s) detected`, 'Ethical Friction Score', 'Phase 6: Flow Analysis');
@@ -200,13 +208,22 @@ export async function runDarkPatternAudit(
       const cmpFindings = await runCookieConsentAudit(page, pageData.url);
       for (const f of cmpFindings) {
         f.id = `dp-${++findingId}`;
-        f.evidence.screenshotDataUrl = await captureElementScreenshot(page, f, pageScreenshotDataUrl);
+        f.evidence.screenshotDataUrl = pageScreenshotDataUrl;
+        screenshotTasks.push(captureElementScreenshot(page, f, pageScreenshotDataUrl).then(url => { if (url) f.evidence.screenshotDataUrl = url; }).catch(() => {}));
         findings.push(f);
       }
       log('DP-CMP', cmpFindings.length > 0 ? 'fail' : 'pass', `  ✓ Phase 9 complete — ${cmpFindings.length} CMP finding(s) detected`, 'EDPB + GDPR Cookie Compliance', 'Phase 9: CMP Audit');
 
+      // ── Flush element screenshots (parallel, capped at 15s) ──
+      // All 7 phases above dispatched screenshot tasks without blocking. Resolve them
+      // now in parallel so Phase 8 (which navigates/screenshots again) starts clean.
+      await Promise.race([
+        Promise.allSettled(screenshotTasks),
+        new Promise<void>(resolve => setTimeout(resolve, 15000)),
+      ]);
+
       // ── Phase 8: Visual AI Dark Pattern Analysis (Claude Vision) — always-on ──
-      if (process.env.ANTHROPIC_API_KEY) {
+      if (process.env.ANTHROPIC_API_KEY && Date.now() < pageDeadlineMs) {
         log('DP-VISAI', 'running', '━━━ Phase 8: Visual AI Dark Pattern Analysis', 'Claude Vision — Visual Design Exploitation Detection', 'Phase 8: Visual AI Scan');
         log('DP-VISAI-CA', 'running', '  → Consent Asymmetry (DP-VIS-AI-01): Graphical Accept vs Reject visual weight imbalance', 'Claude Vision', 'Phase 8: Visual AI Scan');
         log('DP-VISAI-UG', 'running', '  → Image-Based Urgency (DP-VIS-AI-02): Countdown graphics, scarcity badges rendered as images', 'Claude Vision', 'Phase 8: Visual AI Scan');
@@ -2480,20 +2497,25 @@ ${ruleDescriptions}
   const { default: Anthropic } = await import('@anthropic-ai/sdk');
   const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
-  const response = await client.messages.create({
-    model: 'claude-haiku-4-5-20251001',
-    max_tokens: 2000,
-    messages: [{
-      role: 'user',
-      content: [
-        {
-          type: 'image',
-          source: { type: 'base64', media_type: 'image/jpeg', data: screenshotB64 },
-        },
-        { type: 'text', text: prompt },
-      ],
-    }],
-  });
+  const response = await Promise.race([
+    client.messages.create({
+      model: 'claude-haiku-4-5-20251001',
+      max_tokens: 2000,
+      messages: [{
+        role: 'user',
+        content: [
+          {
+            type: 'image',
+            source: { type: 'base64', media_type: 'image/jpeg', data: screenshotB64 },
+          },
+          { type: 'text', text: prompt },
+        ],
+      }],
+    }),
+    new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error('Phase 8 Vision API timed out after 45s')), 45000)
+    ),
+  ]);
 
   const raw = (response.content[0] as { type: string; text: string })?.text || '[]';
 
