@@ -1218,8 +1218,10 @@ async function runTextPatternScans(page: Page, pageUrl: string, rawHtml?: string
   // Fast path: when raw HTML is available (WAF evasion / setContent mode),
   // parse text directly in Node.js — avoids empty-DOM issues from setContent without CSS.
   if (rawHtml && rawHtml.length > 100) {
-    // Cap at 200KB. PolicyBazaar pages can be 480KB+ with heavy inline JS.
-    const cappedHtml = rawHtml.length > 200_000 ? rawHtml.substring(0, 200_000) : rawHtml;
+    // Cap at 600KB. Body text on heavy pages (PolicyBazaar term-insurance = 479KB) starts well
+    // past the 200KB mark, so a 200KB cap misses all visible text and gives < 10 elements.
+    // The O(n) bare-text regex below is provably linear — raising the cap is safe.
+    const cappedHtml = rawHtml.length > 600_000 ? rawHtml.substring(0, 600_000) : rawHtml;
 
     // ONLY use bare-text extraction — the ONLY provably O(n) approach on arbitrary HTML.
     // DO NOT use [\s\S]*?, [^]*?, or any lazy quantifier across large inputs — exponential backtracking.
@@ -1259,16 +1261,20 @@ async function runTextPatternScans(page: Page, pageUrl: string, rawHtml?: string
     }
   }
 
-  // Live-page path: get page.content() with a tight timeout, then run the same O(n) extraction.
-  // DO NOT use page.$$eval() — it has no built-in timeout and hangs on 400KB+ PolicyBazaar pages.
-  if (textElements.length < 10) {
+  // Live-page path: only for truly-navigated pages (rawHtml not provided).
+  // DO NOT use page.$$eval()  — no built-in timeout, hangs on heavy pages.
+  // DO NOT use page.content() after page.setContent() — the browser V8 keeps executing JS and
+  //   the CDP DOM.getOuterHTML command can block for minutes on 400KB+ React/Next.js pages.
+  //   Our Promise.race timeout fires in Node.js but the dangling CDP request stalls later phases.
+  // SAFE path: only call page.content() when rawHtml was NOT provided (live navigation, no setContent).
+  if (textElements.length < 10 && !rawHtml) {
     try {
       const liveHtml = await Promise.race([
         page.content(),
         new Promise<never>((_, reject) => setTimeout(() => reject(new Error('content-timeout')), 5000)),
       ]);
       if (liveHtml && liveHtml.length > 100) {
-        const cappedLive = liveHtml.length > 200_000 ? liveHtml.substring(0, 200_000) : liveHtml;
+        const cappedLive = liveHtml.length > 600_000 ? liveHtml.substring(0, 600_000) : liveHtml;
         const bareTextRe2 = />([^<]{4,300})</g;
         let m2: RegExpExecArray | null;
         const seen2 = new Set<string>();
