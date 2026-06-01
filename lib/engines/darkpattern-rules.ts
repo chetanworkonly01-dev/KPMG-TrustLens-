@@ -119,6 +119,7 @@ export const DARK_PATTERN_RULES: DarkPatternRule[] = [
     title: 'Data Export Not Available or Hard to Find',
     description: 'Right to data portability (GDPR Art. 20 / DPDPA) is not easily accessible. No visible "Download my data" or "Export data" option in account settings.',
     severity: 'high', regulation: ['EU-GDPR', 'IN-DPDPA', 'US-CCPA'], detect: 'dom',
+    recommendation: 'Add a clearly labelled "Download my data" or "Export data" option in account settings, accessible within 2 clicks. Required under GDPR Art. 20, IN-DPDPA 2023 §16, and US CCPA §1798.100.',
   },
 
   // ═══════════════════════════════════════════════════════════
@@ -249,6 +250,7 @@ export const DARK_PATTERN_RULES: DarkPatternRule[] = [
     title: 'Exit-Intent Popup with Urgency Messaging',
     description: 'A popup triggered on exit intent uses urgency or guilt language to pressure the user from leaving. Combines nagging and confirmshaming patterns.',
     severity: 'medium', regulation: ['EU-DSA', 'US-FTC'], detect: 'dom',
+    recommendation: 'Remove exit-intent interception scripts. If a retention prompt is necessary, use a neutral message with a prominent, easy-to-dismiss close button — no urgency language, guilt framing, or asymmetric button styling.',
   },
 
   // ═══════════════════════════════════════════════════════════
@@ -645,6 +647,7 @@ export const VISUAL_AI_RULES: DarkPatternRule[] = [
     title: 'Disguised Ads — Sponsored Content Without Clear Ad Label',
     description: 'Sponsored, promoted, or paid placement content lacks a visible "Ad" or "Sponsored" label, making it indistinguishable from editorial content. Violates DSA Art. 26(2) which mandates clear identification of commercial communications, and FTC Endorsement Guides.',
     severity: 'high', regulation: ['EU-DSA', 'US-FTC', 'IN-ASCI'], detect: 'dom',
+    recommendation: 'Add a clearly visible "Ad", "Sponsored", or "Promoted" label to all paid placements. The label must be adjacent to the content, in legible font, and not hidden behind a hover state. Required under EU DSA Art. 26(2), FTC Endorsement Guides, and IN-ASCI Advertising Standards Code.',
   },
 
   // ── Bait & Switch ──

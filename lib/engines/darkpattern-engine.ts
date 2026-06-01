@@ -205,23 +205,23 @@ export async function runDarkPatternAudit(
       }
       log('DP-CMP', cmpFindings.length > 0 ? 'fail' : 'pass', `  ✓ Phase 9 complete — ${cmpFindings.length} CMP finding(s) detected`, 'EDPB + GDPR Cookie Compliance', 'Phase 9: CMP Audit');
 
-      // ── Phase 8: Visual AI Dark Pattern Analysis (GPT-4o Vision) — always-on ──
-      if (process.env.OPENAI_API_KEY) {
-        log('DP-VISAI', 'running', '━━━ Phase 8: Visual AI Dark Pattern Analysis', 'GPT-4o Vision — Visual Design Exploitation Detection', 'Phase 8: Visual AI Scan');
-        log('DP-VISAI-CA', 'running', '  → Consent Asymmetry (DP-VIS-AI-01): Graphical Accept vs Reject visual weight imbalance', 'GPT-4o Vision', 'Phase 8: Visual AI Scan');
-        log('DP-VISAI-UG', 'running', '  → Image-Based Urgency (DP-VIS-AI-02): Countdown graphics, scarcity badges rendered as images', 'GPT-4o Vision', 'Phase 8: Visual AI Scan');
-        log('DP-VISAI-VH', 'running', '  → Visual Hierarchy Manipulation (DP-VIS-AI-03): Premium option dominance via design', 'GPT-4o Vision', 'Phase 8: Visual AI Scan');
-        log('DP-VISAI-EM', 'running', '  → Emotional Imagery (DP-VIS-AI-04): Fear/FOMO photography as persuasion tool', 'GPT-4o Vision', 'Phase 8: Visual AI Scan');
-        log('DP-VISAI-DC', 'running', '  → Disguised CTA (DP-VIS-AI-05): Sponsored content camouflaged as organic', 'GPT-4o Vision', 'Phase 8: Visual AI Scan');
-        log('DP-VISAI-DZ', 'running', '  → Dead Zone Placement (DP-VIS-AI-06): Reject in F/Z-pattern blind spot', 'GPT-4o Vision', 'Phase 8: Visual AI Scan');
-        log('DP-VISAI-HC', 'running', '  → Hidden Charges (DP-VIS-AI-07): Camouflaged price elements via colour/weight', 'GPT-4o Vision', 'Phase 8: Visual AI Scan');
-        log('DP-VISAI-CS', 'running', '  → Visual Confirmshaming (DP-VIS-AI-08): Decline option styled as broken/ashamed', 'GPT-4o Vision', 'Phase 8: Visual AI Scan');
+      // ── Phase 8: Visual AI Dark Pattern Analysis (Claude Vision) — always-on ──
+      if (process.env.ANTHROPIC_API_KEY) {
+        log('DP-VISAI', 'running', '━━━ Phase 8: Visual AI Dark Pattern Analysis', 'Claude Vision — Visual Design Exploitation Detection', 'Phase 8: Visual AI Scan');
+        log('DP-VISAI-CA', 'running', '  → Consent Asymmetry (DP-VIS-AI-01): Graphical Accept vs Reject visual weight imbalance', 'Claude Vision', 'Phase 8: Visual AI Scan');
+        log('DP-VISAI-UG', 'running', '  → Image-Based Urgency (DP-VIS-AI-02): Countdown graphics, scarcity badges rendered as images', 'Claude Vision', 'Phase 8: Visual AI Scan');
+        log('DP-VISAI-VH', 'running', '  → Visual Hierarchy Manipulation (DP-VIS-AI-03): Premium option dominance via design', 'Claude Vision', 'Phase 8: Visual AI Scan');
+        log('DP-VISAI-EM', 'running', '  → Emotional Imagery (DP-VIS-AI-04): Fear/FOMO photography as persuasion tool', 'Claude Vision', 'Phase 8: Visual AI Scan');
+        log('DP-VISAI-DC', 'running', '  → Disguised CTA (DP-VIS-AI-05): Sponsored content camouflaged as organic', 'Claude Vision', 'Phase 8: Visual AI Scan');
+        log('DP-VISAI-DZ', 'running', '  → Dead Zone Placement (DP-VIS-AI-06): Reject in F/Z-pattern blind spot', 'Claude Vision', 'Phase 8: Visual AI Scan');
+        log('DP-VISAI-HC', 'running', '  → Hidden Charges (DP-VIS-AI-07): Camouflaged price elements via colour/weight', 'Claude Vision', 'Phase 8: Visual AI Scan');
+        log('DP-VISAI-CS', 'running', '  → Visual Confirmshaming (DP-VIS-AI-08): Decline option styled as broken/ashamed', 'Claude Vision', 'Phase 8: Visual AI Scan');
         try {
           const visAiFindings = await runVisualAIDarkPatternPhase8(page, pageData.url);
           for (const f of visAiFindings) { f.id = `dp-${++findingId}`; findings.push(f); }
-          log('DP-VISAI', visAiFindings.length > 0 ? 'fail' : 'pass', `  ✓ Phase 8 complete — ${visAiFindings.length} visual AI finding(s) detected`, 'GPT-4o Vision', 'Phase 8: Visual AI Scan');
+          log('DP-VISAI', visAiFindings.length > 0 ? 'fail' : 'pass', `  ✓ Phase 8 complete — ${visAiFindings.length} visual AI finding(s) detected`, 'Claude Vision', 'Phase 8: Visual AI Scan');
         } catch (visErr) {
-          log('DP-VISAI', 'warn', `  ⚠ Phase 8 skipped — ${visErr instanceof Error ? visErr.message : 'Vision API unavailable'}`, 'GPT-4o Vision', 'Phase 8: Visual AI Scan');
+          log('DP-VISAI', 'warn', `  ⚠ Phase 8 skipped — ${visErr instanceof Error ? visErr.message : 'Vision API unavailable'}`, 'Claude Vision', 'Phase 8: Visual AI Scan');
         }
       }
 
@@ -258,7 +258,18 @@ export async function runDarkPatternAudit(
     log('DP-COMP', 'pass', '  ✓ No compliance exemptions applicable (non-BFSI site or no exemptible patterns detected)', 'BFSI Compliance Exemption Framework', 'Compliance Exemption Pass');
   }
 
-  return buildResult(findings, pages.length, totalExempted, byCategory);
+  // Deduplicate: remove findings with identical ruleId + pageUrl + evidence summary
+  // (prevents social-pressure and misdirection rules from inflating counts when same
+  // text element is matched multiple times across scan phases)
+  const seen = new Set<string>();
+  const dedupedFindings = findings.filter(f => {
+    const key = `${f.ruleId}::${f.pageUrl}::${(f.evidence?.summary || '').slice(0, 120)}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+
+  return buildResult(dedupedFindings, pages.length, totalExempted, byCategory);
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -1948,7 +1959,7 @@ function makeFinding(
     severity: rule.severity,
     regulation: rule.regulation,
     confidence: rule.detect === 'ai' ? 'medium' : 'high',
-    recommendation: getRecommendation(rule.category),
+    recommendation: rule.recommendation || getRecommendation(rule.category),
     userImpact: getUserImpact(rule.principle),
     evidence,
     source: rule.detect === 'ai' ? 'ai' : rule.detect === 'journey' ? 'journey' : 'rule',
@@ -2382,17 +2393,17 @@ async function runInteractionFlowAnalysis(page: Page, pageUrl: string): Promise<
 }
 
 // ═══════════════════════════════════════════════════════════
-// PHASE 8: Visual AI Dark Pattern Analysis (GPT-4o Vision)
-// Screenshots are captured via Playwright and sent to GPT-4o
-// for design-level dark pattern detection that DOM scanning
-// cannot catch (colour asymmetry, visual hierarchy, etc.)
+// PHASE 8: Visual AI Dark Pattern Analysis (Claude Vision)
+// Screenshots are captured via Playwright and sent to Claude
+// claude-haiku-4-5 for design-level dark pattern detection that
+// DOM scanning cannot catch (colour asymmetry, visual hierarchy, etc.)
 // ═══════════════════════════════════════════════════════════
 async function runVisualAIDarkPatternPhase8(page: Page, pageUrl: string): Promise<DarkPatternFinding[]> {
   const findings: DarkPatternFinding[] = [];
 
-  // 1. Guard: require OPENAI_API_KEY
-  if (!process.env.OPENAI_API_KEY) {
-    throw new Error('OPENAI_API_KEY not configured — visual AI analysis unavailable');
+  // 1. Guard: require ANTHROPIC_API_KEY
+  if (!process.env.ANTHROPIC_API_KEY) {
+    throw new Error('ANTHROPIC_API_KEY not configured — visual AI analysis unavailable');
   }
 
   // 2. Capture full-page screenshot as base64
@@ -2435,23 +2446,26 @@ ${ruleDescriptions}
 - Provide specific visual evidence in the description (colors, sizes, positions).
 - Return ONLY the JSON array, no markdown or explanation.`;
 
-  // 4. Call GPT-4o Vision
-  const { default: OpenAI } = await import('openai');
-  const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+  // 4. Call Claude claude-haiku-4-5 Vision via Anthropic SDK
+  const { default: Anthropic } = await import('@anthropic-ai/sdk');
+  const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
-  const response = await client.chat.completions.create({
-    model: 'gpt-4o',
+  const response = await client.messages.create({
+    model: 'claude-haiku-4-5-20251001',
     max_tokens: 2000,
     messages: [{
       role: 'user',
       content: [
+        {
+          type: 'image',
+          source: { type: 'base64', media_type: 'image/jpeg', data: screenshotB64 },
+        },
         { type: 'text', text: prompt },
-        { type: 'image_url', image_url: { url: `data:image/jpeg;base64,${screenshotB64}`, detail: 'high' } },
       ],
     }],
   });
 
-  const raw = response.choices[0]?.message?.content || '[]';
+  const raw = (response.content[0] as { type: string; text: string })?.text || '[]';
 
   // 5. Parse the JSON response
   const jsonMatch = raw.match(/\[[\s\S]*\]/);
@@ -2461,7 +2475,7 @@ ${ruleDescriptions}
   try {
     parsed = JSON.parse(jsonMatch[0]);
   } catch {
-    console.warn('[TrustLens:DP-Phase8] Failed to parse GPT-4o response as JSON');
+    console.warn('[TrustLens:DP-Phase8] Failed to parse Claude response as JSON');
     return findings;
   }
 
@@ -2492,21 +2506,21 @@ ${ruleDescriptions}
       severity,
       regulation: matchedRule.regulation,
       confidence: item.confidence || 'medium',
-      recommendation: item.recommendation || getRecommendation(matchedRule.category),
+      recommendation: item.recommendation || matchedRule.recommendation || getRecommendation(matchedRule.category),
       userImpact: getUserImpact(matchedRule.principle),
       evidence: {
-        summary: `Visual AI Detection (GPT-4o Vision): ${item.description || matchedRule.description}`,
+        summary: `Visual AI Detection (Claude Vision): ${item.description || matchedRule.description}`,
         details: [
           `Rule: ${matchedRule.id} — ${matchedRule.title}`,
           `Visual evidence: ${item.description || 'See screenshot'}`,
           `Element location: ${item.element || 'Full page'}`,
-          `Detection method: Phase 8 — Screenshot-based GPT-4o analysis`,
+          `Detection method: Phase 8 — Screenshot-based Claude claude-haiku-4-5 vision analysis`,
         ],
       },
       source: 'ai-vision',
       detectionBasis: 'visual-ai',
       findingVerdict: 'signal',
-      verifiabilityNote: 'Visual AI signal: flagged by GPT-4o screenshot analysis — manual design review recommended',
+      verifiabilityNote: 'Visual AI signal: flagged by Claude claude-haiku-4-5 screenshot analysis — manual design review recommended',
       visualAnalysisPhase: 'Phase 8: Visual AI Dark Pattern Analysis',
       // ── Audience handoff ──
       brignullPattern,

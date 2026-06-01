@@ -365,6 +365,30 @@ const PREDEFINED_JOURNEYS: PredefinedJourneyTemplate[] = [
     ],
   },
 
+  // ── PolicyBazaar-specific deep audit journey ──
+  {
+    id: 'ins-policybazaar-full',
+    domain: 'insurance',
+    icon: '🔍',
+    label: 'PolicyBazaar Full Audit (IRDAI)',
+    description: 'Deep 6-page dark pattern audit of PolicyBazaar covering homepage, term/health landing, comparison, and privacy pages',
+    checksFocus: 'Social proof manipulation, urgency framing, plan anchoring, consent bundling, data export rights',
+    primaryPillar: 'darkpatterns',
+    secondaryPillars: ['privacy'],
+    brignullPatterns: ['Sneak Into Basket', 'Trick Questions', 'Privacy Zuckering', 'False Urgency', 'Misdirection', 'Interface Interference'],
+    effortAsymmetry: { entryLabel: 'Get Quote', exitLabel: 'Cancel / Opt Out', entrySteps: 2, exitSteps: 8 },
+    regulationFocus: ['IRDAI Protection of Policyholders Rules 2017', 'IRDAI Product Regulations 2024', 'IN-ASCI Advertising Code', 'IN-CPA 2019', 'DPDPA 2023'],
+    expectedFindings: ['"X crore customers trust us" unverifiable trust claims', '"Limited offer" urgency on permanent products', 'Most Popular badge on highest-margin plan', 'Marketing consent bundled with policy consent', '"Get Quote" requires phone/email before price shown'],
+    stages: [
+      { id: crypto.randomUUID(), label: 'Homepage', url: 'https://www.policybazaar.com', action: 'Scan trust claims, urgency banners, social proof counters, and modal count' },
+      { id: crypto.randomUUID(), label: 'Term Insurance Landing', url: 'https://www.policybazaar.com/life-insurance/term-insurance/', action: 'Check premium display completeness (base vs GST), urgency copy, and plan anchoring' },
+      { id: crypto.randomUUID(), label: 'Health Insurance Landing', url: 'https://www.policybazaar.com/health-insurance/', action: 'Scan real-time buyer counters, "X people viewed today" social pressure, and CTA asymmetry' },
+      { id: crypto.randomUUID(), label: 'Term Plan Comparison', url: 'https://www.policybazaar.com/life-insurance/term-insurance/compare-term-insurance/', action: 'Verify exclusions are equally prominent as inclusions — check for recommended/popular plan anchoring' },
+      { id: crypto.randomUUID(), label: 'Car Insurance', url: 'https://www.policybazaar.com/motor-insurance/car-insurance/', action: 'Check for add-on pre-selection, zero depreciation auto-tick, and urgency copy near CTA' },
+      { id: crypto.randomUUID(), label: 'Privacy Policy', url: 'https://www.policybazaar.com/about-us/privacy-policy/', action: 'Assess data minimisation language, check if data export/deletion rights are clearly stated' },
+    ],
+  },
+
   // ══════════════════════════════════════════
   // HEALTHCARE
   // ══════════════════════════════════════════

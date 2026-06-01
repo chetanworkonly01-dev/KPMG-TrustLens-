@@ -165,6 +165,7 @@ export interface DarkPatternRule {
   severity: 'critical' | 'high' | 'medium' | 'low';
   regulation: DarkPatternRegulation[];
   detect: 'dom' | 'visual' | 'journey' | 'ai' | 'flow' | 'textual';  // Detection method type
+  recommendation?: string;                  // Rule-specific fix override (falls back to category-level)
   complianceExemptible?: boolean;           // May be compliance-driven in BFSI/fintech (IRDAI/RBI/SEBI)
 }
 
