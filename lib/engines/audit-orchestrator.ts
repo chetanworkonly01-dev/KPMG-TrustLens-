@@ -462,9 +462,17 @@ async function runAuditPipeline(id: string, config: AuditConfig) {
     storeSet(id, audit);
 
     // Helper: update per-pillar progress
+    // Also maps dark pattern pillar progress (0–100) → overall audit progress (87–97)
+    // so the UI advances past the 87% stuck point during DP scanning.
     const setPillarProgress = (pillar: 'darkpatterns' | 'performance' | 'privacy', pct: number) => {
       if (!audit.pillarProgress) audit.pillarProgress = {};
       audit.pillarProgress[pillar] = pct;
+      if (pillar === 'darkpatterns' && pct >= 0) {
+        audit.progress = Math.min(97, 87 + Math.round((pct / 100) * 10));
+        audit.progressMessage = pct < 100
+          ? `Dark Pattern Engine: ${pct}% complete...`
+          : 'Dark pattern scan complete — building report...';
+      }
       storeSet(id, audit);
     };
 
