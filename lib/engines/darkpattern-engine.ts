@@ -1259,21 +1259,40 @@ async function runTextPatternScans(page: Page, pageUrl: string, rawHtml?: string
     }
   }
 
-  // Live-page path: use Playwright DOM evaluation (no setContent / live page)
+  // Live-page path: get page.content() with a tight timeout, then run the same O(n) extraction.
+  // DO NOT use page.$$eval() — it has no built-in timeout and hangs on 400KB+ PolicyBazaar pages.
   if (textElements.length < 10) {
-    const domElements = await page.$$eval(
-      'button, a, [role="button"], [class*="cta"], [class*="banner"], [class*="promo"], p, span, h1, h2, h3, h4, h5, h6, label, [class*="alert"], [class*="notice"]',
-      els => els
-        .map(el => ({
-          text: (el.textContent?.trim() || '').substring(0, 200),
-          tag: el.tagName.toLowerCase(),
-          html: el.outerHTML.substring(0, 200),
-          isButton: el.tagName === 'BUTTON' || el.getAttribute('role') === 'button',
-          isLink: el.tagName === 'A',
-        }))
-        .filter(el => el.text.length > 3)
-    ).catch(() => [] as TextEl[]);
-    if (domElements.length > textElements.length) textElements = domElements;
+    try {
+      const liveHtml = await Promise.race([
+        page.content(),
+        new Promise<never>((_, reject) => setTimeout(() => reject(new Error('content-timeout')), 5000)),
+      ]);
+      if (liveHtml && liveHtml.length > 100) {
+        const cappedLive = liveHtml.length > 200_000 ? liveHtml.substring(0, 200_000) : liveHtml;
+        const bareTextRe2 = />([^<]{4,300})</g;
+        let m2: RegExpExecArray | null;
+        const seen2 = new Set<string>();
+        const liveElements: TextEl[] = [];
+        while ((m2 = bareTextRe2.exec(cappedLive)) !== null) {
+          const text = m2[1].replace(/&[a-z#0-9]+;/gi, ' ').replace(/\s+/g, ' ').trim();
+          if (text.length < 4 || text.length > 400 || seen2.has(text)) continue;
+          if (/[{}=;]/.test(text) && !/crore|lakh|trust|offer|limited|expires|only \d/i.test(text)) continue;
+          seen2.add(text);
+          const before2 = cappedLive.substring(Math.max(0, m2.index - 80), m2.index + 1);
+          const tagHint2 = before2.match(/<(a|button|h[1-6]|p|li|span|label|div|td)\b/i)?.[1]?.toLowerCase() || 'text';
+          liveElements.push({
+            text: text.substring(0, 200),
+            tag: tagHint2,
+            html: `<${tagHint2}>${text.substring(0, 200)}</${tagHint2}>`,
+            isButton: tagHint2 === 'button',
+            isLink: tagHint2 === 'a',
+          });
+        }
+        if (liveElements.length > textElements.length) textElements = liveElements;
+      }
+    } catch {
+      // page.content() timed out or failed — proceed with empty textElements
+    }
   }
 
 
