@@ -1218,14 +1218,17 @@ async function runTextPatternScans(page: Page, pageUrl: string, rawHtml?: string
   // Fast path: when raw HTML is available (WAF evasion / setContent mode),
   // parse text directly in Node.js — avoids empty-DOM issues from setContent without CSS.
   if (rawHtml && rawHtml.length > 100) {
+    // Cap at 400KB to avoid catastrophic backtracking on large pages (privacy policies, etc.)
+    const cappedHtml = rawHtml.length > 400_000 ? rawHtml.substring(0, 400_000) : rawHtml;
     // Strip script/style/noscript blocks, then extract text nodes
-    const stripped = rawHtml
+    const stripped = cappedHtml
       .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, ' ')
       .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, ' ')
       .replace(/<noscript[^>]*>[\s\S]*?<\/noscript>/gi, ' ')
       .replace(/<!--[\s\S]*?-->/g, ' ');
 
     // Extract tag+text pairs: captures the tag name and its inner text
+    // NOTE: uses non-greedy [\s\S]*? — safe only on stripped HTML with max-length cap above
     const tagTextRe = /<(a|button|span|p|h[1-6]|label|li|td|div|strong|em|b|i)\b[^>]*>([\s\S]*?)<\/\1>/gi;
     let m: RegExpExecArray | null;
     const seen = new Set<string>();
