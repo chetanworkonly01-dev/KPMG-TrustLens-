@@ -56,6 +56,10 @@ export async function runDarkPatternAudit(
     const pageDeadlineMs = Date.now() + 4 * 60 * 1000; // 4-minute hard cap per page
     try {
       page = await context.newPage();
+      // 3-minute hard cap per page: guards against browser hangs, infinite evaluates,
+      // heavy-page content() calls, and any phase that doesn't have its own timeout.
+      await Promise.race([
+        (async () => {
 
       // ── Navigate with bot-detection fallback ──
       try {
@@ -65,7 +69,10 @@ export async function runDarkPatternAudit(
         await page.waitForLoadState('networkidle', { timeout: 5000 }).catch(() => {});
 
         // Check if we got a bot challenge page
-        const liveHtml = await page.content().catch(() => '');
+        const liveHtml = await Promise.race([
+          page.content(),
+          new Promise<string>(resolve => setTimeout(() => resolve(''), 5000)),
+        ]).catch(() => '');
         if (isBotChallengedPage(liveHtml) && pageData.html && !isBotChallengedPage(pageData.html)) {
           log('DP-BOT', 'warn',
             `  ⚠ WAF/bot challenge detected on ${pageData.url} — falling back to pre-crawled HTML for NLP/DOM scan`,
@@ -241,7 +248,11 @@ export async function runDarkPatternAudit(
           log('DP-VISAI', 'warn', `  ⚠ Phase 8 skipped — ${visErr instanceof Error ? visErr.message : 'Vision API unavailable'}`, 'Claude Vision', 'Phase 8: Visual AI Scan');
         }
       }
-
+        })(),
+        new Promise<never>((_, reject) =>
+          setTimeout(() => reject(new Error('DP page-scan timed out (3min): ' + pageData.url)), 3 * 60 * 1000)
+        ),
+      ]);
     } catch (err) {
       console.error(`[TrustLens:DarkPattern] Error scanning ${pageData.url}:`, err);
     } finally {

@@ -449,7 +449,8 @@ async function runAuditPipeline(id: string, config: AuditConfig) {
     addLog({ timestamp: new Date().toISOString(), testId: 'PROFILER', testName: 'Site Profiler', wcag: '', status: 'pass', message: `🏭 Site profile: ${siteProfile.profile} (${siteProfile.confidence} confidence) — ${siteProfile.highRiskPatterns.slice(0,3).join(', ')}` });
 
     // Get transactional pages for dark pattern engine (Bug 2 fix)
-    const transactionalPages = getTransactionalPages(crawlResult.pages.map(p => ({ url: p.url, html: p.html })));
+    // Cap at 5 pages — each page scan takes 1–3 min; >5 pages risks exceeding the 15-min global budget.
+    const transactionalPages = getTransactionalPages(crawlResult.pages.map(p => ({ url: p.url, html: p.html }))).slice(0, 5);
     // Pass pre-crawled HTML to DP engine — enables bot-detection fallback (WAF evasion mode)
     const dpPageList = transactionalPages.map(p => {
       const crawledPage = crawlResult.pages.find(cp => cp.url === p.url);
