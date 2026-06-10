@@ -72,7 +72,12 @@ interface DPFinding {
   title: string; description: string; pageUrl: string;
   severity: string; regulation: string[]; confidence: string;
   recommendation: string; userImpact: string;
-  evidence: { summary: string; details: string[]; measurements?: Record<string, any> };
+  evidence: {
+    summary: string; details: string[]; measurements?: Record<string, any>;
+    /** Base64 data URL of the element-level screenshot with red bounding box overlay */
+    screenshotDataUrl?: string;
+  };
+  source?: string;
   complianceExemption?: {
     category: string; regulation: string; rationale: string;
     validationNote: string; exemptionLabel: string; scoreReductionFactor: number;
@@ -126,6 +131,173 @@ const wcagStatusConfig: Record<string, { label: string; badgeClass: string; icon
   fail:       { label: 'Fail',       badgeClass: 'badge-critical', icon: '✗' },
   'not-tested': { label: 'N/A',      badgeClass: 'badge-na',     icon: '—' },
 };
+
+// ── Screenshot Evidence Panel ──────────────────────────────────
+// Renders the Playwright-captured page screenshot for a finding or page card.
+// Loads lazily on open. Hides itself if no screenshot is stored for this audit.
+function ScreenshotPanel({
+  auditId, pageUrl, label, severity, elementScreenshot,
+}: { auditId: string; pageUrl: string; label: string; severity: string; elementScreenshot?: string }) {
+  // Auto-open for critical/high findings so evidence is immediately visible
+  const [open, setOpen]         = useState(severity === 'critical' || severity === 'high');
+  const [gone, setGone]         = useState(false);
+  const [pageGone, setPageGone] = useState(false);
+  // Default to 'page' (real crawl screenshot = what the user sees).
+  // 'element' tab shows the cropped highlight when available.
+  const [view, setView]         = useState<'element' | 'page'>('page');
+
+  if (gone) return null;
+
+  const sevColor: Record<string, string> = { critical: '#E8002D', high: '#FE7141', medium: '#D97706', low: '#0091DA' };
+  const color      = sevColor[severity] || '#9B59B6';
+  const pageSrc    = `/api/audit/screenshot?id=${encodeURIComponent(auditId)}&url=${encodeURIComponent(pageUrl)}`;
+  const hasElement = !!elementScreenshot;
+  const hasPage    = !pageGone;
+
+  // Hide only when BOTH sources are gone
+  const handlePageError = () => {
+    setPageGone(true);
+    if (!hasElement) { setGone(true); setOpen(false); }
+    else setView('element');
+  };
+
+  return (
+    <div style={{ marginTop: 8 }}>
+      {/* Toggle button */}
+      <button
+        onClick={() => setOpen(o => !o)}
+        style={{
+          display: 'inline-flex', alignItems: 'center', gap: 6,
+          padding: '4px 11px', borderRadius: 6,
+          background: open ? `${color}14` : 'rgba(155,89,182,0.08)',
+          border: `1px solid ${open ? color + '55' : 'rgba(155,89,182,0.25)'}`,
+          color: open ? color : '#9B59B6', cursor: 'pointer', fontSize: 11,
+          fontFamily: 'Open Sans, sans-serif', fontWeight: 700, transition: 'all 0.2s',
+        }}>
+        <span>📸</span>
+        <span>{open ? 'Hide' : 'View'} Visual Evidence</span>
+        <span style={{ fontSize: 9, transform: open ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s', display: 'inline-block' }}>▼</span>
+      </button>
+
+      {open && (
+        <div style={{ marginTop: 8, borderRadius: 8, overflow: 'hidden', border: `2px solid ${color}55` }}>
+
+          {/* View switcher — always show both tabs when element screenshot exists */}
+          <div style={{ display: 'flex', background: 'rgba(0,0,0,0.04)', borderBottom: `1px solid ${color}33` }}>
+            {/* Page tab always present — this is the real crawl screenshot (what the user sees) */}
+            {hasPage && (
+              <button onClick={() => setView('page')} style={{
+                flex: 1, padding: '5px 10px', fontSize: 10, fontWeight: 700,
+                fontFamily: 'Geist Mono, monospace', letterSpacing: '0.04em', cursor: 'pointer',
+                border: 'none', borderBottom: view === 'page' ? `2px solid ${color}` : '2px solid transparent',
+                background: view === 'page' ? `${color}12` : 'transparent',
+                color: view === 'page' ? color : 'var(--text-muted)', transition: 'all 0.15s',
+              }}>
+                📄 WHAT USER SEES
+              </button>
+            )}
+            {/* Element tab only when we have a cropped/annotated element screenshot */}
+            {hasElement && (
+              <button onClick={() => setView('element')} style={{
+                flex: 1, padding: '5px 10px', fontSize: 10, fontWeight: 700,
+                fontFamily: 'Geist Mono, monospace', letterSpacing: '0.04em', cursor: 'pointer',
+                border: 'none', borderBottom: view === 'element' ? `2px solid ${color}` : '2px solid transparent',
+                background: view === 'element' ? `${color}12` : 'transparent',
+                color: view === 'element' ? color : 'var(--text-muted)', transition: 'all 0.15s',
+              }}>
+                🎯 ELEMENT PINPOINT
+              </button>
+            )}
+          </div>
+
+          {/* Evidence image area */}
+          <div style={{ position: 'relative', background: '#0a0a0a' }}>
+
+            {/* Page screenshot — real crawl-time view, what the user actually sees */}
+            {view === 'page' && (
+              <img
+                src={pageSrc}
+                alt={`Page — ${pageUrl}`}
+                onError={handlePageError}
+                style={{ width: '100%', display: 'block', maxHeight: 420, objectFit: 'cover', objectPosition: 'top' }}
+              />
+            )}
+
+            {/* Element screenshot — engine-captured crop with red highlight box */}
+            {view === 'element' && hasElement && (
+              <img
+                src={elementScreenshot}
+                alt={`Element evidence — ${label}`}
+                style={{ width: '100%', display: 'block', maxHeight: 420, objectFit: 'contain', objectPosition: 'center' }}
+              />
+            )}
+
+            {/* Annotation banner — finding title overlaid on the screenshot */}
+            <div style={{
+              position: 'absolute', top: 0, left: 0, right: 0,
+              padding: '8px 14px',
+              background: `linear-gradient(to bottom, ${color}DD, transparent)`,
+              display: 'flex', alignItems: 'center', gap: 8,
+            }}>
+              <span style={{ fontSize: 13 }}>⚠️</span>
+              <span style={{ fontSize: 11, fontWeight: 700, color: '#fff', textShadow: '0 1px 4px rgba(0,0,0,0.9)', lineHeight: 1.4, flex: 1 }}>
+                {label}
+              </span>
+              <span style={{
+                padding: '2px 8px', borderRadius: 99,
+                background: 'rgba(0,0,0,0.55)', color: '#fff',
+                fontSize: 9, fontWeight: 700, fontFamily: 'Geist Mono, monospace',
+                letterSpacing: '0.04em',
+              }}>
+                {view === 'element' ? '🎯 ELEMENT PINPOINT' : '👁 USER VIEW'}
+              </span>
+            </div>
+
+            {/* Bottom caption */}
+            {view === 'element' && hasElement && (
+              <div style={{
+                position: 'absolute', bottom: 0, left: 0, right: 0,
+                padding: '24px 14px 8px',
+                background: 'linear-gradient(to bottom, transparent, rgba(0,0,0,0.75))',
+              }}>
+                <span style={{ fontSize: 9, color: 'rgba(255,255,255,0.7)', fontFamily: 'Geist Mono, monospace' }}>
+                  Screenshot cropped to detected element | Red border marks exact dark pattern location | TrustLens audit engine
+                </span>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Page Thumbnail ──────────────────────────────────────────────
+// Small screenshot thumbnail used in the Pages tab.
+function PageThumbnail({ auditId, pageUrl }: { auditId: string; pageUrl: string }) {
+  const [gone, setGone] = useState(false);
+  const [loaded, setLoaded] = useState(false);
+  if (gone) return null;
+  const src = `/api/audit/screenshot?id=${encodeURIComponent(auditId)}&url=${encodeURIComponent(pageUrl)}`;
+  return (
+    <div style={{
+      width: 80, height: 52, borderRadius: 6, overflow: 'hidden', flexShrink: 0,
+      border: '1px solid var(--border)', background: 'var(--bg-secondary)',
+      position: 'relative',
+    }}>
+      {!loaded && (
+        <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16 }}>🖼️</div>
+      )}
+      <img
+        src={src}
+        alt="Page screenshot"
+        onLoad={() => setLoaded(true)}
+        onError={() => setGone(true)}
+        style={{ width: '100%', height: '100%', objectFit: 'cover', objectPosition: 'top', display: loaded ? 'block' : 'none' }}
+      />
+    </div>
+  );
+}
 
 function ScoreGauge({ score }: { score: number }) {
   const color = score >= 90 ? '#00BA8C' : score >= 75 ? '#0091DA' : score >= 50 ? '#F0AB00' : '#FF3356';
@@ -1412,7 +1584,9 @@ export default function AuditResultPage() {
 
                 return (
                   <div key={step.id || stepIdx} className="glass-card" style={{ borderLeft: `3px solid ${(wasAudited || isApproximate) ? (totalIssues > 0 ? scoreColor : '#00B2A9') : '#5B7198'}` }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 10 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 10, gap: 12 }}>
+                      {/* Journey step thumbnail */}
+                      {(wasAudited || isApproximate) && <PageThumbnail auditId={id} pageUrl={effectiveUrl} />}
                       <div style={{ flex: 1, minWidth: 0 }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4, flexWrap: 'wrap' }}>
                           <span style={{ fontSize: 10, fontWeight: 700, padding: '2px 8px', borderRadius: 99, background: 'rgba(255,255,255,0.06)', color: 'var(--text-muted)', border: '1px solid var(--border)', fontFamily: 'Geist Mono, monospace' }}>
@@ -1492,13 +1666,15 @@ export default function AuditResultPage() {
               const totalIssues = (page.findings.a11y?.issueCount || 0) + page.findings.dpFindings.length + (page.findings.perfPage?.resourceIssues.length || 0) + page.findings.privFindings.length;
               return (
                 <div key={page.url} className="glass-card" style={{ borderLeft: `3px solid ${score !== null ? (totalIssues > 0 ? scoreColor : '#00B2A9') : '#5B7198'}` }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 10 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 10, gap: 12 }}>
+                    {/* Page thumbnail */}
+                    <PageThumbnail auditId={id} pageUrl={page.url} />
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <div style={{ fontWeight: 600, fontSize: 14, marginBottom: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{page.title}</div>
                       <div style={{ fontSize: 11, color: 'var(--text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{page.url}</div>
                     </div>
                     <div style={{
-                      width: 52, height: 52, borderRadius: '50%', flexShrink: 0, marginLeft: 16,
+                      width: 52, height: 52, borderRadius: '50%', flexShrink: 0,
                       border: `3px solid ${scoreColor}`,
                       display: 'flex', alignItems: 'center', justifyContent: 'center',
                       fontWeight: 300, fontSize: 16, color: scoreColor,
@@ -1519,6 +1695,15 @@ export default function AuditResultPage() {
          ══════════════════════════════════════════════════════ */}
       {activeTab === 'dark-patterns' && data.pillarResults?.darkpatterns && (() => {
         const dp = data.pillarResults.darkpatterns!;
+        // Collapse duplicate findings (same ruleId on same page) into grouped entries with a count.
+        const dpGroupMap = new Map<string, { finding: DPFinding; count: number }>();
+        for (const f of dp.findings) {
+          const key = `${(f as any).ruleId || f.id}|${f.pageUrl}`;
+          if (!dpGroupMap.has(key)) dpGroupMap.set(key, { finding: f, count: 1 });
+          else dpGroupMap.get(key)!.count++;
+        }
+        const dpGrouped = [...dpGroupMap.values()];
+        const dpDupCount = dp.findings.length - dpGrouped.length;
         const principleLabels: Record<string, string> = { 'informed-consent': 'Informed Consent', 'symmetry-of-choice': 'Symmetry of Choice', 'transparency': 'Transparency', 'user-autonomy': 'User Autonomy', 'accessibility-clarity': 'Accessibility & Clarity' };
         const catIcons: Record<string, string> = { 'interface-interference': '🎭', 'obstruction': '🚧', 'sneaking': '🐍', 'forced-action': '⛓️', 'nagging': '📢', 'scarcity-urgency': '⏰', 'social-pressure': '👥', 'privacy-zuckering': '🔓', 'confirmshaming': '😔', 'misdirection': '🎯' };
         return (
@@ -1755,9 +1940,18 @@ export default function AuditResultPage() {
             </div>
 
             {/* Findings List */}
-            <h3 style={{ fontSize: 14, fontWeight: 700, marginBottom: 12 }}>🕵️ Dark Pattern Findings ({dp.totalFindings})</h3>
+            <h3 style={{ fontSize: 14, fontWeight: 700, marginBottom: 4 }}>
+              🕵️ Dark Pattern Findings ({dpGrouped.length} unique{dpDupCount > 0 ? ` · ${dpDupCount} duplicate${dpDupCount > 1 ? 's' : ''} collapsed` : ''})
+            </h3>
+            {dpDupCount > 0 && (
+              <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 12, padding: '4px 10px', borderRadius: 6, background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)' }}>
+                Multiple instances of the same rule on the same page are collapsed. The ×N badge shows how many times each pattern was detected.
+              </div>
+            )}
             <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-              {dp.findings.map((f: DPFinding) => {
+              {dpGrouped.map((grp) => {
+                const f = grp.finding;
+                const instanceCount = grp.count;
                 const sourceMeta: Record<string, { icon: string; color: string; label: string }> = {
                   'rule':       { icon: '📋', color: '#0091DA', label: 'DOM/NLP' },
                   'ai-vision':  { icon: '👁️', color: '#9B59B6', label: 'Visual AI' },
@@ -1769,16 +1963,57 @@ export default function AuditResultPage() {
                 const srcMeta = sourceMeta[(f as any).source] || sourceMeta['rule'];
                 return (
                 <div key={f.id} className="dp-finding-card">
-                  {/* Header: always shown */}
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6, flexWrap: 'wrap' }}>
-                    <span style={{ fontWeight: 700, fontSize: 13 }}>{f.title}</span>
-                    <span className={`badge badge-${f.severity}`}>{f.severity}</span>
+                  {/* ── Primary identity row: severity + category + priority ── */}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 5, flexWrap: 'wrap' }}>
+                    <span className={`badge badge-${f.severity}`} style={{ fontSize: 10 }}>{f.severity.toUpperCase()}</span>
                     <span className="dp-category-badge">{catIcons[f.category] || '📋'} {f.category}</span>
-                    {/* Source badge */}
+                    {(f as any).fixPriority && (
+                      <span style={{ fontSize: 9, fontWeight: 700, padding: '2px 7px', borderRadius: 99, fontFamily: 'Geist Mono, monospace',
+                        background: (f as any).fixPriority === 'P0' ? 'rgba(232,0,45,0.12)' : (f as any).fixPriority === 'P1' ? 'rgba(254,113,65,0.12)' : 'rgba(217,119,6,0.1)',
+                        color: (f as any).fixPriority === 'P0' ? '#E8002D' : (f as any).fixPriority === 'P1' ? '#FE7141' : '#D97706',
+                        border: `1px solid ${(f as any).fixPriority === 'P0' ? 'rgba(232,0,45,0.3)' : (f as any).fixPriority === 'P1' ? 'rgba(254,113,65,0.3)' : 'rgba(217,119,6,0.25)'}`,
+                      }}>
+                        {(f as any).fixPriority}
+                      </span>
+                    )}
+                    {/* Instance count badge */}
+                    {instanceCount > 1 && (
+                      <span style={{ fontSize: 9, padding: '2px 7px', borderRadius: 99, fontWeight: 700, background: 'rgba(232,0,45,0.10)', color: '#E8002D', border: '1px solid rgba(232,0,45,0.28)', fontFamily: 'Geist Mono, monospace' }}>
+                        ×{instanceCount} instances
+                      </span>
+                    )}
+                    {/* Compliance Exemption badge */}
+                    {f.complianceExemption && (
+                      <span style={{ fontSize: 9, padding: '2px 7px', borderRadius: 99, fontWeight: 700, background: 'rgba(240,171,0,0.12)', color: '#D97706', border: '1px solid rgba(240,171,0,0.3)' }}>
+                        📋 {f.complianceExemption.exemptionLabel}
+                      </span>
+                    )}
+                    {/* Meta: rule ID + page URL */}
+                    <span style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 8 }}>
+                      {(f as any).ruleId && (
+                        <span style={{ fontSize: 9, fontFamily: 'Geist Mono, monospace', color: 'var(--text-muted)', background: 'rgba(0,0,0,0.12)', padding: '1px 6px', borderRadius: 4 }}>
+                          {(f as any).ruleId}
+                        </span>
+                      )}
+                      {f.pageUrl && (
+                        <a href={f.pageUrl} target="_blank" rel="noopener noreferrer" style={{ fontSize: 9, color: '#0091DA', textDecoration: 'none', fontFamily: 'Geist Mono, monospace', maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', display: 'inline-block' }} title={f.pageUrl}>
+                          ↗ {(() => { try { return new URL(f.pageUrl).pathname || '/'; } catch { return f.pageUrl.slice(0, 30); } })()}
+                        </a>
+                      )}
+                    </span>
+                  </div>
+
+                  {/* ── Title (prominent) ── */}
+                  <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 5, lineHeight: 1.35, color: 'var(--text-primary)' }}>{f.title}</div>
+
+                  {/* ── Description — what the user experiences ── */}
+                  <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginBottom: 8, lineHeight: 1.6 }}>{f.description}</div>
+
+                  {/* ── Secondary signal badges (source, brignull, verdict) ── */}
+                  <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap', marginBottom: 6 }}>
                     <span style={{ fontSize: 9, padding: '2px 6px', borderRadius: 99, background: `${srcMeta.color}18`, color: srcMeta.color, border: `1px solid ${srcMeta.color}35`, fontWeight: 700, fontFamily: 'Geist Mono, monospace' }}>
                       {srcMeta.icon} {srcMeta.label}
                     </span>
-                    {/* Brignull badge */}
                     {(f as any).brignullPattern && (
                       <span style={{ fontSize: 9, padding: '2px 6px', borderRadius: 99, background: 'rgba(205,171,254,0.1)', color: 'var(--pillar-dp)', border: '1px solid rgba(205,171,254,0.25)', fontWeight: 600 }}>
                         {(f as any).brignullNumber ? `#${(f as any).brignullNumber} ` : ''}{(f as any).brignullPattern}
@@ -1794,24 +2029,15 @@ export default function AuditResultPage() {
                         {(f as any).findingVerdict === 'verdict' ? '✓ Verdict' : '⚑ Signal'}
                       </span>
                     )}
-                    {/* Compliance Exemption badge */}
-                    {f.complianceExemption && (
-                      <span style={{ fontSize: 9, padding: '2px 7px', borderRadius: 99, fontWeight: 700, background: 'rgba(240,171,0,0.12)', color: '#D97706', border: '1px solid rgba(240,171,0,0.3)' }}>
-                        📋 {f.complianceExemption.exemptionLabel}
-                      </span>
-                    )}
-                    {/* Fix priority */}
-                    {(f as any).fixPriority && (
-                      <span style={{ fontSize: 9, fontWeight: 700, padding: '2px 7px', borderRadius: 99, fontFamily: 'Geist Mono, monospace', marginLeft: 'auto',
-                        background: (f as any).fixPriority === 'P0' ? 'rgba(232,0,45,0.12)' : (f as any).fixPriority === 'P1' ? 'rgba(254,113,65,0.12)' : 'rgba(217,119,6,0.1)',
-                        color: (f as any).fixPriority === 'P0' ? '#E8002D' : (f as any).fixPriority === 'P1' ? '#FE7141' : '#D97706',
-                        border: `1px solid ${(f as any).fixPriority === 'P0' ? 'rgba(232,0,45,0.3)' : (f as any).fixPriority === 'P1' ? 'rgba(254,113,65,0.3)' : 'rgba(217,119,6,0.25)'}`,
-                      }}>
-                        {(f as any).fixPriority}
-                      </span>
-                    )}
                   </div>
-                  <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginBottom: 8, lineHeight: 1.5 }}>{f.description}</div>
+                  {/* Screenshot evidence panel — element crop (primary) + full page (secondary) */}
+                  <ScreenshotPanel
+                    auditId={id}
+                    pageUrl={f.pageUrl}
+                    label={f.title}
+                    severity={f.severity}
+                    elementScreenshot={f.evidence.screenshotDataUrl}
+                  />
                   {/* Compliance Exemption detail strip */}
                   {f.complianceExemption && (
                     <div style={{ marginBottom: 8, padding: '8px 12px', borderRadius: 6, background: 'rgba(240,171,0,0.05)', border: '1px solid rgba(240,171,0,0.2)', fontSize: 11 }}>

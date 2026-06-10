@@ -165,15 +165,30 @@ export async function generatePdf(audit: AuditResult): Promise<Buffer> {
   doc.setTextColor(...K.midGrey);
   doc.text(projectName, 20, 115);
 
-  // Cover metadata table
-  const coverData = [
-    ['Standard', `${standard} Level ${testedLevel}`],
-    ['Audit Date', auditDate],
-    ['Pages Audited', String(audit.pages.length)],
-    ['Score', `${score.overall} / 100`],
-    ['Compliance', compLabel(score.complianceLevel)],
-    ['Total Issues', String(score.totalIssues)],
-    ['Classification', 'KPMG Internal — Confidential'],
+  // ── Derive DP-specific metrics for cover ──────────────────
+  const dpResultsCover = (audit as any).pillarResults?.darkpatterns;
+  const dpEthicsScore  = dpResultsCover?.ethicsScore as number | undefined;
+  const dpManipIdx     = dpResultsCover?.manipulationIndex as number | undefined;
+  const dpFindCount    = ((dpResultsCover?.findings ?? []) as DarkPatternFinding[]).length;
+  const dpConsent      = dpResultsCover?.consentIntegrity as number | undefined;
+
+  // Cover metadata table — DP-only vs multi-pillar
+  const coverData = isDP && !isA11y ? [
+    ['Audit Date',        auditDate],
+    ['Pages Audited',     String(audit.pages.length)],
+    ['Ethics Score',      `${dpEthicsScore ?? '—'} / 100`],
+    ['Patterns Found',    String(dpFindCount)],
+    ['Manipulation Idx',  dpManipIdx != null ? `${dpManipIdx} / 100` : '—'],
+    ['Consent Score',     dpConsent   != null ? `${dpConsent} / 100`  : '—'],
+    ['Classification',    'KPMG Internal — Confidential'],
+  ] : [
+    ['Standard',          `${standard} Level ${testedLevel}`],
+    ['Audit Date',        auditDate],
+    ['Pages Audited',     String(audit.pages.length)],
+    ['Score',             `${score.overall} / 100`],
+    ['Compliance',        compLabel(score.complianceLevel)],
+    ['Total Issues',      String(score.totalIssues)],
+    ['Classification',    'KPMG Internal — Confidential'],
   ];
 
   autoTable(doc, {
@@ -188,18 +203,20 @@ export async function generatePdf(audit: AuditResult): Promise<Buffer> {
     bodyStyles: { fillColor: [5, 15, 40] },
   });
 
-  // Score circle on right side
+  // Score circle — use Ethics Score for DP-only, otherwise WCAG overall
+  const coverScore      = (isDP && !isA11y && dpEthicsScore != null) ? dpEthicsScore : score.overall;
+  const coverScoreLabel = (isDP && !isA11y) ? 'ETHICS' : 'SCORE';
   doc.setDrawColor(...K.lightBlue);
   doc.setLineWidth(2);
   doc.circle(pw - 50, 90, 28);
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(36);
-  const scoreColor = score.overall >= 75 ? K.teal : score.overall >= 50 ? K.medium : K.critical;
+  const scoreColor = coverScore >= 75 ? K.teal : coverScore >= 50 ? K.medium : K.critical;
   doc.setTextColor(...scoreColor);
-  doc.text(String(score.overall), pw - 50, 94, { align: 'center' });
+  doc.text(String(coverScore), pw - 50, 94, { align: 'center' });
   doc.setFontSize(8);
   doc.setTextColor(...K.midGrey);
-  doc.text('SCORE', pw - 50, 104, { align: 'center' });
+  doc.text(coverScoreLabel, pw - 50, 104, { align: 'center' });
 
   // Bottom strip
   doc.setFillColor(...K.teal);
@@ -230,13 +247,22 @@ export async function generatePdf(audit: AuditResult): Promise<Buffer> {
   doc.text('Issue Breakdown by Severity', 20, y);
   y += 6;
 
+  // Aggregate severity counts across all active pillars (a11y + dark patterns + privacy)
+  const aggBySev: Record<string, number> = { critical: 0, high: 0, medium: 0, low: 0 };
+  const _dpF = ((audit as any).pillarResults?.darkpatterns?.findings ?? []) as Array<{ severity: string }>;
+  const _pvF = ((audit as any).pillarResults?.privacy?.findings ?? []) as Array<{ severity: string }>;
+  for (const f of ([...issues, ..._dpF, ..._pvF] as Array<{ severity: string }>)) {
+    if (f.severity in aggBySev) aggBySev[f.severity]++;
+  }
+  const aggTotal = Object.values(aggBySev).reduce((a, b) => a + b, 0);
+
   autoTable(doc, {
     startY: y,
     head: [['Severity', 'Count', '% of Total', 'Priority', 'Target Sprint']],
     body: (['critical', 'high', 'medium', 'low'] as const).map(sev => [
       sev.charAt(0).toUpperCase() + sev.slice(1),
-      String(score.issueBySeverity[sev]),
-      score.totalIssues > 0 ? `${Math.round((score.issueBySeverity[sev] / score.totalIssues) * 100)}%` : '0%',
+      String(aggBySev[sev]),
+      aggTotal > 0 ? `${Math.round((aggBySev[sev] / aggTotal) * 100)}%` : '0%',
       { critical: 'Immediate', high: 'High', medium: 'Moderate', low: 'Low' }[sev],
       { critical: 'Sprint 1', high: 'Sprint 2', medium: 'Q2', low: 'Today' }[sev],
     ]),
@@ -664,57 +690,232 @@ export async function generatePdf(audit: AuditResult): Promise<Buffer> {
   // ══════════════════════════════════════════════
   const dpSectionNum = isA11y ? '8' : '2';
   const dpFindings: DarkPatternFinding[] = (audit as any).pillarResults?.darkpatterns?.findings || [];
+
+  // ── Deduplicate: group same ruleId+pageUrl, keep first instance, annotate count ──
+  const dpDeduped: (DarkPatternFinding & { _instanceCount: number })[] = [];
+  const dpSeenKey = new Map<string, number>(); // key → index in dpDeduped
+  for (const f of dpFindings) {
+    const key = `${f.ruleId}||${f.pageUrl || ''}`;
+    if (dpSeenKey.has(key)) {
+      dpDeduped[dpSeenKey.get(key)!]._instanceCount++;
+    } else {
+      dpSeenKey.set(key, dpDeduped.length);
+      dpDeduped.push({ ...f, _instanceCount: 1 });
+    }
+  }
+
   if (isDP && dpFindings.length > 0) {
+
+    // ══════════════════════════════════════════════
+    // SECTION: JOURNEY AUDIT MAP (DP-only)
+    // ══════════════════════════════════════════════
+    if (!isA11y) {
+      doc.addPage();
+      y = 18;
+      y = sectionHeading(doc, '2', 'Journey Audit Map', y);
+
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(9);
+      doc.setTextColor(...K.darkGrey);
+      const journeySteps: { url: string; label: string }[] = (audit.config as any).journeySteps || [];
+      const pageList = audit.pages.map(p => p.url);
+
+      if (journeySteps.length > 0) {
+        doc.text(`${journeySteps.length}-step predefined journey audited. Each step shows dark patterns detected at that URL.`, 20, y);
+        y += 8;
+
+        // Build per-step summary
+        const stepRows = journeySteps.map((step, i) => {
+          const stepUrl = step.url;
+          const stepFindings = dpFindings.filter(f => {
+            const fu = f.pageUrl || '';
+            return fu === stepUrl || fu.startsWith(stepUrl.replace(/\/$/, ''));
+          });
+          const crit = stepFindings.filter(f => f.severity === 'critical').length;
+          const high = stepFindings.filter(f => f.severity === 'high').length;
+          const med  = stepFindings.filter(f => f.severity === 'medium').length;
+          const cats = [...new Set(stepFindings.map(f => f.category.replace(/-/g,' ').replace(/\b\w/g,c=>c.toUpperCase())))].slice(0,2).join(', ') || '—';
+          const topRule = stepFindings[0]?.brignullPattern || stepFindings[0]?.title?.substring(0,30) || '—';
+          return [
+            `${i+1}. ${step.label}`,
+            stepUrl.replace(/^https?:\/\/[^/]+/, '') || '/',
+            String(stepFindings.length),
+            crit > 0 ? String(crit) : '—',
+            high > 0 ? String(high) : '—',
+            cats,
+          ];
+        });
+
+        autoTable(doc, {
+          startY: y,
+          head: [['Journey Step', 'Path', 'Total', 'Crit', 'High', 'Top Categories']],
+          body: stepRows,
+          headStyles: { fillColor: [106, 40, 155], textColor: K.white, fontStyle: 'bold', fontSize: 8 },
+          styles: { fontSize: 8, cellPadding: 4, lineColor: K.lightGrey, lineWidth: 0.2, overflow: 'linebreak' },
+          alternateRowStyles: { fillColor: K.offWhite },
+          columnStyles: {
+            0: { cellWidth: 42 },
+            1: { cellWidth: 48 },
+            2: { cellWidth: 12, halign: 'center', fontStyle: 'bold' },
+            3: { cellWidth: 10, halign: 'center' },
+            4: { cellWidth: 10, halign: 'center' },
+            5: { cellWidth: 48 },
+          },
+          didParseCell: (data) => {
+            if (data.section === 'body' && data.column.index === 3 && data.cell.text[0] !== '—') {
+              data.cell.styles.textColor = K.critical; data.cell.styles.fontStyle = 'bold'; data.cell.styles.fillColor = K.criticalBg;
+            }
+            if (data.section === 'body' && data.column.index === 4 && data.cell.text[0] !== '—') {
+              data.cell.styles.textColor = K.high; data.cell.styles.fontStyle = 'bold';
+            }
+            if (data.section === 'body' && data.column.index === 2) {
+              const n = parseInt(data.cell.text[0]);
+              if (n >= 10) { data.cell.styles.textColor = K.critical; data.cell.styles.fontStyle = 'bold'; }
+              else if (n >= 5) { data.cell.styles.textColor = K.high; data.cell.styles.fontStyle = 'bold'; }
+            }
+          },
+          margin: { left: 20, right: 20 },
+        });
+        y = (doc as any).lastAutoTable.finalY + 12;
+
+        // Visual journey path strip
+        const purple: [number,number,number] = [106, 40, 155];
+        const stripH = 14;
+        const stepW  = (pw - 40) / Math.max(journeySteps.length, 1);
+        if (y + stripH + 30 > ph - 20) { doc.addPage(); y = 18; }
+        doc.setFont('helvetica', 'bold'); doc.setFontSize(10); doc.setTextColor(...K.navy);
+        doc.text('User Journey Flow', 20, y); y += 6;
+
+        journeySteps.forEach((step, i) => {
+          const x = 20 + i * stepW;
+          const stepF = dpFindings.filter(f => (f.pageUrl||'').startsWith(step.url.replace(/\/$/,''))).length;
+          const bg: [number,number,number] = stepF >= 10 ? K.criticalBg : stepF >= 5 ? K.highBg : K.offWhite;
+          const col: [number,number,number] = stepF >= 10 ? K.critical : stepF >= 5 ? K.high : K.teal;
+          doc.setFillColor(...bg); doc.roundedRect(x, y, stepW - 2, stripH, 2, 2, 'F');
+          doc.setDrawColor(...col); doc.setLineWidth(0.4); doc.roundedRect(x, y, stepW - 2, stripH, 2, 2, 'S');
+          // Step number badge
+          doc.setFillColor(...col); doc.circle(x + 5, y + stripH/2, 3.5, 'F');
+          doc.setFont('helvetica','bold'); doc.setFontSize(7); doc.setTextColor(...K.white);
+          doc.text(String(i+1), x + 5, y + stripH/2 + 1, { align: 'center' });
+          // Label
+          doc.setFont('helvetica','normal'); doc.setFontSize(6); doc.setTextColor(...K.nearBlack);
+          const lbl = step.label.length > 12 ? step.label.substring(0,12)+'…' : step.label;
+          doc.text(lbl, x + 10, y + 6, { maxWidth: stepW - 14 });
+          // Finding count
+          doc.setFont('helvetica','bold'); doc.setFontSize(8); doc.setTextColor(...col);
+          doc.text(String(stepF), x + stepW/2, y + stripH - 3, { align: 'center' });
+          // Arrow
+          if (i < journeySteps.length - 1) {
+            doc.setDrawColor(...K.midGrey); doc.setLineWidth(0.3);
+            doc.line(x + stepW - 1, y + stripH/2, x + stepW, y + stripH/2);
+          }
+        });
+        y += stripH + 4;
+        doc.setFont('helvetica','italic'); doc.setFontSize(7); doc.setTextColor(...K.midGrey);
+        doc.text('Numbers = findings per step. Red = 10+ findings (critical density).', 20, y);
+        y += 10;
+      } else {
+        doc.text('General crawl mode — no predefined journey steps recorded.', 20, y);
+        y += 10;
+      }
+
+      // ── Brignull Taxonomy Summary ──
+      if (y + 60 > ph - 20) { doc.addPage(); y = 18; }
+      doc.setFont('helvetica', 'bold'); doc.setFontSize(12); doc.setTextColor(...K.navy);
+      doc.text('Brignull Dark Pattern Taxonomy', 20, y); y += 4;
+      doc.setDrawColor(...[106,40,155] as [number,number,number]); doc.setLineWidth(0.6); doc.line(20, y, 90, y); y += 8;
+
+      // Group by Brignull pattern
+      const brignullMap = new Map<string, { count: number; sev: string; regs: Set<string> }>();
+      for (const f of dpFindings) {
+        const bp = f.brignullPattern || 'Unclassified';
+        if (!brignullMap.has(bp)) brignullMap.set(bp, { count: 0, sev: 'low', regs: new Set() });
+        const entry = brignullMap.get(bp)!;
+        entry.count++;
+        const sevOrder: Record<string, number> = { critical: 3, high: 2, medium: 1, low: 0 };
+        if ((sevOrder[f.severity] || 0) > (sevOrder[entry.sev] || 0)) entry.sev = f.severity;
+        (f.regulation || []).forEach(r => entry.regs.add(r.substring(0, 25)));
+      }
+      const brignullRows = [...brignullMap.entries()]
+        .sort((a,b) => b[1].count - a[1].count)
+        .map(([pattern, data]) => [
+          pattern,
+          String(data.count),
+          data.sev.toUpperCase(),
+          [...data.regs].slice(0,2).join(', ') || '—',
+        ]);
+
+      autoTable(doc, {
+        startY: y,
+        head: [['Brignull Pattern', 'Instances', 'Max Severity', 'Regulations Triggered']],
+        body: brignullRows,
+        headStyles: { fillColor: [106, 40, 155], textColor: K.white, fontStyle: 'bold', fontSize: 8 },
+        styles: { fontSize: 8, cellPadding: 3.5, lineColor: K.lightGrey, lineWidth: 0.2 },
+        alternateRowStyles: { fillColor: K.offWhite },
+        columnStyles: { 0: { cellWidth: 55 }, 1: { cellWidth: 18, halign: 'center', fontStyle: 'bold' }, 2: { cellWidth: 25, halign: 'center' }, 3: { cellWidth: 72 } },
+        didParseCell: (data) => {
+          if (data.section === 'body' && data.column.index === 2) {
+            const s = data.cell.text[0]?.toLowerCase();
+            if (s) { data.cell.styles.textColor = sevColor(s); data.cell.styles.fillColor = sevBg(s); data.cell.styles.fontStyle = 'bold'; }
+          }
+        },
+        margin: { left: 20, right: 20 },
+      });
+    } // end DP-only sections
+
     doc.addPage();
     y = 18;
-    y = sectionHeading(doc, dpSectionNum, 'Dark Pattern Findings', y);
+    y = sectionHeading(doc, isA11y ? dpSectionNum : '3', 'Dark Pattern Findings', y);
 
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(9);
     doc.setTextColor(...K.darkGrey);
-    doc.text(`${dpFindings.length} dark pattern(s) detected across the audited pages.`, 20, y);
+    doc.text(`${dpFindings.length} dark pattern instance(s) detected — ${dpDeduped.length} unique finding(s) after deduplication.`, 20, y);
     y += 8;
 
-    // Summary table
+    // Summary table — deduplicated rows
     autoTable(doc, {
       startY: y,
-      head: [['#', 'Finding', 'Category', 'Brignull', 'Severity', 'DSA Article', 'Fix Priority']],
-      body: dpFindings.map((f, idx) => [
+      head: [['#', 'Finding', 'Category', 'Brignull', 'Severity', 'DSA Article', 'Instances']],
+      body: dpDeduped.map((f, idx) => [
         `#${String(idx + 1).padStart(3, '0')}`,
         f.title,
         f.category.replace(/-/g, ' ').replace(/\b\w/g, c => c.toUpperCase()),
         f.brignullPattern ? `#${f.brignullNumber} ${f.brignullPattern}` : '—',
         f.severity.toUpperCase(),
         f.dsaArticle || (f.regulation?.[0] || '—'),
-        f.fixPriority || '—',
+        f._instanceCount > 1 ? `×${f._instanceCount}` : '1',
       ]),
       headStyles: { fillColor: [106, 40, 155], textColor: K.white, fontStyle: 'bold', fontSize: 8 },
       styles: { fontSize: 7.5, cellPadding: 3.5, lineColor: K.lightGrey, lineWidth: 0.2, overflow: 'linebreak' },
       alternateRowStyles: { fillColor: K.offWhite },
       columnStyles: {
         0: { cellWidth: 12, fontStyle: 'bold', halign: 'center' },
-        1: { cellWidth: 44 },
+        1: { cellWidth: 46 },
         2: { cellWidth: 26 },
         3: { cellWidth: 28 },
         4: { cellWidth: 18, halign: 'center' },
         5: { cellWidth: 22 },
-        6: { cellWidth: 12, halign: 'center' },
+        6: { cellWidth: 10, halign: 'center' },
       },
       didParseCell: (data) => {
         if (data.section === 'body' && data.column.index === 4) {
           const s = data.cell.text[0]?.toLowerCase();
           if (s) { data.cell.styles.textColor = sevColor(s); data.cell.styles.fillColor = sevBg(s); data.cell.styles.fontStyle = 'bold'; }
         }
+        if (data.section === 'body' && data.column.index === 6 && data.cell.text[0] !== '1') {
+          data.cell.styles.textColor = K.high; data.cell.styles.fontStyle = 'bold';
+        }
       },
       margin: { left: 20, right: 20 },
     });
 
-    // Detailed dark pattern finding blocks
+    // Detailed dark pattern finding blocks — deduplicated
     doc.addPage();
     y = 18;
-    y = sectionHeading(doc, dpSectionNum + '.1', 'Dark Pattern Detail Cards', y);
+    y = sectionHeading(doc, (isA11y ? dpSectionNum : '3') + '.1', 'Dark Pattern Detail Cards', y);
 
-    dpFindings.forEach((f, idx) => {
+    dpDeduped.forEach((f, idx) => {
       if (y > ph - 80) { doc.addPage(); y = 18; }
 
       const purpleBg: [number, number, number] = [248, 240, 255];
@@ -730,7 +931,8 @@ export async function generatePdf(audit: AuditResult): Promise<Buffer> {
       doc.setFont('helvetica', 'bold');
       doc.setFontSize(10);
       doc.setTextColor(...purple);
-      doc.text(`#${String(idx + 1).padStart(3, '0')}  ${f.title}`, 24, y + 5);
+      const instanceTag = f._instanceCount > 1 ? `  [×${f._instanceCount} instances]` : '';
+      doc.text(`#${String(idx + 1).padStart(3, '0')}  ${f.title}${instanceTag}`, 24, y + 5);
       y += 16;
 
       // Meta line 1
@@ -777,18 +979,21 @@ export async function generatePdf(audit: AuditResult): Promise<Buffer> {
       doc.text(impactLines, 24, y);
       y += impactLines.length * 3.5 + 3;
 
-      // Developer fix
+      // Developer fix — IMPORTANT: set Courier font BEFORE splitTextToSize so
+      // jsPDF calculates character widths correctly for that font, preventing overflow.
       if (f.developerFix && !isA11y) {
         if (y > ph - 35) { doc.addPage(); y = 18; }
         doc.setFont('helvetica', 'bold'); doc.setFontSize(9); doc.setTextColor(...K.nearBlack);
         doc.text('Developer Fix', 24, y); y += 4;
-        const fixLines = doc.splitTextToSize(f.developerFix.substring(0, 250), pw - 48);
-        const fh = fixLines.length * 3.5 + 5;
+        // Set target font first so splitTextToSize uses correct char widths
+        doc.setFont('courier', 'normal'); doc.setFontSize(7);
+        const fixLines = doc.splitTextToSize(f.developerFix.substring(0, 300), pw - 56);
+        const fh = fixLines.length * 3.8 + 6;
         doc.setFillColor(1, 11, 26); doc.setDrawColor(...K.teal); doc.setLineWidth(0.5);
         doc.roundedRect(24, y - 1, pw - 48, fh, 2, 2, 'FD');
-        doc.setFont('courier', 'normal'); doc.setFontSize(7); doc.setTextColor(134, 239, 172);
-        doc.text(fixLines, 28, y + 3);
-        y += fh + 3;
+        doc.setTextColor(134, 239, 172);
+        doc.text(fixLines, 28, y + 4);
+        y += fh + 4;
       }
 
       // Legal summary
@@ -797,22 +1002,46 @@ export async function generatePdf(audit: AuditResult): Promise<Buffer> {
         doc.setFont('helvetica', 'bold'); doc.setFontSize(9); doc.setTextColor(180, 30, 30);
         doc.text('Legal / Regulatory Exposure', 24, y); y += 4;
         doc.setFont('helvetica', 'normal'); doc.setFontSize(8); doc.setTextColor(...K.darkGrey);
-        const legalLines = doc.splitTextToSize(f.legalSummary.substring(0, 250), pw - 48);
+        const legalLines = doc.splitTextToSize(f.legalSummary.substring(0, 300), pw - 48);
         doc.text(legalLines, 24, y);
         y += legalLines.length * 3.5 + 3;
       }
 
-      // Evidence screenshot
+      // Evidence screenshot — capped at 55mm height to prevent full-page DOM dumps
+      // from filling the entire card. Border frame makes it look intentional.
       if ((f.evidence as any)?.screenshotDataUrl) {
         const imgData: string = (f.evidence as any).screenshotDataUrl;
+        const maxImgH = 55;
         const imgW = pw - 44;
-        const imgH = Math.round(imgW * 0.45);
-        if (y + imgH + 14 > ph - 20) { doc.addPage(); y = 18; }
-        doc.setFont('helvetica', 'italic'); doc.setFontSize(7.5); doc.setTextColor(...K.midGrey);
-        doc.text(`Evidence Screenshot — ${(f.evidence as any).pageUrl || f.pageUrl || ''}`, 24, y);
+        // Maintain aspect ratio but cap height
+        const imgH = Math.min(Math.round(imgW * 0.5), maxImgH);
+        if (y + imgH + 18 > ph - 20) { doc.addPage(); y = 18; }
+
+        // Label row — bold title left, italic URL right
+        doc.setFont('helvetica', 'bold'); doc.setFontSize(8); doc.setTextColor(...K.nearBlack);
+        doc.text('Evidence — Element Pinpoint', 24, y);
+        doc.setFont('helvetica', 'italic'); doc.setFontSize(7); doc.setTextColor(...K.midGrey);
+        const urlLabel = (f.pageUrl || '').replace(/^https?:\/\//, '').substring(0, 60);
+        doc.text(urlLabel, pw - 20, y, { align: 'right' });
         y += 4;
-        try { doc.addImage(imgData, 'JPEG', 22, y, imgW, imgH, undefined, 'MEDIUM'); } catch (_) { /* skip if image fails */ }
-        y += imgH + 4;
+
+        // Outer frame + image
+        const frameX = 22; const frameY = y; const frameW = pw - 44; const frameH = imgH + 2;
+        doc.setFillColor(...K.offWhite);
+        doc.setDrawColor(232, 0, 45); // red border to match the in-page highlight
+        doc.setLineWidth(0.6);
+        doc.roundedRect(frameX, frameY, frameW, frameH, 2, 2, 'FD');
+        try {
+          doc.addImage(imgData, 'JPEG', frameX + 1, frameY + 1, frameW - 2, imgH, undefined, 'MEDIUM');
+        } catch (_) { /* skip if image data is invalid */ }
+
+        // Legend
+        doc.setFont('helvetica', 'italic'); doc.setFontSize(6.5); doc.setTextColor(...K.midGrey);
+        doc.text(
+          'Screenshot cropped to detected element  |  Red border marks exact dark pattern location  |  TrustLens audit engine',
+          24, y + imgH + 5
+        );
+        y += imgH + 11;
       }
 
       // Separator

@@ -324,20 +324,28 @@ export async function generateDocx(audit: AuditResult): Promise<Buffer> {
             .map((para: string) => body(para.trim(), K.darkGrey)),
           sp(),
           h2('1.1 Issue Breakdown'),
-          new Table({
-            width: { size: 100, type: WidthType.PERCENTAGE },
-            borders: TABLE_BORDERS,
-            rows: [
-              new TableRow({ children: [cell('Severity', { bold: true, bg: K.navy, color: K.white, width: 20 }), cell('Count', { bold: true, bg: K.navy, color: K.white, width: 20, align: AlignmentType.CENTER }), cell('% of Total', { bold: true, bg: K.navy, color: K.white, width: 20, align: AlignmentType.CENTER }), cell('Priority', { bold: true, bg: K.navy, color: K.white, width: 20, align: AlignmentType.CENTER }), cell('Target Sprint', { bold: true, bg: K.navy, color: K.white, width: 20, align: AlignmentType.CENTER })] }),
-              ...(['critical','high','medium','low'] as const).map((sev, i) => new TableRow({ children: [
-                cell(sev.charAt(0).toUpperCase() + sev.slice(1), { bold: true, color: sevColor(sev), bg: i % 2 === 0 ? K.offWhite : K.white }),
-                cell(String(score.issueBySeverity[sev]), { align: AlignmentType.CENTER, bg: i % 2 === 0 ? K.offWhite : K.white }),
-                cell(score.totalIssues > 0 ? `${Math.round((score.issueBySeverity[sev] / score.totalIssues) * 100)}%` : '0%', { align: AlignmentType.CENTER, bg: i % 2 === 0 ? K.offWhite : K.white }),
-                cell({ critical:'Immediate', high:'High', medium:'Moderate', low:'Low' }[sev], { align: AlignmentType.CENTER, bold: true, color: sevColor(sev), bg: sevBg(sev) }),
-                cell({ critical:'Sprint 1', high:'Sprint 2', medium:'Q2', low:'Today' }[sev], { align: AlignmentType.CENTER, bg: i % 2 === 0 ? K.offWhite : K.white }),
-              ]})),
-            ],
-          }),
+          (() => {
+            // Aggregate severity counts across all active pillars (a11y + dark patterns + privacy)
+            const aggBySev: Record<string, number> = { critical: 0, high: 0, medium: 0, low: 0 };
+            const dpF = ((audit as any).pillarResults?.darkpatterns?.findings ?? []) as Array<{ severity: string }>;
+            const pvF = ((audit as any).pillarResults?.privacy?.findings ?? []) as Array<{ severity: string }>;
+            for (const f of [...issues, ...dpF, ...pvF]) { if (f.severity in aggBySev) aggBySev[f.severity]++; }
+            const aggTotal = Object.values(aggBySev).reduce((a, b) => a + b, 0);
+            return new Table({
+              width: { size: 100, type: WidthType.PERCENTAGE },
+              borders: TABLE_BORDERS,
+              rows: [
+                new TableRow({ children: [cell('Severity', { bold: true, bg: K.navy, color: K.white, width: 20 }), cell('Count', { bold: true, bg: K.navy, color: K.white, width: 20, align: AlignmentType.CENTER }), cell('% of Total', { bold: true, bg: K.navy, color: K.white, width: 20, align: AlignmentType.CENTER }), cell('Priority', { bold: true, bg: K.navy, color: K.white, width: 20, align: AlignmentType.CENTER }), cell('Target Sprint', { bold: true, bg: K.navy, color: K.white, width: 20, align: AlignmentType.CENTER })] }),
+                ...(['critical','high','medium','low'] as const).map((sev, i) => new TableRow({ children: [
+                  cell(sev.charAt(0).toUpperCase() + sev.slice(1), { bold: true, color: sevColor(sev), bg: i % 2 === 0 ? K.offWhite : K.white }),
+                  cell(String(aggBySev[sev]), { align: AlignmentType.CENTER, bg: i % 2 === 0 ? K.offWhite : K.white }),
+                  cell(aggTotal > 0 ? `${Math.round((aggBySev[sev] / aggTotal) * 100)}%` : '0%', { align: AlignmentType.CENTER, bg: i % 2 === 0 ? K.offWhite : K.white }),
+                  cell({ critical:'Immediate', high:'High', medium:'Moderate', low:'Low' }[sev], { align: AlignmentType.CENTER, bold: true, color: sevColor(sev), bg: sevBg(sev) }),
+                  cell({ critical:'Sprint 1', high:'Sprint 2', medium:'Q2', low:'Today' }[sev], { align: AlignmentType.CENTER, bg: i % 2 === 0 ? K.offWhite : K.white }),
+                ]})),
+              ],
+            });
+          })(),
           sp(),
           ...(isA11y ? [
             h2('1.2 Category Scores (WCAG Principles)'),

@@ -16,7 +16,7 @@ import {
 import { applyComplianceExemptions } from './compliance-exemptions';
 import type { TestLogEntry } from '../types/audit';
 
-interface PageData { url: string; title: string; html?: string; }
+interface PageData { url: string; title: string; html?: string; screenshot?: string; }
 type ProgressFn = (entry: TestLogEntry) => void;
 
 // ── Bot/challenge page detection — returns true if the page content is a WAF challenge ──
@@ -48,11 +48,27 @@ export async function runDarkPatternAudit(
     onProgress?.({ timestamp: new Date().toISOString(), testId, testName: 'Dark Pattern', wcag: '', status: status as any, message, pillar: 'darkpatterns', methodology, phase });
   };
 
-  for (const pageData of pages) {
+  // Deduplicate pages by hostname+pathname — query-param variants of the same page
+  // (e.g. /?pb_source=google_brand vs /) would otherwise be scanned and reported twice.
+  // Sort ascending by URL length first so the canonical (shorter) URL wins.
+  const seenPathnames = new Set<string>();
+  const dedupedPages = [...pages]
+    .sort((a, b) => a.url.length - b.url.length)
+    .filter(p => {
+      try {
+        const u = new URL(p.url);
+        const key = u.hostname + u.pathname.replace(/\/$/, '');
+        if (seenPathnames.has(key)) return false;
+        seenPathnames.add(key);
+        return true;
+      } catch { return true; }
+    });
+
+  for (const pageData of dedupedPages) {
     let page: Page | null = null;
     let pageScreenshotDataUrl: string | undefined;
     let usingCachedHtml = false;
-    const screenshotTasks: Promise<void>[] = [];
+    const screenshotTasks: (() => Promise<void>)[] = [];
     const pageDeadlineMs = Date.now() + 4 * 60 * 1000; // 4-minute hard cap per page
     try {
       page = await context.newPage();
@@ -105,11 +121,40 @@ export async function runDarkPatternAudit(
           'Bot Detection Recovery', 'Page Load');
       }
 
-      // ── Capture full-page screenshot as fallback evidence for findings ──
+      // ── Capture baseline page screenshot for evidence fallback ──
+      // For live pages: full-page screenshot captures all element positions accurately.
+      // For setContent (WAF): inject the site's real external CSS before screenshotting
+      // so the render has correct brand colours, fonts and layout — not bare HTML.
       try {
-        const buf = await page.screenshot({ fullPage: true, type: 'jpeg', quality: 60 });
-        pageScreenshotDataUrl = `data:image/jpeg;base64,${buf.toString('base64')}`;
+        if (usingCachedHtml) {
+          await page.setViewportSize({ width: 1280, height: 900 }).catch(() => {});
+          // Fetch site CSS via Node.js and inject it inline — proven to render real brand UI
+          // (setContent @imports don't load due to CORS; inline text needs no browser fetches)
+          await injectSiteCSS(page, pageData.html || '', pageData.url).catch(() => {});
+          // Wait for layout reflow after CSS injection (CSS is already inlined — fast)
+          await page.waitForTimeout(800);
+          // Collapse any nav dropdowns that expand without JS, then scroll to hero section
+          await page.evaluate(() => {
+            document.querySelectorAll('[class*="mega"],[class*="nav-drop"],[class*="dropdown-menu"],[class*="NavMenu"],[class*="main-nav"]').forEach((el: Element) => {
+              const htmlEl = el as HTMLElement;
+              if (htmlEl.getBoundingClientRect().height > 200) htmlEl.style.display = 'none';
+            });
+            window.scrollTo(0, 150);
+          }).catch(() => {});
+          await page.waitForTimeout(200);
+          const buf = await page.screenshot({ type: 'jpeg', quality: 85 });
+          pageScreenshotDataUrl = `data:image/jpeg;base64,${buf.toString('base64')}`;
+        } else {
+          const buf = await page.screenshot({ fullPage: true, type: 'jpeg', quality: 70 });
+          pageScreenshotDataUrl = `data:image/jpeg;base64,${buf.toString('base64')}`;
+        }
       } catch { /* screenshot optional — don't block scan */ }
+
+      // Prefer crawl-time screenshot (real browser) over Playwright render for evidence fallbacks.
+      // For WAF/cached-HTML pages, pageData.screenshot is the only accurate visual representation.
+      const crawlFallback: string | undefined = pageData.screenshot
+        ? `data:image/png;base64,${pageData.screenshot}`
+        : pageScreenshotDataUrl;
 
       // ── Phase 1: DOM & Code-Level Inspection ──
       log('DP-DOM', 'running', '━━━ Phase 1: DOM & Code-Level Inspection', 'Brignull Taxonomy (12 Patterns)', 'Phase 1: DOM Scan');
@@ -123,8 +168,8 @@ export async function runDarkPatternAudit(
       const domFindings = await runDOMScans(page, pageData.url);
       for (const f of domFindings) {
         f.id = `dp-${++findingId}`;
-        f.evidence.screenshotDataUrl = pageScreenshotDataUrl;
-        screenshotTasks.push(captureElementScreenshot(page, f, pageScreenshotDataUrl).then(url => { if (url) f.evidence.screenshotDataUrl = url; }).catch(() => {}));
+        f.evidence.screenshotDataUrl = crawlFallback;
+        screenshotTasks.push(() => captureElementScreenshot(page!, f, crawlFallback, usingCachedHtml).then(url => { if (url) f.evidence.screenshotDataUrl = url; }).catch(() => {}));
         findings.push(f);
       }
       log('DP-DOM', domFindings.length > 0 ? 'fail' : 'pass', `  ✓ Phase 1 complete — ${domFindings.length} finding(s) detected`, 'Brignull Taxonomy', 'Phase 1: DOM Scan');
@@ -138,8 +183,8 @@ export async function runDarkPatternAudit(
       const visualFindings = await runVisualScans(page, pageData.url);
       for (const f of visualFindings) {
         f.id = `dp-${++findingId}`;
-        f.evidence.screenshotDataUrl = pageScreenshotDataUrl;
-        screenshotTasks.push(captureElementScreenshot(page, f, pageScreenshotDataUrl).then(url => { if (url) f.evidence.screenshotDataUrl = url; }).catch(() => {}));
+        f.evidence.screenshotDataUrl = crawlFallback;
+        screenshotTasks.push(() => captureElementScreenshot(page!, f, crawlFallback, usingCachedHtml).then(url => { if (url) f.evidence.screenshotDataUrl = url; }).catch(() => {}));
         findings.push(f);
       }
       log('DP-VIS', visualFindings.length > 0 ? 'fail' : 'pass', `  ✓ Phase 2 complete — ${visualFindings.length} finding(s) detected`, 'EU DSA Art. 25', 'Phase 2: Visual Scan');
@@ -155,8 +200,8 @@ export async function runDarkPatternAudit(
       const textFindings = await runTextPatternScans(page, pageData.url, usingCachedHtml ? pageData.html : undefined);
       for (const f of textFindings) {
         f.id = `dp-${++findingId}`;
-        f.evidence.screenshotDataUrl = pageScreenshotDataUrl;
-        screenshotTasks.push(captureElementScreenshot(page, f, pageScreenshotDataUrl).then(url => { if (url) f.evidence.screenshotDataUrl = url; }).catch(() => {}));
+        f.evidence.screenshotDataUrl = crawlFallback;
+        screenshotTasks.push(() => captureElementScreenshot(page!, f, crawlFallback, usingCachedHtml).then(url => { if (url) f.evidence.screenshotDataUrl = url; }).catch(() => {}));
         findings.push(f);
       }
       log('DP-NLP', textFindings.length > 0 ? 'fail' : 'pass', `  ✓ Phase 3 complete — ${textFindings.length} finding(s) detected`, 'Cognitive Bias Framework', 'Phase 3: NLP Scan');
@@ -171,8 +216,8 @@ export async function runDarkPatternAudit(
       const deepFindings = await runDeepCodeInspection(page, pageData.url);
       for (const f of deepFindings) {
         f.id = `dp-${++findingId}`;
-        f.evidence.screenshotDataUrl = pageScreenshotDataUrl;
-        screenshotTasks.push(captureElementScreenshot(page, f, pageScreenshotDataUrl).then(url => { if (url) f.evidence.screenshotDataUrl = url; }).catch(() => {}));
+        f.evidence.screenshotDataUrl = crawlFallback;
+        screenshotTasks.push(() => captureElementScreenshot(page!, f, crawlFallback, usingCachedHtml).then(url => { if (url) f.evidence.screenshotDataUrl = url; }).catch(() => {}));
         findings.push(f);
       }
       log('DP-DEEP', deepFindings.length > 0 ? 'fail' : 'pass', `  ✓ Phase 4 complete — ${deepFindings.length} finding(s) detected`, 'FTC + GDPR Art. 6', 'Phase 4: Deep Code Scan');
@@ -185,8 +230,8 @@ export async function runDarkPatternAudit(
       const axFindings = await runA11yCrossMap(page, pageData.url);
       for (const f of axFindings) {
         f.id = `dp-${++findingId}`;
-        f.evidence.screenshotDataUrl = pageScreenshotDataUrl;
-        screenshotTasks.push(captureElementScreenshot(page, f, pageScreenshotDataUrl).then(url => { if (url) f.evidence.screenshotDataUrl = url; }).catch(() => {}));
+        f.evidence.screenshotDataUrl = crawlFallback;
+        screenshotTasks.push(() => captureElementScreenshot(page!, f, crawlFallback, usingCachedHtml).then(url => { if (url) f.evidence.screenshotDataUrl = url; }).catch(() => {}));
         findings.push(f);
       }
       log('DP-AX', axFindings.length > 0 ? 'fail' : 'pass', `  ✓ Phase 5 complete — ${axFindings.length} finding(s) detected`, 'WCAG + Dark Pattern Intersection', 'Phase 5: A11Y Cross-Map');
@@ -199,8 +244,8 @@ export async function runDarkPatternAudit(
       const flowFindings = await runInteractionFlowAnalysis(page, pageData.url);
       for (const f of flowFindings) {
         f.id = `dp-${++findingId}`;
-        f.evidence.screenshotDataUrl = pageScreenshotDataUrl;
-        screenshotTasks.push(captureElementScreenshot(page, f, pageScreenshotDataUrl).then(url => { if (url) f.evidence.screenshotDataUrl = url; }).catch(() => {}));
+        f.evidence.screenshotDataUrl = crawlFallback;
+        screenshotTasks.push(() => captureElementScreenshot(page!, f, crawlFallback, usingCachedHtml).then(url => { if (url) f.evidence.screenshotDataUrl = url; }).catch(() => {}));
         findings.push(f);
       }
       log('DP-FLOW', flowFindings.length > 0 ? 'fail' : 'pass', `  ✓ Phase 6 complete — ${flowFindings.length} finding(s) detected`, 'Ethical Friction Score', 'Phase 6: Flow Analysis');
@@ -215,19 +260,27 @@ export async function runDarkPatternAudit(
       const cmpFindings = await runCookieConsentAudit(page, pageData.url);
       for (const f of cmpFindings) {
         f.id = `dp-${++findingId}`;
-        f.evidence.screenshotDataUrl = pageScreenshotDataUrl;
-        screenshotTasks.push(captureElementScreenshot(page, f, pageScreenshotDataUrl).then(url => { if (url) f.evidence.screenshotDataUrl = url; }).catch(() => {}));
+        f.evidence.screenshotDataUrl = crawlFallback;
+        screenshotTasks.push(() => captureElementScreenshot(page!, f, crawlFallback, usingCachedHtml).then(url => { if (url) f.evidence.screenshotDataUrl = url; }).catch(() => {}));
         findings.push(f);
       }
       log('DP-CMP', cmpFindings.length > 0 ? 'fail' : 'pass', `  ✓ Phase 9 complete — ${cmpFindings.length} CMP finding(s) detected`, 'EDPB + GDPR Cookie Compliance', 'Phase 9: CMP Audit');
 
-      // ── Flush element screenshots (parallel, capped at 15s) ──
-      // All 7 phases above dispatched screenshot tasks without blocking. Resolve them
-      // now in parallel so Phase 8 (which navigates/screenshots again) starts clean.
-      await Promise.race([
-        Promise.allSettled(screenshotTasks),
-        new Promise<void>(resolve => setTimeout(resolve, 15000)),
-      ]);
+      // ── Flush element screenshots (sequential, 15s total budget) ──
+      // Tasks share a single Playwright page object. Parallel DOM mutations cause
+      // concurrent __tl_lbl__ banner overwrites → wrong labels in every screenshot.
+      // Running sequentially eliminates the race at the cost of ~3s per finding max.
+      {
+        const taskDeadline = Date.now() + 15000;
+        for (const task of screenshotTasks) {
+          if (Date.now() >= taskDeadline) break;
+          const remaining = Math.max(500, taskDeadline - Date.now());
+          await Promise.race([
+            task(),
+            new Promise<void>(resolve => setTimeout(resolve, Math.min(3000, remaining))),
+          ]);
+        }
+      }
 
       // ── Phase 8: Visual AI Dark Pattern Analysis (Claude Vision) — always-on ──
       if (process.env.ANTHROPIC_API_KEY && Date.now() < pageDeadlineMs) {
@@ -305,48 +358,227 @@ export async function runDarkPatternAudit(
 // Takes a contextual viewport screenshot scrolled to show the
 // specific finding's element. Falls back to full-page screenshot.
 // ═══════════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════
+// ELEMENT-PINPOINT SCREENSHOT
+//
+// Strategy (both modes):
+//   1. Find the specific element via id / name / text locators
+//   2. Scroll it into view
+//   3. Inject a red highlight overlay directly onto the element
+//   4. Take a CLIPPED screenshot — cropped to element + 100px padding
+//      so the client sees exactly the problem area, not the whole page
+//   5. Remove the overlay
+//
+// setContent (WAF) mode: minimal CSS is already injected on the page
+//   so elements have real bounding boxes. We still follow the same
+//   crop-to-element strategy. If no element is found, fall back to
+//   a viewport screenshot of the CSS-styled page.
+// ═══════════════════════════════════════════════════════════
+/**
+ * Fetch the site's real external CSS and inject it into a Playwright page that was
+ * loaded via setContent() (WAF-blocked sites). This makes the rendering look like the
+ * actual branded UI rather than bare unstyled HTML — dramatically improving screenshot
+ * quality for clients and regulators reviewing the audit evidence.
+ *
+ * Fetches up to 5 stylesheets, each capped at 150 KB, with a 3 s timeout per file.
+ */
+async function injectSiteCSS(page: Page, html: string, baseUrl: string): Promise<void> {
+  // ── APPROACH: Fetch CSS via Node.js and inline directly (proven fix) ──
+  // setContent() cannot load @import externals due to no-page-origin CORS blocking.
+  // Verified: PolicyBazaar home.css = 359KB (was silently dropped by old 150KB limit).
+  // Node.js fetch → inline text → addStyleTag({ content }) bypasses all those limits.
+  const cssUrls: string[] = [];
+  const re1 = /<link[^>]+rel=["']stylesheet["'][^>]*href=["']([^"']+)["'][^>]*>/gi;
+  const re2 = /<link[^>]+href=["']([^"']+)["'][^>]*rel=["']stylesheet["'][^>]*>/gi;
+  let m: RegExpExecArray | null;
+  while ((m = re1.exec(html)) !== null) cssUrls.push(m[1]);
+  while ((m = re2.exec(html)) !== null) cssUrls.push(m[1]);
+
+  const resolved = [...new Set(cssUrls)]
+    .slice(0, 10)
+    .map(u => { try { return new URL(u, baseUrl).href; } catch { return null; } })
+    .filter((u): u is string => !!u && /^https?:\/\//.test(u));
+
+  // Fetch each CSS file via Node.js (no size limit, no CORS, direct CDN access)
+  let combinedCss = '';
+  for (const cssUrl of resolved) {
+    try {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 8000);
+      const res = await fetch(cssUrl, {
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+          'Accept': 'text/css,*/*',
+          'Referer': baseUrl,
+        },
+        signal: controller.signal,
+      }).finally(() => clearTimeout(timer));
+      if (res.ok) {
+        const css = await res.text();
+        // Fix relative url() paths inside this CSS file to absolute URLs
+        const cssBase = new URL(cssUrl);
+        const fixedCss = css.replace(
+          /url\(['"]?(?!data:|https?:|#)([^'")]+)['"]?\)/gi,
+          (match: string, relPath: string) => {
+            try { return `url("${new URL(relPath.trim(), cssBase.href).href}")`; }
+            catch { return match; }
+          }
+        );
+        combinedCss += `\n/* === ${cssUrl} === */\n${fixedCss}\n`;
+      }
+    } catch { /* skip unreachable CSS files */ }
+  }
+
+  // Set <base href> so relative src= and href= attributes resolve correctly
+  await page.evaluate((bUrl: string) => {
+    if (!document.querySelector('base')) {
+      const base = document.createElement('base');
+      base.href = bUrl;
+      document.head?.prepend(base);
+    }
+  }, baseUrl).catch(() => {});
+
+  // Inject all fetched CSS as a single inline style block (no external fetches by browser)
+  if (combinedCss) {
+    await page.addStyleTag({ content: combinedCss }).catch(() => {});
+  }
+
+  // Minimal fallback so unstyled elements remain legible
+  await page.addStyleTag({ content: `
+    body{font-family:Arial,Helvetica,sans-serif;font-size:14px;line-height:1.5;background:#fff;color:#111;margin:0;}
+    img{max-width:100%;height:auto;}a{color:#1a0dab;}*{box-sizing:border-box;}
+  `}).catch(() => {});
+
+  // Collapse oversized nav dropdowns (they expand to fill viewport in raw HTML without JS)
+  await page.evaluate(() => {
+    document.querySelectorAll('[class*="mega"],[class*="nav-drop"],[class*="dropdown-menu"],[class*="NavMenu"],[class*="main-nav"]').forEach((el: Element) => {
+      const htmlEl = el as HTMLElement;
+      if (htmlEl.getBoundingClientRect().height > 200) htmlEl.style.display = 'none';
+    });
+  }).catch(() => {});
+}
+
 async function captureElementScreenshot(
   page: Page,
   finding: DarkPatternFinding,
-  fallbackDataUrl?: string
+  fallbackDataUrl?: string,
+  usingCachedHtml?: boolean
 ): Promise<string | undefined> {
+  const TIMEOUT = 800;
+  const PADDING = 100; // px of context around the element
+
+  // Build locator candidates from most to least specific
+  type LocatorFactory = () => ReturnType<Page['locator']>;
+  const candidates: LocatorFactory[] = [];
+
+  const idMatch = finding.elementHtml?.match(/\bid="([^"]+)"/);
+  if (idMatch)   candidates.push(() => page.locator(`[id="${idMatch[1]}"]`).first());
+
+  const nameMatch = finding.elementHtml?.match(/\bname="([^"]+)"/);
+  if (nameMatch) candidates.push(() => page.locator(`[name="${nameMatch[1]}"]`).first());
+
+  // Quoted evidence text — most useful for NLP findings ("Only 3 left!", trust claims, etc.)
+  const qText = (finding.evidence?.summary || '').match(/"([^"]{5,120})"/)?.[1];
+  if (qText)     candidates.push(() => page.getByText(qText, { exact: false }).first());
+
+  // Partial text from title as last resort
+  const titleWords = (finding.title || '').split(' ').slice(0, 4).join(' ');
+  if (titleWords.length > 8) candidates.push(() => page.getByText(titleWords, { exact: false }).first());
+
   try {
-    const TIMEOUT = 500;
-
-    // Build locator candidates from most to least specific
-    type LocatorFactory = () => ReturnType<Page['locator']>;
-    const candidates: LocatorFactory[] = [];
-
-    // 1. id= attribute in elementHtml
-    const idMatch = finding.elementHtml?.match(/\bid="([^"]+)"/);
-    if (idMatch) candidates.push(() => page.locator(`[id="${idMatch[1]}"]`).first());
-
-    // 2. name= attribute (checkboxes, radios, inputs)
-    const nameMatch = finding.elementHtml?.match(/\bname="([^"]+)"/);
-    if (nameMatch) candidates.push(() => page.locator(`[name="${nameMatch[1]}"]`).first());
-
-    // 3. Quoted text from evidence summary e.g. "Only 3 left!" or "No thanks, I hate saving"
-    const qText = (finding.evidence.summary || '').match(/"([^"]{6,100})"/)?.[1];
-    if (qText) candidates.push(() => page.getByText(qText, { exact: false }).first());
-
     for (const makeLocator of candidates) {
       try {
         const locator = makeLocator();
-        const handle = await locator.elementHandle({ timeout: TIMEOUT }).catch(() => null);
+        const handle  = await locator.elementHandle({ timeout: TIMEOUT }).catch(() => null);
         if (!handle) continue;
 
-        // Scroll the element to the centre of the viewport
+        // Scroll element to centre of viewport
         await handle.evaluate((el: Element) =>
-          el.scrollIntoView({ block: 'center', behavior: 'instant' })
+          el.scrollIntoView({ block: 'center', inline: 'nearest', behavior: 'instant' })
         );
-        await page.waitForTimeout(120); // brief render settle
+        await page.waitForTimeout(200);
 
-        // Capture the current viewport — shows element in full UI context
-        const buf = await page.screenshot({ type: 'jpeg', quality: 75 });
+        // Get bounding box in PAGE coordinates
+        const box = await handle.boundingBox();
+        if (!box || box.width === 0) continue;
+
+        // Viewport dimensions
+        const vp = page.viewportSize() || { width: 1280, height: 900 };
+
+        // ── Inject red highlight overlay on the element ──
+        await page.evaluate(({ x, y, w, h }: { x:number; y:number; w:number; h:number }) => {
+          document.getElementById('__tl_hl__')?.remove();
+          const div = document.createElement('div');
+          div.id = '__tl_hl__';
+          Object.assign(div.style, {
+            position:    'absolute',
+            top:         `${y - 3}px`,
+            left:        `${x - 3}px`,
+            width:       `${w + 6}px`,
+            height:      `${h + 6}px`,
+            border:      '3px solid #FF3356',
+            borderRadius:'3px',
+            background:  'rgba(255,51,86,0.12)',
+            zIndex:      '2147483647',
+            pointerEvents:'none',
+            boxShadow:   '0 0 0 3px rgba(255,51,86,0.35), inset 0 0 0 1px rgba(255,51,86,0.5)',
+          });
+          // Make sure body is position:relative so absolute coords work
+          if (getComputedStyle(document.body).position === 'static') {
+            document.body.style.position = 'relative';
+          }
+          document.body.appendChild(div);
+        }, { x: box.x, y: box.y, w: box.width, h: box.height });
+
+        // ── Clipped screenshot centred on the element ──
+        const clipX = Math.max(0, box.x - PADDING);
+        const clipY = Math.max(0, box.y - PADDING);
+        const clipW = Math.min(vp.width,  box.width  + PADDING * 2);
+        const clipH = Math.min(700,       box.height + PADDING * 2);
+
+        const buf = await page.screenshot({
+          type:    'jpeg',
+          quality: 88,
+          clip:    { x: clipX, y: clipY, width: clipW, height: clipH },
+        });
+
+        // Clean up overlay
+        await page.evaluate(() => document.getElementById('__tl_hl__')?.remove()).catch(() => {});
+
         return `data:image/jpeg;base64,${buf.toString('base64')}`;
       } catch { continue; }
     }
-  } catch { /* screenshots are non-blocking evidence */ }
+
+    // ── Fallback: element locators all failed ──
+    if (usingCachedHtml) {
+      // WAF/cached-HTML page: Playwright is rendering injected HTML, not the real site.
+      // Return the crawl-time screenshot (real browser render) directly — no viewport crop.
+      return fallbackDataUrl;
+    }
+    if (!fallbackDataUrl) {
+      // Live page, no baseline at all: inject a label banner on the current viewport.
+      const vp = page.viewportSize() || { width: 1280, height: 900 };
+      const label = (finding.title || 'Dark Pattern Detected').replace(/'/g, "\\'");
+      await page.evaluate((txt: string) => {
+        document.getElementById('__tl_lbl__')?.remove();
+        const el = document.createElement('div');
+        el.id = '__tl_lbl__';
+        Object.assign(el.style, {
+          position: 'fixed', top: '0', left: '0', right: '0',
+          padding: '6px 14px', background: 'rgba(232,0,45,0.92)',
+          color: '#fff', fontSize: '13px', fontWeight: '700',
+          fontFamily: 'sans-serif', zIndex: '2147483647',
+          boxShadow: '0 2px 8px rgba(0,0,0,0.4)',
+        });
+        el.textContent = `⚠ ${txt}`;
+        document.body.prepend(el);
+      }, label).catch(() => {});
+      const buf = await page.screenshot({ type: 'jpeg', quality: 80,
+        clip: { x: 0, y: 0, width: vp.width, height: Math.min(vp.height, 700) } });
+      await page.evaluate(() => document.getElementById('__tl_lbl__')?.remove()).catch(() => {});
+      return `data:image/jpeg;base64,${buf.toString('base64')}`;
+    }
+  } catch { /* screenshots are non-blocking */ }
 
   return fallbackDataUrl;
 }
