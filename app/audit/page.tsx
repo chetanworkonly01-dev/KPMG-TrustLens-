@@ -766,6 +766,43 @@ export default function AuditPage() {
   const [aiDirection, setAiDirection] = useState('');
   const [journeySteps, setJourneySteps] = useState<JourneyStep[]>([]);
 
+  // Performance Problem Context
+  type PerfFlag = 'perf-slow-load'|'perf-login'|'perf-otp'|'perf-mobile'|'perf-timeout'|'perf-checkout'|'perf-search'|'perf-calculator'|'perf-pdf-download'|'perf-session-expiry';
+  const PERF_CHIPS: { flag: PerfFlag; icon: string; label: string }[] = [
+    { flag: 'perf-slow-load',      icon: '🐢', label: 'Site loads too slowly'       },
+    { flag: 'perf-login',          icon: '🔐', label: 'Login / auth is slow'         },
+    { flag: 'perf-otp',            icon: '🔢', label: 'OTP / 2FA takes too long'     },
+    { flag: 'perf-mobile',         icon: '📱', label: 'Poor mobile / 3G experience'  },
+    { flag: 'perf-timeout',        icon: '⏱️', label: 'Pages hang or time out'       },
+    { flag: 'perf-checkout',       icon: '💳', label: 'Checkout / payment slow'      },
+    { flag: 'perf-search',         icon: '🔍', label: 'Search / filter sluggish'     },
+    { flag: 'perf-calculator',     icon: '🧮', label: 'Calculator unresponsive'      },
+    { flag: 'perf-pdf-download',   icon: '📄', label: 'PDF / download hangs'         },
+    { flag: 'perf-session-expiry', icon: '⏰', label: 'Session logs out too fast'    },
+  ];
+  const [perfFlags, setPerfFlags] = useState<PerfFlag[]>([]);
+  const [perfText, setPerfText]   = useState('');
+  const [perfParsing, setPerfParsing] = useState(false);
+
+  const togglePerfFlag = (flag: PerfFlag) =>
+    setPerfFlags(prev => prev.includes(flag) ? prev.filter(f => f !== flag) : [...prev, flag]);
+
+  const parsePerfText = async () => {
+    if (!perfText.trim()) return;
+    setPerfParsing(true);
+    try {
+      const res = await fetch('/api/audit/parse-perf-context', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text: perfText }),
+      });
+      const data = await res.json();
+      if (Array.isArray(data.flags) && data.flags.length > 0) {
+        setPerfFlags(prev => Array.from(new Set([...prev, ...data.flags])));
+      }
+    } catch {}
+    setPerfParsing(false);
+  };
+
   // WCAG
   const [wcagLevelA, setWcagLevelA]     = useState(true);
   const [wcagLevelAA, setWcagLevelAA]   = useState(true);
@@ -850,6 +887,9 @@ export default function AuditPage() {
         // For predefined mode, pass the (potentially edited) steps + action instructions
         journeySteps: (scopeMode === 'predefined' || scopeMode === 'director') ? journeySteps : undefined,
         aiDirection: aiDirection || undefined,
+        performanceProblemContext: pillarPerf && (perfFlags.length > 0 || perfText.trim())
+          ? { flags: perfFlags, freeText: perfText.trim() || undefined }
+          : undefined,
       };
       if (showLogin && username && password) {
         body.loginConfig = { loginUrl: loginUrl || url, username, password, usernameSelector, passwordSelector, submitSelector };
@@ -990,28 +1030,92 @@ export default function AuditPage() {
             </label>
           ))}
         </div>
-        {/* Coming Soon — Performance, Privacy, Compliance Intelligence, Design Governance */}
+        {/* Row 2 — Performance (live) + Privacy (coming soon) */}
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 10, marginTop: 10 }}>
-          {[
-            { icon: '⚡', label: 'Performance',              desc: 'Core Web Vitals · LCP / CLS / TTFB',          color: 'var(--pillar-perf)' },
-            { icon: '🔒', label: 'Privacy',                  desc: 'Tracker detection · Cookie consent audit',    color: 'var(--pillar-priv)' },
-            { icon: '⚖️', label: 'Compliance Intelligence',  desc: 'CCPA · RBI · SEBI · DPDPA governance',        color: '#06B6D4' },
-            { icon: '🎨', label: 'Design Governance',        desc: 'Design tokens · CTA hierarchy · Brand audit', color: '#EC4899' },
-          ].map(p => (
-            <div key={p.label} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px', borderRadius: 'var(--radius-md)', border: `2px dashed ${p.color}50`, background: `${p.color}06`, opacity: 0.75, position: 'relative', cursor: 'not-allowed' }}>
-              <span style={{ fontSize: 18, flexShrink: 0 }}>{p.icon}</span>
-              <div style={{ flex: 1 }}>
-                <div style={{ fontSize: 12, fontWeight: 700, color: p.color, marginBottom: 2 }}>{p.label}</div>
-                <div style={{ fontSize: 10, color: 'var(--text-muted)' }}>{p.desc}</div>
-              </div>
-              <span style={{ fontSize: 8, fontWeight: 700, padding: '2px 7px', borderRadius: 99, background: `${p.color}20`, color: p.color, border: `1px solid ${p.color}40`, whiteSpace: 'nowrap', fontFamily: 'Geist Mono, monospace' }}>COMING SOON</span>
-            </div>
-          ))}
+          {/* ⚡ Performance — fully live */}
+          <label style={{
+            display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6,
+            padding: '14px 10px', borderRadius: 'var(--radius-md)',
+            border: `2px solid ${pillarPerf ? 'var(--pillar-perf)' : 'var(--border)'}`,
+            background: pillarPerf ? 'color-mix(in srgb, var(--pillar-perf) 10%, transparent)' : 'transparent',
+            cursor: 'pointer', transition: 'var(--transition)', textAlign: 'center',
+          }}>
+            <input type="checkbox" checked={pillarPerf} onChange={e => setPillarPerf(e.target.checked)} style={{ display: 'none' }} />
+            <span style={{ fontSize: 22 }}>⚡</span>
+            <span style={{ fontSize: 12, fontWeight: 700, color: pillarPerf ? 'var(--pillar-perf)' : 'var(--text-muted)' }}>Performance</span>
+            <span style={{ fontSize: 10, color: 'var(--text-muted)' }}>CWV · Auth Flows · Network Sim</span>
+            <span style={{ fontSize: 9, fontWeight: 700, textTransform: 'uppercase', padding: '2px 8px', borderRadius: 99, fontFamily: 'Geist Mono, monospace', background: pillarPerf ? 'color-mix(in srgb, var(--pillar-perf) 15%, transparent)' : 'rgba(255,255,255,0.04)', color: pillarPerf ? 'var(--pillar-perf)' : 'var(--text-muted)' }}>
+              {pillarPerf ? '✓ Enabled' : 'Disabled'}
+            </span>
+          </label>
+
+          {/* 🔒 Privacy — coming soon */}
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6, padding: '14px 10px', borderRadius: 'var(--radius-md)', border: '2px dashed rgba(230,126,34,0.3)', background: 'rgba(230,126,34,0.04)', opacity: 0.65, cursor: 'not-allowed', textAlign: 'center' }}>
+            <span style={{ fontSize: 22 }}>🔒</span>
+            <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-muted)' }}>Privacy</span>
+            <span style={{ fontSize: 10, color: 'var(--text-muted)' }}>Tracker detection · Cookie audit</span>
+            <span style={{ fontSize: 8, fontWeight: 700, padding: '2px 7px', borderRadius: 99, background: 'rgba(230,126,34,0.12)', color: '#E67E22', border: '1px solid rgba(230,126,34,0.3)', fontFamily: 'Geist Mono, monospace' }}>COMING SOON</span>
+          </div>
         </div>
         <div style={{ marginTop: 10, fontSize: 11, color: 'var(--text-muted)', fontFamily: 'Geist Mono, monospace' }}>
-          {getEnabledPillars().length} of 2 active pillars enabled · Performance · Privacy · more pillars coming soon
+          {getEnabledPillars().length} of 3 pillars enabled · Compliance Intelligence · Design Governance coming soon
         </div>
       </div>
+
+      {/* ── Performance Problem Context ── only shown when Performance pillar is ON */}
+      {pillarPerf && (
+        <div className="glass-card animate-fade-in" style={{ marginBottom: 20, padding: '18px 20px', borderTop: '3px solid var(--pillar-perf)' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+            <span style={{ fontSize: 14, fontWeight: 700 }}>🎯 What has the client reported?</span>
+            <span style={{ fontSize: 10, color: 'var(--text-muted)', background: 'rgba(255,255,255,0.06)', padding: '2px 8px', borderRadius: 99, fontFamily: 'Geist Mono, monospace' }}>optional — activates targeted test layers</span>
+          </div>
+          <p style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 14 }}>
+            Select all known performance complaints. The engine will run deeper, targeted tests for each and confirm them in the report.
+          </p>
+
+          {/* Chip grid */}
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 16 }}>
+            {PERF_CHIPS.map(chip => {
+              const active = perfFlags.includes(chip.flag);
+              return (
+                <button key={chip.flag} onClick={() => togglePerfFlag(chip.flag)} type="button"
+                  style={{
+                    display: 'inline-flex', alignItems: 'center', gap: 6, padding: '6px 12px',
+                    borderRadius: 99, border: `1.5px solid ${active ? 'var(--pillar-perf)' : 'var(--border)'}`,
+                    background: active ? 'color-mix(in srgb, var(--pillar-perf) 15%, transparent)' : 'var(--bg-secondary)',
+                    color: active ? 'var(--pillar-perf)' : 'var(--text-secondary)',
+                    fontSize: 12, fontWeight: active ? 700 : 400, cursor: 'pointer',
+                    transition: 'var(--transition)',
+                  }}>
+                  <span>{chip.icon}</span>
+                  <span>{chip.label}</span>
+                  {active && <span style={{ fontSize: 10, marginLeft: 2 }}>✓</span>}
+                </button>
+              );
+            })}
+          </div>
+
+          {perfFlags.length > 0 && (
+            <div style={{ fontSize: 11, color: 'var(--pillar-perf)', marginBottom: 12, fontWeight: 600, fontFamily: 'Geist Mono, monospace' }}>
+              ✓ {perfFlags.length} problem{perfFlags.length > 1 ? 's' : ''} flagged → Layers {[perfFlags.some(f => ['perf-login','perf-otp'].includes(f)) && 'G (auth)', perfFlags.some(f => ['perf-search','perf-calculator'].includes(f)) && 'H (interaction)', perfFlags.some(f => ['perf-mobile','perf-slow-load','perf-timeout'].includes(f)) && 'I (3G sim)'].filter(Boolean).join(', ')} will activate
+            </div>
+          )}
+
+          {/* AI text input */}
+          <div style={{ position: 'relative' }}>
+            <textarea
+              value={perfText} onChange={e => setPerfText(e.target.value)}
+              placeholder={'Or describe the issue in your own words…\ne.g. "The login page on mobile takes 8 seconds. The OTP step seems to hang. Users also complain the insurance calculator freezes on older phones."'}
+              rows={3}
+              style={{ width: '100%', resize: 'vertical', fontSize: 12, fontStyle: perfText ? 'normal' : 'italic', padding: '10px 12px', borderRadius: 'var(--radius-md)', border: '1px solid var(--border)', background: 'var(--bg-secondary)', color: 'var(--text-primary)', fontFamily: 'inherit', boxSizing: 'border-box' }}
+            />
+            <button onClick={parsePerfText} disabled={!perfText.trim() || perfParsing} type="button"
+              style={{ marginTop: 8, display: 'inline-flex', alignItems: 'center', gap: 6, padding: '7px 14px', borderRadius: 'var(--radius-md)', border: 'none', background: perfText.trim() && !perfParsing ? 'var(--pillar-perf)' : 'var(--border)', color: perfText.trim() && !perfParsing ? '#000' : 'var(--text-muted)', fontSize: 12, fontWeight: 700, cursor: perfText.trim() && !perfParsing ? 'pointer' : 'not-allowed', transition: 'var(--transition)' }}>
+              {perfParsing ? '⏳ Parsing…' : '✨ Parse with AI → auto-select chips'}
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* ── WCAG Standard ── */}
       {pillarA11y && (

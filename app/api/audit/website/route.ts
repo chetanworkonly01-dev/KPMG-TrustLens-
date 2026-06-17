@@ -19,6 +19,7 @@ export async function POST(request: NextRequest) {
       selectedJourney,
       journeySteps,
       aiDirection,
+      performanceProblemContext,
     } = body;
 
     if (!url) {
@@ -45,6 +46,7 @@ export async function POST(request: NextRequest) {
       selectedJourney: selectedJourney || undefined,
       journeySteps: Array.isArray(journeySteps) ? journeySteps : undefined,
       aiDirection: aiDirection || undefined,
+      performanceProblemContext: performanceProblemContext || undefined,
     });
 
     return NextResponse.json({ auditId, status: 'started' });

@@ -32,6 +32,8 @@ export interface AuditConfig {
   selectedJourney?: string;
   journeySteps?: { id: string; label: string; url: string; action?: string }[];
   aiDirection?: string;
+  // ── Performance Problem Context (client-reported issues) ──
+  performanceProblemContext?: import('./performance').PerformanceProblemContext;
 }
 
 export interface PageData {

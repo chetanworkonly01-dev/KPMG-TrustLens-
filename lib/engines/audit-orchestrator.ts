@@ -571,12 +571,17 @@ async function runAuditPipeline(id: string, config: AuditConfig) {
     if (enabledPillars.includes('performance')) {
       setPillarProgress('performance', 5);
       addLog({ timestamp: new Date().toISOString(), testId: 'PERF-ENGINE', testName: 'Performance Engine', wcag: '', status: 'running', pillar: 'performance', message: '━━━ ⚡ Performance & Core Web Vitals Audit ━━━' });
+      if (config.performanceProblemContext?.flags?.length) {
+        addLog({ timestamp: new Date().toISOString(), testId: 'PERF-CONTEXT', testName: 'Performance Engine', wcag: '', status: 'running', pillar: 'performance', message: `🎯 Client-reported issues: ${config.performanceProblemContext.flags.join(', ')} — activating targeted test layers` });
+      }
       pillarTasks.push(
-        runPerformanceAudit(crawlResult.context, fullPageList.slice(0, 5), addLog)
+        runPerformanceAudit(crawlResult.context, fullPageList.slice(0, 5), addLog, config.performanceProblemContext, config.loginConfig)
           .then(result => {
             performanceResult = result;
             setPillarProgress('performance', 100);
-            addLog({ timestamp: new Date().toISOString(), testId: 'PERF-ENGINE', testName: 'Performance Engine', wcag: '', status: result.overallScore >= 80 ? 'pass' : 'fail', pillar: 'performance', message: `⚡ Performance: ${result.overallScore}/100 | ${result.totalResourceIssues} resource issues` });
+            const confirmedCount = result.confirmedClientIssues?.filter(c => c.status === 'confirmed').length ?? 0;
+            const contextSuffix = confirmedCount > 0 ? ` | ${confirmedCount} client issue(s) confirmed` : '';
+            addLog({ timestamp: new Date().toISOString(), testId: 'PERF-ENGINE', testName: 'Performance Engine', wcag: '', status: result.overallScore >= 80 ? 'pass' : 'fail', pillar: 'performance', message: `⚡ Performance: ${result.overallScore}/100 | ${result.totalResourceIssues} resource issues${contextSuffix}` });
           })
           .catch(err => {
             failedPillars.push('performance');

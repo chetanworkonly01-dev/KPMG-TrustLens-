@@ -15,7 +15,33 @@ interface AuditData {
   trustScore?: { overall: number; trustLevel: string; pillarScores: Record<string, { pillar: string; score: number; weight: number; totalFindings: number; status: string }> };
   pillarResults?: {
     darkpatterns?: { findings: DPFinding[]; ethicsScore: number; principleScores: Record<string, number>; categoryBreakdown: Record<string, number>; consentIntegrity: number; choiceSymmetry: number; manipulationIndex: number; totalFindings: number; findingsBySeverity: Record<string, number>; regulatoryRisks: string[]; coverageCapApplied?: boolean; funnelVerified?: boolean };
-    performance?: { pages: PerfPage[]; overallScore: number; averageVitals: Record<string, number | null>; totalResourceIssues: number; recommendations: string[] };
+    performance?: {
+      pages: PerfPage[];
+      overallScore: number;
+      averageVitals: Record<string, number | null>;
+      totalResourceIssues: number;
+      recommendations: PerfRecommendation[];
+      authFlow?: {
+        loginUrl: string;
+        timeToFormMs: number | null;
+        submitToResponseMs: number | null;
+        responseToInteractiveMs: number | null;
+        totalRoundTripMs: number | null;
+        status: string;
+        issues: { type: string; severity: string; description: string; recommendation: string }[];
+      };
+      networkSimulation?: {
+        preset: string; label: string; downloadMbps: number; latencyMs: number;
+        lcp: number | null; fcp: number | null; ttfb: number | null;
+        loadTimeMs: number | null; score: number | null;
+      }[];
+      clientReportedFlags?: string[];
+      confirmedClientIssues?: {
+        flag: string; flagLabel: string;
+        status: 'confirmed' | 'partial' | 'not-found';
+        summary: string; evidence: string;
+      }[];
+    };
     privacy?: { findings: PrivFinding[]; overallScore: number; cookies: any[]; trackers: TrackerInfo[]; totalTrackers: number; hasConsentBanner: boolean; hasPrivacyPolicy: boolean; findingsBySeverity: Record<string, number>; regulatoryRisks: string[] };
   };
   // Phase 2 fields
@@ -87,7 +113,11 @@ interface PerfPage {
   url: string; title: string; score: number;
   vitals: Record<string, number | null>;
   totalTransferSize: number; totalRequests: number; domNodes: number; loadTime: number;
-  resourceIssues: { type: string; url: string; severity: string; description: string }[];
+  resourceIssues: { type: string; url: string; severity: string; description: string; recommendation?: string; metrics?: Record<string, any> }[];
+}
+interface PerfRecommendation {
+  priority: string; title: string; detail: string;
+  effort: string; impact: string; clientReported?: boolean; issueType?: string;
 }
 interface PrivFinding {
   id: string; category: string; title: string; description: string;
@@ -2229,42 +2259,315 @@ export default function AuditResultPage() {
          ══════════════════════════════════════════════════════ */}
       {activeTab === 'perf' && data.pillarResults?.performance && (() => {
         const perf = data.pillarResults.performance!;
-        const vitalColor = (val: number | null, good: number, poor: number) => val === null ? 'var(--text-muted)' : val <= good ? '#00BA8C' : val <= poor ? '#F0AB00' : '#FF3356';
+        const vColor = (val: number | null, good: number, poor: number) =>
+          val === null ? 'var(--text-muted)' : val <= good ? '#00BA8C' : val <= poor ? '#F0AB00' : '#FF3356';
+        const vLabel = (val: number | null, good: number, poor: number) =>
+          val === null ? 'N/A' : val <= good ? 'Good' : val <= poor ? 'Needs Work' : 'Poor';
+        const grade = perf.overallScore >= 90 ? 'A' : perf.overallScore >= 75 ? 'B' : perf.overallScore >= 60 ? 'C' : perf.overallScore >= 40 ? 'D' : 'F';
+        const gradeColor = perf.overallScore >= 75 ? '#00BA8C' : perf.overallScore >= 50 ? '#F0AB00' : '#FF3356';
+        const allIssues = perf.pages.flatMap(p => p.resourceIssues.map(i => ({ ...i, pageUrl: p.url })));
+        const critIssues = allIssues.filter(i => i.severity === 'critical');
+        const highIssues = allIssues.filter(i => i.severity === 'high');
+        const medIssues  = allIssues.filter(i => i.severity === 'medium');
+        const lowIssues  = allIssues.filter(i => i.severity === 'low');
+        const sevBadge = (sev: string) => ({ background: sev === 'critical' ? '#E8002D20' : sev === 'high' ? '#FE714120' : sev === 'medium' ? '#D9770620' : '#0091DA20', color: sev === 'critical' ? '#E8002D' : sev === 'high' ? '#FE7141' : sev === 'medium' ? '#D97706' : '#0091DA' });
+        const simDesktop = perf.networkSimulation?.[0];
+        const simSlow3g  = perf.networkSimulation?.[perf.networkSimulation.length - 1];
+        const simDelta   = (simDesktop?.score ?? 0) - (simSlow3g?.score ?? 0);
+
         return (
           <div className="animate-fade-in">
-            <div className="glass-card" style={{ marginBottom: 20, textAlign: 'center', borderTop: '3px solid #00BA8C' }}>
-              <div style={{ fontSize: 40, fontWeight: 300, color: perf.overallScore >= 80 ? '#00BA8C' : perf.overallScore >= 50 ? '#F0AB00' : '#FF3356' }}>{perf.overallScore}</div>
-              <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase' }}>Performance Score</div>
+
+            {/* ── SECTION A: Score Hero ── */}
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12, marginBottom: 20 }}>
+              <div className="glass-card" style={{ textAlign: 'center', borderTop: '3px solid #00BA8C', padding: '16px 12px' }}>
+                <div style={{ fontSize: 36, fontWeight: 300, color: gradeColor, lineHeight: 1 }}>{perf.overallScore}</div>
+                <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', marginTop: 4 }}>Performance Score</div>
+              </div>
+              <div className="glass-card" style={{ textAlign: 'center', borderTop: `3px solid ${gradeColor}`, padding: '16px 12px' }}>
+                <div style={{ fontSize: 36, fontWeight: 300, color: gradeColor, lineHeight: 1 }}>{grade}</div>
+                <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', marginTop: 4 }}>Grade</div>
+              </div>
+              <div className="glass-card" style={{ textAlign: 'center', borderTop: '3px solid #0091DA', padding: '16px 12px' }}>
+                <div style={{ fontSize: 36, fontWeight: 300, color: '#0091DA', lineHeight: 1 }}>{perf.pages.length}</div>
+                <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', marginTop: 4 }}>Pages Tested</div>
+              </div>
+              <div className="glass-card" style={{ textAlign: 'center', borderTop: `3px solid ${perf.totalResourceIssues > 10 ? '#E8002D' : perf.totalResourceIssues > 4 ? '#F0AB00' : '#00BA8C'}`, padding: '16px 12px' }}>
+                <div style={{ fontSize: 36, fontWeight: 300, color: perf.totalResourceIssues > 10 ? '#E8002D' : perf.totalResourceIssues > 4 ? '#F0AB00' : '#00BA8C', lineHeight: 1 }}>{perf.totalResourceIssues}</div>
+                <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', marginTop: 4 }}>Issues Found</div>
+              </div>
             </div>
-            <h3 style={{ fontSize: 14, fontWeight: 700, marginBottom: 12 }}>⚡ Core Web Vitals (Average)</h3>
-            <div className="cwv-grid" style={{ marginBottom: 20 }}>
+
+            {/* ── SECTION B: Client Reported Confirmation ── */}
+            {perf.confirmedClientIssues && perf.confirmedClientIssues.length > 0 && (
+              <div className="glass-card" style={{ marginBottom: 20, borderTop: '3px solid var(--accent-primary)', padding: '16px 18px' }}>
+                <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 12 }}>🎯 Client-Reported Issues — What We Found</div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                  {perf.confirmedClientIssues.map((ci, idx) => {
+                    const statusIcon = ci.status === 'confirmed' ? '✅' : ci.status === 'partial' ? '⚠️' : '✗';
+                    const statusColor = ci.status === 'confirmed' ? '#00BA8C' : ci.status === 'partial' ? '#F0AB00' : 'var(--text-muted)';
+                    const statusLabel = ci.status === 'confirmed' ? 'CONFIRMED' : ci.status === 'partial' ? 'PARTIAL' : 'NOT FOUND';
+                    return (
+                      <div key={idx} style={{ display: 'grid', gridTemplateColumns: 'auto 1fr', gap: 12, padding: '10px 12px', borderRadius: 'var(--radius-md)', background: `${statusColor}10`, border: `1px solid ${statusColor}30` }}>
+                        <div style={{ fontSize: 18, lineHeight: 1 }}>{statusIcon}</div>
+                        <div>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 3 }}>
+                            <span style={{ fontSize: 12, fontWeight: 700 }}>{ci.flagLabel}</span>
+                            <span style={{ fontSize: 9, fontWeight: 700, padding: '1px 7px', borderRadius: 99, background: `${statusColor}20`, color: statusColor, fontFamily: 'Geist Mono, monospace' }}>{statusLabel}</span>
+                          </div>
+                          <div style={{ fontSize: 11, color: 'var(--text-secondary)', marginBottom: 2 }}>{ci.summary}</div>
+                          <div style={{ fontSize: 10, color: 'var(--text-muted)', fontFamily: 'Geist Mono, monospace' }}>via {ci.evidence}</div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            {/* ── SECTION C: Core Web Vitals with gauge bars ── */}
+            <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 12 }}>⚡ Core Web Vitals (Average)</div>
+            <div className="glass-card" style={{ marginBottom: 20, padding: '16px 18px' }}>
               {[
-                { key: 'lcp', label: 'LCP', unit: 'ms', good: 2500, poor: 4000 },
-                { key: 'cls', label: 'CLS', unit: '', good: 0.1, poor: 0.25 },
-                { key: 'fcp', label: 'FCP', unit: 'ms', good: 1800, poor: 3000 },
-                { key: 'ttfb', label: 'TTFB', unit: 'ms', good: 800, poor: 1800 },
-                { key: 'tbt', label: 'TBT', unit: 'ms', good: 200, poor: 600 },
+                { key: 'lcp',  label: 'LCP',  desc: 'Largest Contentful Paint', unit: 'ms', good: 2500, poor: 4000, max: 8000 },
+                { key: 'fcp',  label: 'FCP',  desc: 'First Contentful Paint',   unit: 'ms', good: 1800, poor: 3000, max: 6000 },
+                { key: 'cls',  label: 'CLS',  desc: 'Cumulative Layout Shift',  unit: '',   good: 0.1,  poor: 0.25,  max: 0.5  },
+                { key: 'ttfb', label: 'TTFB', desc: 'Time to First Byte',       unit: 'ms', good: 800,  poor: 1800, max: 4000 },
+                { key: 'tbt',  label: 'TBT',  desc: 'Total Blocking Time',      unit: 'ms', good: 200,  poor: 600,  max: 1200 },
               ].map(m => {
-                const val = perf.averageVitals[m.key];
+                const raw = perf.averageVitals[m.key];
+                const val = raw ?? null;
+                const color = vColor(val, m.good, m.poor);
+                const label = vLabel(val, m.good, m.poor);
+                const pct = val === null ? 0 : Math.min(100, (val / m.max) * 100);
+                const display = val === null ? '—' : m.key === 'cls' ? Number(val).toFixed(3) : Math.round(val) + m.unit;
                 return (
-                  <div key={m.key} className="cwv-card">
-                    <div className="cwv-value" style={{ color: vitalColor(val, m.good, m.poor) }}>
-                      {val !== null && val !== undefined ? (m.key === 'cls' ? val.toFixed(3) : Math.round(val)) : '—'}
+                  <div key={m.key} style={{ display: 'grid', gridTemplateColumns: '80px 1fr 80px 80px', gap: 12, alignItems: 'center', padding: '8px 0', borderBottom: '1px solid var(--border)' }}>
+                    <div>
+                      <div style={{ fontSize: 13, fontWeight: 700, color }}>{m.label}</div>
+                      <div style={{ fontSize: 9, color: 'var(--text-muted)', fontFamily: 'Geist Mono, monospace' }}>{m.desc.split(' ').slice(0,2).join(' ')}</div>
                     </div>
-                    <div className="cwv-label">{m.label}</div>
-                    <div className="cwv-threshold">Good: ≤{m.key === 'cls' ? m.good : m.good + 'ms'}</div>
+                    <div style={{ position: 'relative', height: 8, background: 'var(--border)', borderRadius: 99, overflow: 'hidden' }}>
+                      <div style={{ position: 'absolute', left: 0, top: 0, height: '100%', width: `${pct}%`, background: color, borderRadius: 99, transition: 'width 0.6s ease' }} />
+                    </div>
+                    <div style={{ fontSize: 14, fontWeight: 700, color, textAlign: 'right' }}>{display}</div>
+                    <div style={{ textAlign: 'right' }}>
+                      <span style={{ fontSize: 9, fontWeight: 700, padding: '2px 7px', borderRadius: 99, background: `${color}20`, color, fontFamily: 'Geist Mono, monospace' }}>{label}</span>
+                    </div>
                   </div>
                 );
               })}
             </div>
-            {perf.recommendations.length > 0 && (
-              <div className="glass-card" style={{ marginBottom: 20 }}>
-                <h3 style={{ fontSize: 14, fontWeight: 700, marginBottom: 10 }}>💡 Recommendations</h3>
-                {perf.recommendations.map((r, i) => (
-                  <div key={i} style={{ fontSize: 12, color: 'var(--text-secondary)', padding: '6px 0', borderBottom: i < perf.recommendations.length - 1 ? '1px solid var(--border)' : 'none' }}>• {r}</div>
+
+            {/* ── SECTION D: Network Simulation ── */}
+            {perf.networkSimulation && perf.networkSimulation.length > 0 && (
+              <div className="glass-card" style={{ marginBottom: 20, padding: '16px 18px', borderTop: '3px solid #A78BFA' }}>
+                <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 4 }}>📡 Network Simulation</div>
+                <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 14 }}>How the site performs under different network conditions (CDP throttle simulation)</div>
+                <div style={{ overflowX: 'auto' }}>
+                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11 }}>
+                    <thead>
+                      <tr style={{ borderBottom: '2px solid var(--border)' }}>
+                        <th style={{ textAlign: 'left', padding: '6px 8px', color: 'var(--text-muted)', fontFamily: 'Geist Mono, monospace', fontSize: 10 }}>Metric</th>
+                        {perf.networkSimulation.map(s => (
+                          <th key={s.preset} style={{ textAlign: 'center', padding: '6px 8px', color: 'var(--text-muted)', fontFamily: 'Geist Mono, monospace', fontSize: 10 }}>
+                            {s.label}<br /><span style={{ fontWeight: 400 }}>{s.downloadMbps}Mbps / {s.latencyMs}ms</span>
+                          </th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {[
+                        { key: 'lcp',      label: 'LCP',       fmt: (v: number|null) => v ? Math.round(v) + 'ms' : '—', good: 2500, poor: 4000 },
+                        { key: 'fcp',      label: 'FCP',       fmt: (v: number|null) => v ? Math.round(v) + 'ms' : '—', good: 1800, poor: 3000 },
+                        { key: 'ttfb',     label: 'TTFB',      fmt: (v: number|null) => v ? Math.round(v) + 'ms' : '—', good: 800,  poor: 1800 },
+                        { key: 'loadTimeMs', label: 'Load Time', fmt: (v: number|null) => v ? (v/1000).toFixed(1) + 's' : '—', good: 3000, poor: 8000 },
+                        { key: 'score',    label: 'Score',     fmt: (v: number|null) => v !== null ? v + '/100' : '—', good: 75,   poor: 50 },
+                      ].map(row => (
+                        <tr key={row.key} style={{ borderBottom: '1px solid var(--border)' }}>
+                          <td style={{ padding: '7px 8px', fontFamily: 'Geist Mono, monospace', color: 'var(--text-muted)', fontSize: 10 }}>{row.label}</td>
+                          {perf.networkSimulation!.map(s => {
+                            const val = (s as any)[row.key] as number | null;
+                            const c = row.key === 'score'
+                              ? (val !== null && val >= row.good ? '#00BA8C' : val !== null && val >= row.poor ? '#F0AB00' : '#FF3356')
+                              : vColor(val, row.good, row.poor);
+                            return (
+                              <td key={s.preset} style={{ padding: '7px 8px', textAlign: 'center', fontWeight: 700, color: c, fontFamily: 'Geist Mono, monospace' }}>
+                                {row.fmt(val)}
+                              </td>
+                            );
+                          })}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                {simDelta > 30 && (
+                  <div style={{ marginTop: 12, padding: '8px 12px', borderRadius: 'var(--radius-md)', background: '#E8002D10', border: '1px solid #E8002D30', fontSize: 11, color: '#E8002D' }}>
+                    ⚠️ Score drops <strong>{simDelta} points</strong> on Slow 3G ({simDesktop?.score ?? '?'}/100 → {simSlow3g?.score ?? '?'}/100). Users on rural networks / BSNL 3G will experience near-unusable load times.
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* ── SECTION E: Auth Flow ── */}
+            {perf.authFlow && perf.authFlow.status !== 'skipped' && (
+              <div className="glass-card" style={{ marginBottom: 20, padding: '16px 18px', borderTop: `3px solid ${perf.authFlow.status === 'critical' ? '#E8002D' : perf.authFlow.status === 'slow' ? '#F0AB00' : '#00BA8C'}` }}>
+                <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 12 }}>🔐 Auth Flow Timing — {perf.authFlow.loginUrl}</div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 12 }}>
+                  {[
+                    { label: 'Navigation → Form visible',      val: perf.authFlow.timeToFormMs,            good: 2000,  critical: 3000 },
+                    { label: 'Form submit → API response',      val: perf.authFlow.submitToResponseMs,      good: 1500,  critical: 3000 },
+                    { label: 'Response → Dashboard interactive', val: perf.authFlow.responseToInteractiveMs, good: 1500,  critical: 2500 },
+                  ].map((row, i) => {
+                    if (row.val === null) return null;
+                    const c = row.val <= row.good ? '#00BA8C' : row.val <= row.critical ? '#F0AB00' : '#E8002D';
+                    return (
+                      <div key={i} style={{ display: 'grid', gridTemplateColumns: '1fr auto auto', gap: 12, alignItems: 'center', padding: '6px 10px', borderRadius: 'var(--radius-md)', background: `${c}08` }}>
+                        <span style={{ fontSize: 11, color: 'var(--text-secondary)' }}>→ {row.label}</span>
+                        <span style={{ fontSize: 13, fontWeight: 700, color: c, fontFamily: 'Geist Mono, monospace' }}>{Math.round(row.val)}ms</span>
+                        <span style={{ fontSize: 9, fontWeight: 700, padding: '2px 7px', borderRadius: 99, background: `${c}20`, color: c, fontFamily: 'Geist Mono, monospace' }}>
+                          {row.val <= row.good ? 'FAST' : row.val <= row.critical ? 'SLOW' : 'CRITICAL'}
+                        </span>
+                      </div>
+                    );
+                  })}
+                  {perf.authFlow.totalRoundTripMs !== null && (
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr auto auto', gap: 12, alignItems: 'center', padding: '8px 10px', borderRadius: 'var(--radius-md)', background: 'var(--bg-secondary)', borderTop: '2px solid var(--border)', marginTop: 4 }}>
+                      <span style={{ fontSize: 12, fontWeight: 700 }}>Total round-trip</span>
+                      <span style={{ fontSize: 16, fontWeight: 700, color: perf.authFlow.status === 'critical' ? '#E8002D' : perf.authFlow.status === 'slow' ? '#F0AB00' : '#00BA8C', fontFamily: 'Geist Mono, monospace' }}>
+                        {(perf.authFlow.totalRoundTripMs / 1000).toFixed(1)}s
+                      </span>
+                      <span style={{ fontSize: 9, fontWeight: 700, padding: '2px 8px', borderRadius: 99, textTransform: 'uppercase', background: perf.authFlow.status === 'critical' ? '#E8002D20' : perf.authFlow.status === 'slow' ? '#F0AB0020' : '#00BA8C20', color: perf.authFlow.status === 'critical' ? '#E8002D' : perf.authFlow.status === 'slow' ? '#F0AB00' : '#00BA8C', fontFamily: 'Geist Mono, monospace' }}>
+                        {perf.authFlow.status}
+                      </span>
+                    </div>
+                  )}
+                </div>
+                {perf.authFlow.issues.length > 0 && (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                    {perf.authFlow.issues.map((issue, i) => (
+                      <div key={i} style={{ padding: '8px 10px', borderRadius: 'var(--radius-md)', background: 'var(--bg-secondary)', borderLeft: `3px solid ${sevBadge(issue.severity).color}`, fontSize: 11 }}>
+                        <div style={{ fontWeight: 600, marginBottom: 2 }}>{issue.description}</div>
+                        {issue.recommendation && <div style={{ color: '#00BA8C', fontSize: 10 }}>💡 {issue.recommendation}</div>}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* ── SECTION F: Per-Page Breakdown ── */}
+            {perf.pages.length > 0 && (
+              <div className="glass-card" style={{ marginBottom: 20, padding: '16px 18px' }}>
+                <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 12 }}>📄 Per-Page Breakdown</div>
+                <div style={{ overflowX: 'auto' }}>
+                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11 }}>
+                    <thead>
+                      <tr style={{ borderBottom: '2px solid var(--border)' }}>
+                        {['Page', 'Score', 'LCP', 'TTFB', 'Issues', 'Load Time'].map(h => (
+                          <th key={h} style={{ textAlign: h === 'Page' ? 'left' : 'center', padding: '6px 8px', color: 'var(--text-muted)', fontFamily: 'Geist Mono, monospace', fontSize: 10, fontWeight: 700 }}>{h}</th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {[...perf.pages].sort((a, b) => a.score - b.score).map((p, i) => {
+                        const sc = vColor(p.score, 75, 50);
+                        const lcp = p.vitals.lcp;
+                        const ttfb = p.vitals.ttfb;
+                        const path = (() => { try { return new URL(p.url).pathname || '/'; } catch { return p.url; } })();
+                        return (
+                          <tr key={i} style={{ borderBottom: '1px solid var(--border)', background: i % 2 === 0 ? 'transparent' : 'rgba(255,255,255,0.01)' }}>
+                            <td style={{ padding: '8px 8px', maxWidth: 220 }}>
+                              <div style={{ fontSize: 11, fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={p.url}>{path}</div>
+                              {p.title && <div style={{ fontSize: 9, color: 'var(--text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.title}</div>}
+                            </td>
+                            <td style={{ textAlign: 'center', padding: '8px', fontWeight: 700, color: sc, fontFamily: 'Geist Mono, monospace' }}>{p.score}</td>
+                            <td style={{ textAlign: 'center', padding: '8px', color: vColor(lcp, 2500, 4000), fontFamily: 'Geist Mono, monospace' }}>{lcp ? Math.round(lcp) + 'ms' : '—'}</td>
+                            <td style={{ textAlign: 'center', padding: '8px', color: vColor(ttfb, 800, 1800), fontFamily: 'Geist Mono, monospace' }}>{ttfb ? Math.round(ttfb) + 'ms' : '—'}</td>
+                            <td style={{ textAlign: 'center', padding: '8px' }}>
+                              {p.resourceIssues.length > 0 ? (
+                                <span style={{ fontSize: 10, fontWeight: 700, padding: '2px 7px', borderRadius: 99, background: p.resourceIssues.some(i => i.severity === 'critical') ? '#E8002D20' : p.resourceIssues.some(i => i.severity === 'high') ? '#FE714120' : '#D9770620', color: p.resourceIssues.some(i => i.severity === 'critical') ? '#E8002D' : p.resourceIssues.some(i => i.severity === 'high') ? '#FE7141' : '#D97706' }}>
+                                  {p.resourceIssues.length} issue{p.resourceIssues.length !== 1 ? 's' : ''}
+                                </span>
+                              ) : <span style={{ color: '#00BA8C', fontSize: 11 }}>✓</span>}
+                            </td>
+                            <td style={{ textAlign: 'center', padding: '8px', color: 'var(--text-muted)', fontFamily: 'Geist Mono, monospace' }}>{p.loadTime ? (p.loadTime / 1000).toFixed(1) + 's' : '—'}</td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+
+            {/* ── SECTION G: Issue List by Severity ── */}
+            {allIssues.length > 0 && (
+              <div style={{ marginBottom: 20 }}>
+                <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 12 }}>⚠️ All Issues ({allIssues.length})</div>
+                {[
+                  { label: 'CRITICAL', issues: critIssues, color: '#E8002D' },
+                  { label: 'HIGH',     issues: highIssues, color: '#FE7141' },
+                  { label: 'MEDIUM',   issues: medIssues,  color: '#D97706' },
+                  { label: 'LOW',      issues: lowIssues,  color: '#0091DA' },
+                ].filter(g => g.issues.length > 0).map(group => (
+                  <div key={group.label} style={{ marginBottom: 12 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+                      <span style={{ fontSize: 10, fontWeight: 700, padding: '2px 9px', borderRadius: 99, background: `${group.color}20`, color: group.color, fontFamily: 'Geist Mono, monospace' }}>{group.label} ({group.issues.length})</span>
+                    </div>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                      {group.issues.map((issue, i) => {
+                        const path = (() => { try { return new URL(issue.pageUrl).pathname || '/'; } catch { return issue.pageUrl; } })();
+                        return (
+                          <div key={i} className="glass-card" style={{ padding: '12px 14px', borderLeft: `3px solid ${group.color}` }}>
+                            <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 8, marginBottom: 4 }}>
+                              <div style={{ flex: 1 }}>
+                                <span style={{ fontWeight: 700, fontSize: 12 }}>{issue.type.replace(/-/g, ' ').replace(/\b\w/g, c => c.toUpperCase())}</span>
+                                <span style={{ marginLeft: 8, fontSize: 9, fontWeight: 700, padding: '1px 6px', borderRadius: 99, fontFamily: 'Geist Mono, monospace', background: `${group.color}15`, color: group.color }}>{issue.type}</span>
+                              </div>
+                              <span style={{ fontSize: 9, color: 'var(--text-muted)', fontFamily: 'Geist Mono, monospace', flexShrink: 0 }}>{path}</span>
+                            </div>
+                            <div style={{ fontSize: 11, color: 'var(--text-secondary)', marginBottom: 4 }}>{issue.description}</div>
+                            {issue.recommendation && <div style={{ fontSize: 11, color: '#00BA8C' }}>💡 {issue.recommendation}</div>}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
                 ))}
               </div>
             )}
+
+            {/* ── SECTION H: Recommendations ── */}
+            {perf.recommendations && perf.recommendations.length > 0 && (
+              <div className="glass-card" style={{ marginBottom: 20, padding: '16px 18px' }}>
+                <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 12 }}>💡 Prioritized Recommendations</div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                  {(Array.isArray(perf.recommendations) ? perf.recommendations : []).map((rec, i) => {
+                    const r = typeof rec === 'string' ? { priority: 'P' + (i + 1), title: rec, detail: '', effort: '', impact: '', clientReported: false } : rec;
+                    const pColor = r.priority === 'P0' ? '#E8002D' : r.priority === 'P1' ? '#FE7141' : r.priority === 'P2' ? '#D97706' : r.priority === 'P3' ? '#0091DA' : '#A78BFA';
+                    return (
+                      <div key={i} style={{ display: 'grid', gridTemplateColumns: 'auto 1fr auto', gap: 12, alignItems: 'flex-start', padding: '10px 12px', borderRadius: 'var(--radius-md)', background: r.clientReported ? `${pColor}10` : 'var(--bg-secondary)', border: `1px solid ${r.clientReported ? pColor + '40' : 'var(--border)'}` }}>
+                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4 }}>
+                          <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 99, background: `${pColor}20`, color: pColor, fontFamily: 'Geist Mono, monospace' }}>{r.priority || `P${i}`}</span>
+                          {r.clientReported && <span style={{ fontSize: 8, color: pColor, fontFamily: 'Geist Mono, monospace', fontWeight: 700 }}>CLIENT</span>}
+                        </div>
+                        <div>
+                          <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 3 }}>{r.title}</div>
+                          {r.detail && <div style={{ fontSize: 11, color: 'var(--text-secondary)' }}>{r.detail}</div>}
+                        </div>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 3, alignItems: 'flex-end', flexShrink: 0 }}>
+                          {r.effort && <span style={{ fontSize: 9, fontWeight: 600, padding: '1px 7px', borderRadius: 99, background: 'rgba(255,255,255,0.06)', color: 'var(--text-muted)', fontFamily: 'Geist Mono, monospace', whiteSpace: 'nowrap' }}>{r.effort}</span>}
+                          {r.impact && <span style={{ fontSize: 9, fontWeight: 700, padding: '1px 7px', borderRadius: 99, background: r.impact === 'Critical' ? '#E8002D15' : r.impact === 'High' ? '#FE714115' : '#0091DA15', color: r.impact === 'Critical' ? '#E8002D' : r.impact === 'High' ? '#FE7141' : '#0091DA', fontFamily: 'Geist Mono, monospace' }}>{r.impact} Impact</span>}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
           </div>
         );
       })()}
