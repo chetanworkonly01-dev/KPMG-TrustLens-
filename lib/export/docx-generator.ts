@@ -172,6 +172,9 @@ export async function generateDocx(audit: AuditResult): Promise<Buffer> {
   const isDP   = pillars.includes('darkpatterns');
   const isPerf = pillars.includes('performance');
   const isPriv = pillars.includes('privacy');
+  const perfOnly = isPerf && !isA11y && !isDP && !isPriv;
+  const perfResult = (audit as any).pillarResults?.performance as any | undefined;
+  const perfGradeLabel = (s: number) => s >= 90 ? 'A (Excellent)' : s >= 75 ? 'B (Good)' : s >= 50 ? 'C (Needs Improvement)' : s >= 25 ? 'D (Poor)' : 'F (Critical)';
   // Dynamic section numbers based on which pillars are active
   const dpSectionNum  = isA11y ? '7' : '2';
   const perfSectionNum = isA11y && isDP ? '8' : isA11y || isDP ? '3' : '2';
@@ -307,9 +310,21 @@ export async function generateDocx(audit: AuditResult): Promise<Buffer> {
               isA11y ? new TableRow({ children: [cell('Standard', { bold: true, color: K.navy, width: 40, bg: K.offWhite }), cell(`${standard} Level ${testedLevel}`, { width: 60 })] }) : new TableRow({ children: [cell('Pillars Audited', { bold: true, color: K.navy, width: 40, bg: K.offWhite }), cell(pillars.join(', '), { width: 60 })] }),
               new TableRow({ children: [cell('Audit Date', { bold: true, color: K.navy, width: 40, bg: K.offWhite }), cell(auditDate, { width: 60 })] }),
               new TableRow({ children: [cell('Pages Audited', { bold: true, color: K.navy, width: 40, bg: K.offWhite }), cell(String(audit.pages.length), { width: 60 })] }),
-              new TableRow({ children: [cell('Score', { bold: true, color: K.navy, width: 40, bg: K.offWhite }), cell(`${score.overall}/100`, { width: 60, color: score.overall >= 75 ? K.teal : score.overall >= 50 ? K.medium : K.critical, bold: true })] }),
-              new TableRow({ children: [cell('Compliance', { bold: true, color: K.navy, width: 40, bg: K.offWhite }), cell(compLabel(score.complianceLevel), { width: 60 })] }),
-              new TableRow({ children: [cell('Total Issues', { bold: true, color: K.navy, width: 40, bg: K.offWhite }), cell(String(score.totalIssues), { width: 60 })] }),
+              (() => {
+                const displayScore = perfOnly && perfResult ? perfResult.overallScore : score.overall;
+                const scoreColor = displayScore >= 75 ? K.teal : displayScore >= 50 ? K.medium : K.critical;
+                return new TableRow({ children: [cell('Score', { bold: true, color: K.navy, width: 40, bg: K.offWhite }), cell(`${displayScore}/100`, { width: 60, color: scoreColor, bold: true })] });
+              })(),
+              (() => {
+                const displayCompliance = perfOnly && perfResult ? perfGradeLabel(perfResult.overallScore) : compLabel(score.complianceLevel);
+                const compLabel2 = perfOnly ? 'Performance Grade' : 'Compliance';
+                return new TableRow({ children: [cell(compLabel2, { bold: true, color: K.navy, width: 40, bg: K.offWhite }), cell(displayCompliance, { width: 60 })] });
+              })(),
+              (() => {
+                const displayIssues = perfOnly && perfResult ? String(perfResult.totalResourceIssues ?? 0) : String(score.totalIssues);
+                const issueLabel = perfOnly ? 'Resource Issues' : 'Total Issues';
+                return new TableRow({ children: [cell(issueLabel, { bold: true, color: K.navy, width: 40, bg: K.offWhite }), cell(displayIssues, { width: 60 })] });
+              })(),
               new TableRow({ children: [cell('Classified Confidential', { bold: true, color: K.navy, width: 40, bg: K.offWhite }), cell('KPMG Internal Use Only', { width: 60, italic: true, color: K.midGrey })] }),
             ],
           }),
@@ -325,7 +340,32 @@ export async function generateDocx(audit: AuditResult): Promise<Buffer> {
           sp(),
           h2('1.1 Issue Breakdown'),
           (() => {
-            // Aggregate severity counts across all active pillars (a11y + dark patterns + privacy)
+            if (perfOnly && perfResult) {
+              // Performance-only: show resource issues by severity
+              const perfPages: any[] = perfResult.pages || [];
+              const bySev: Record<string, number> = { critical: 0, high: 0, medium: 0, low: 0 };
+              for (const pg of perfPages) {
+                for (const ri of (pg.resourceIssues || [])) {
+                  if (ri.severity in bySev) bySev[ri.severity]++;
+                }
+              }
+              const total = Object.values(bySev).reduce((a, b) => a + b, 0);
+              return new Table({
+                width: { size: 100, type: WidthType.PERCENTAGE },
+                borders: TABLE_BORDERS,
+                rows: [
+                  new TableRow({ children: [cell('Severity', { bold: true, bg: K.navy, color: K.white, width: 20 }), cell('Issues', { bold: true, bg: K.navy, color: K.white, width: 20, align: AlignmentType.CENTER }), cell('% of Total', { bold: true, bg: K.navy, color: K.white, width: 20, align: AlignmentType.CENTER }), cell('Action', { bold: true, bg: K.navy, color: K.white, width: 20, align: AlignmentType.CENTER }), cell('Target Sprint', { bold: true, bg: K.navy, color: K.white, width: 20, align: AlignmentType.CENTER })] }),
+                  ...(['critical','high','medium','low'] as const).map((sev, i) => new TableRow({ children: [
+                    cell(sev.charAt(0).toUpperCase() + sev.slice(1), { bold: true, color: sevColor(sev), bg: i % 2 === 0 ? K.offWhite : K.white }),
+                    cell(String(bySev[sev]), { align: AlignmentType.CENTER, bg: i % 2 === 0 ? K.offWhite : K.white }),
+                    cell(total > 0 ? `${Math.round((bySev[sev] / total) * 100)}%` : '0%', { align: AlignmentType.CENTER, bg: i % 2 === 0 ? K.offWhite : K.white }),
+                    cell({ critical:'Block Release', high:'Next Sprint', medium:'Q2', low:'Backlog' }[sev], { align: AlignmentType.CENTER, bold: true, color: sevColor(sev), bg: sevBg(sev) }),
+                    cell({ critical:'Sprint 1', high:'Sprint 2', medium:'Q3', low:'Q4' }[sev], { align: AlignmentType.CENTER, bg: i % 2 === 0 ? K.offWhite : K.white }),
+                  ]})),
+                ],
+              });
+            }
+            // Multi-pillar: aggregate severity counts
             const aggBySev: Record<string, number> = { critical: 0, high: 0, medium: 0, low: 0 };
             const dpF = ((audit as any).pillarResults?.darkpatterns?.findings ?? []) as Array<{ severity: string }>;
             const pvF = ((audit as any).pillarResults?.privacy?.findings ?? []) as Array<{ severity: string }>;
@@ -361,6 +401,45 @@ export async function generateDocx(audit: AuditResult): Promise<Buffer> {
                 }) }),
               ],
             }),
+          ] : perfOnly && perfResult ? [
+            h2('1.2 Core Web Vitals — Average Across All Pages'),
+            (() => {
+              const avg = perfResult.averageVitals || {};
+              const fmtMs = (v: number | null | undefined) => v != null ? `${Math.round(v)} ms` : '—';
+              const cwvStatus = (key: string, v: number | null | undefined) => {
+                if (v == null) return K.midGrey;
+                if (key === 'cls') return v <= 0.10 ? K.teal : v <= 0.25 ? K.medium : K.critical;
+                const good: Record<string,number> = { lcp: 2500, fcp: 1800, ttfb: 800, tbt: 200, inp: 200 };
+                const poor: Record<string,number> = { lcp: 4000, fcp: 3000, ttfb: 1800, tbt: 600, inp: 500 };
+                return v <= (good[key]||9999) ? K.teal : v <= (poor[key]||9999) ? K.medium : K.critical;
+              };
+              return new Table({
+                width: { size: 100, type: WidthType.PERCENTAGE },
+                borders: TABLE_BORDERS,
+                rows: [
+                  new TableRow({ children: ['Metric','Average','Status','Good Threshold','Poor Threshold'].map(h => cell(h, { bold: true, bg: K.navy, color: K.white, align: AlignmentType.CENTER })) }),
+                  ...([
+                    { key:'lcp', label:'LCP (Largest Contentful Paint)', good:'≤ 2,500 ms', poor:'> 4,000 ms', fmt: fmtMs },
+                    { key:'fcp', label:'FCP (First Contentful Paint)', good:'≤ 1,800 ms', poor:'> 3,000 ms', fmt: fmtMs },
+                    { key:'cls', label:'CLS (Cumulative Layout Shift)', good:'≤ 0.10', poor:'> 0.25', fmt: (v: number|null|undefined) => v != null ? v.toFixed(3) : '—' },
+                    { key:'ttfb', label:'TTFB (Time to First Byte)', good:'≤ 800 ms', poor:'> 1,800 ms', fmt: fmtMs },
+                    { key:'tbt', label:'TBT (Total Blocking Time)', good:'≤ 200 ms', poor:'> 600 ms', fmt: fmtMs },
+                    { key:'inp', label:'INP (Interaction to Next Paint)', good:'≤ 200 ms', poor:'> 500 ms', fmt: fmtMs },
+                  ] as Array<{ key: string; label: string; good: string; poor: string; fmt: (v: number|null|undefined) => string }>).map((m, i) => {
+                    const val = avg[m.key];
+                    const color = cwvStatus(m.key, val);
+                    const statusLabel = color === K.teal ? 'Good' : color === K.medium ? 'Needs Improvement' : color === K.critical ? 'Poor' : '—';
+                    return new TableRow({ children: [
+                      cell(m.label, { bold: true, bg: i % 2 === 0 ? K.offWhite : K.white }),
+                      cell(m.fmt(val), { align: AlignmentType.CENTER, bold: true, color, bg: i % 2 === 0 ? K.offWhite : K.white }),
+                      cell(statusLabel, { align: AlignmentType.CENTER, bold: true, color, bg: i % 2 === 0 ? K.offWhite : K.white }),
+                      cell(m.good, { align: AlignmentType.CENTER, color: K.teal, bg: i % 2 === 0 ? K.offWhite : K.white }),
+                      cell(m.poor, { align: AlignmentType.CENTER, color: K.critical, bg: i % 2 === 0 ? K.offWhite : K.white }),
+                    ]});
+                  }),
+                ],
+              });
+            })(),
           ] : [
             h2(`1.2 Pillar Score Summary`),
             new Table({
@@ -762,7 +841,9 @@ export async function generateDocx(audit: AuditResult): Promise<Buffer> {
               sp(120),
               ...(perfResult.recommendations?.length > 0 ? [
                 h2(`${perfSectionNum}.1 Performance Recommendations`),
-                ...(perfResult.recommendations as string[]).slice(0, 10).map((r: string) => bullet(r)),
+                ...(perfResult.recommendations as import('../types/performance').RecommendationItem[]).slice(0, 10).map((r) =>
+                  bullet(`[${r.priority}] ${r.title} — ${r.detail} (${r.effort}, ${r.impact} impact)`)
+                ),
               ] : []),
             ];
           })(),

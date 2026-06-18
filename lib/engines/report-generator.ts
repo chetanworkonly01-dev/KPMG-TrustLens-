@@ -138,9 +138,61 @@ function generateExecutiveSummary(
   // ── Performance summary ──
   if (perfEnabled && pillarCtx?.performance) {
     const perf = pillarCtx.performance;
-    summary += `\n\nPERFORMANCE: Score: ${perf.overallScore}/100 | ${perf.totalResourceIssues} resource issues. `;
-    if (perf.recommendations.length > 0) {
-      summary += `Top recommendation: ${perf.recommendations[0]}. `;
+    const avg = perf.averageVitals || {};
+    const perfRecs = perf.recommendations || [];
+    const p0Count = perfRecs.filter((r: any) => r.priority === 'P0').length;
+    const p1Count = perfRecs.filter((r: any) => r.priority === 'P1').length;
+    const pages = perf.pages || [];
+
+    if (!a11yEnabled && !dpEnabled && !privEnabled) {
+      // Performance-only: generate rich narrative
+      const grade = perf.overallScore >= 90 ? 'Excellent' : perf.overallScore >= 75 ? 'Good' : perf.overallScore >= 50 ? 'Needs Improvement' : perf.overallScore >= 25 ? 'Poor' : 'Critical';
+      summary = `KPMG conducted a comprehensive Performance Audit evaluating Core Web Vitals, resource efficiency, rendering performance, and network resilience across ${pages.length} page(s).`;
+      summary += `\n\nOverall Performance Score: ${perf.overallScore}/100 (${grade}). ${perf.totalResourceIssues} resource issue(s) identified across ${pages.length} page(s). ${p0Count} critical issue(s) require immediate action before next release; ${p1Count} high-priority issue(s) are scheduled for the next sprint.`;
+
+      if (avg.lcp != null) {
+        const lcpStatus = avg.lcp <= 2500 ? 'meets the Good threshold (≤ 2,500 ms)' : avg.lcp <= 4000 ? 'falls in the Needs Improvement range (2,500–4,000 ms)' : 'exceeds the Poor threshold (> 4,000 ms) — urgent action required';
+        summary += `\n\nLARGEST CONTENTFUL PAINT (LCP): ${Math.round(avg.lcp)} ms average — ${lcpStatus}. LCP measures how quickly the main content becomes visible and directly impacts user perception of load speed.`;
+      }
+      if (avg.cls != null) {
+        const clsStatus = avg.cls <= 0.10 ? 'meets the Good threshold (≤ 0.10)' : avg.cls <= 0.25 ? 'falls in Needs Improvement range' : 'exceeds the Poor threshold — layout instability is causing poor user experience';
+        summary += `\n\nCUMULATIVE LAYOUT SHIFT (CLS): ${avg.cls.toFixed(3)} average — ${clsStatus}. CLS measures visual stability; unexpected shifts frustrate users and can cause accidental clicks.`;
+      }
+      if (avg.fcp != null) {
+        const fcpStatus = avg.fcp <= 1800 ? 'Good (≤ 1,800 ms)' : avg.fcp <= 3000 ? 'Needs Improvement' : 'Poor (> 3,000 ms)';
+        summary += `\n\nFIRST CONTENTFUL PAINT (FCP): ${Math.round(avg.fcp)} ms average — ${fcpStatus}. FCP measures when users first see any content on screen.`;
+      }
+      if (avg.ttfb != null) {
+        const ttfbStatus = avg.ttfb <= 800 ? 'Good (≤ 800 ms)' : avg.ttfb <= 1800 ? 'Needs Improvement' : 'Poor (> 1,800 ms) — server-side or CDN optimisation is recommended';
+        summary += `\n\nTIME TO FIRST BYTE (TTFB): ${Math.round(avg.ttfb)} ms average — ${ttfbStatus}. TTFB reflects server response time and is the foundation of all other metrics.`;
+      }
+
+      if (pages.length > 1) {
+        const best = [...pages].sort((a: any, b: any) => b.score - a.score)[0] as any;
+        const worst = [...pages].sort((a: any, b: any) => a.score - b.score)[0] as any;
+        if (best && worst && best.url !== worst.url) {
+          summary += `\n\nPAGE VARIANCE: Best page: "${best.title || best.url}" (${best.score}/100). Page needing most attention: "${worst.title || worst.url}" (${worst.score}/100). Address the worst-performing pages first for maximum user impact.`;
+        }
+      }
+
+      if (perfRecs.length > 0) {
+        const topRec = perfRecs[0] as any;
+        summary += `\n\nTOP RECOMMENDATION: [${topRec.priority}] ${topRec.title} — ${topRec.detail} (${topRec.effort}, ${topRec.impact} impact).`;
+      }
+
+      if (p0Count > 0) {
+        summary += `\n\n⚠️ CRITICAL ALERT: ${p0Count} P0 issue(s) must be resolved before the next production release to prevent significant user experience degradation.`;
+      }
+    } else {
+      // Multi-pillar: concise performance block
+      summary += `\n\nPERFORMANCE: Score: ${perf.overallScore}/100 | ${perf.totalResourceIssues} resource issue(s) across ${pages.length} page(s). `;
+      if (avg.lcp != null) summary += `Avg LCP: ${Math.round(avg.lcp)} ms. `;
+      if (avg.cls != null) summary += `Avg CLS: ${avg.cls.toFixed(3)}. `;
+      if (p0Count > 0) summary += `${p0Count} P0 critical issue(s) require immediate remediation. `;
+      if (perfRecs.length > 0) {
+        const topRec = perfRecs[0] as any;
+        summary += `Top recommendation: ${topRec.title}.`;
+      }
     }
   }
 

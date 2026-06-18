@@ -1,6 +1,7 @@
 import PptxGenJS from 'pptxgenjs';
 import { AuditResult, AccessibilityIssue } from '../types/audit';
 import type { DarkPatternFinding } from '../types/darkpattern';
+import type { RecommendationItem } from '../types/performance';
 
 // ── KPMG Brand Palette ────────────────────────────────────────
 const K = {
@@ -555,6 +556,192 @@ export async function generatePptx(audit: AuditResult): Promise<Buffer> {
       evidSlide.addText(`Severity: ${f.severity.toUpperCase()}   |   Rule: ${f.ruleId || '—'}   |   Pattern: ${f.brignullPattern || 'Custom'}`, { x:0.3, y:6.1, w:9.4, h:0.3, fontSize:8, fontFace:'Calibri', color: K.midGrey });
       addPageNum(evidSlide, n);
     });
+  }
+
+  // ── PERFORMANCE SLIDES ───────────────────────────────────────
+  if (isPerf) {
+    const perfResult = (audit as any).pillarResults?.performance;
+    const perfPages: any[] = perfResult?.pages || [];
+
+    // Section divider
+    n++;
+    const perfDivSlide = darkSlide(pptx);
+    addLogo(perfDivSlide, true);
+    perfDivSlide.addText('Performance Findings', { x:1, y:2.8, w:8, h:1, fontSize:40, fontFace:'Calibri', bold:true, color:K.teal });
+    perfDivSlide.addText(`Overall Score: ${perfResult?.overallScore ?? '—'}/100  ·  ${perfPages.length} page(s) analysed`, { x:1, y:3.9, w:8, h:0.5, fontSize:16, fontFace:'Calibri', color:K.midGrey });
+    addPageNum(perfDivSlide, n);
+
+    // KPI summary slide
+    if (perfResult) {
+      n++;
+      const kpiSlide = lightSlide(pptx);
+      addLogo(kpiSlide);
+      addSlideTitle(kpiSlide, 'Performance KPIs', `Overall score: ${perfResult.overallScore ?? '—'}/100 · Total resource issues: ${perfResult.totalResourceIssues ?? 0}`);
+      const avg = perfResult.averageVitals || {};
+      const kpiRows: any[][] = [
+        [{ text:'Metric', options:{bold:true, color:K.white, fill:K.navy} }, { text:'Average Value', options:{bold:true, color:K.white, fill:K.navy} }, { text:'Threshold (Good)', options:{bold:true, color:K.white, fill:K.navy} }],
+        ['LCP (ms)', avg.lcp != null ? String(Math.round(avg.lcp)) : '—', '≤ 2500'],
+        ['CLS', avg.cls != null ? avg.cls.toFixed(3) : '—', '≤ 0.10'],
+        ['FCP (ms)', avg.fcp != null ? String(Math.round(avg.fcp)) : '—', '≤ 1800'],
+        ['TTFB (ms)', avg.ttfb != null ? String(Math.round(avg.ttfb)) : '—', '≤ 800'],
+        ['INP (ms)', avg.inp != null ? String(Math.round(avg.inp)) : '—', '≤ 200'],
+        ['TBT (ms)', avg.tbt != null ? String(Math.round(avg.tbt)) : '—', '≤ 200'],
+      ];
+      kpiSlide.addTable(kpiRows, { x:0.3, y:1.2, w:9.4, colW:[3.5,2.5,3.4], fontSize:10, fontFace:'Calibri', border:{type:'solid',pt:0.5,color:K.lightGrey}, fill:{color:K.offWhite} });
+      addPageNum(kpiSlide, n);
+    }
+
+    // Page vitals table slides (8 pages per slide)
+    if (perfPages.length > 0) {
+      const PAGE_CHUNK = 8;
+      for (let i = 0; i < perfPages.length; i += PAGE_CHUNK) {
+        n++;
+        const chunk = perfPages.slice(i, i + PAGE_CHUNK);
+        const pvSlide = lightSlide(pptx);
+        addLogo(pvSlide);
+        addSlideTitle(pvSlide, 'Page Performance Vitals', `Pages ${i + 1}–${Math.min(i + PAGE_CHUNK, perfPages.length)} of ${perfPages.length}`);
+        const rows: any[][] = [
+          [
+            {text:'Page', options:{bold:true,color:K.white,fill:K.navy}},
+            {text:'Score', options:{bold:true,color:K.white,fill:K.navy}},
+            {text:'LCP (ms)', options:{bold:true,color:K.white,fill:K.navy}},
+            {text:'CLS', options:{bold:true,color:K.white,fill:K.navy}},
+            {text:'FCP (ms)', options:{bold:true,color:K.white,fill:K.navy}},
+            {text:'Resource Issues', options:{bold:true,color:K.white,fill:K.navy}},
+          ],
+          ...chunk.map((pg: any) => [
+            (pg.title || pg.url || '').substring(0, 35),
+            String(pg.score ?? '—'),
+            pg.vitals?.lcp != null ? String(Math.round(pg.vitals.lcp)) : '—',
+            pg.vitals?.cls != null ? pg.vitals.cls.toFixed(3) : '—',
+            pg.vitals?.fcp != null ? String(Math.round(pg.vitals.fcp)) : '—',
+            String(pg.resourceIssues?.length ?? 0),
+          ]),
+        ];
+        pvSlide.addTable(rows, { x:0.3, y:1.2, w:9.4, colW:[3.5,0.9,1.3,0.9,1.3,1.5], fontSize:9, fontFace:'Calibri', border:{type:'solid',pt:0.5,color:K.lightGrey} });
+        addPageNum(pvSlide, n);
+      }
+    }
+
+    // Recommendations slide
+    const recs = ((perfResult?.recommendations || []) as RecommendationItem[]).slice(0, 10);
+    if (recs.length > 0) {
+      n++;
+      const recSlide = lightSlide(pptx);
+      addLogo(recSlide);
+      addSlideTitle(recSlide, 'Performance Recommendations', `Top ${recs.length} recommendations to improve Core Web Vitals`);
+      const recRows: any[][] = [
+        [
+          {text:'Priority', options:{bold:true,color:K.white,fill:'006E51'}},
+          {text:'Recommendation', options:{bold:true,color:K.white,fill:'006E51'}},
+          {text:'Effort', options:{bold:true,color:K.white,fill:'006E51'}},
+          {text:'Impact', options:{bold:true,color:K.white,fill:'006E51'}},
+        ],
+        ...recs.map((r) => [
+          r.priority,
+          `${r.title} — ${r.detail}`.substring(0, 75),
+          r.effort,
+          r.impact,
+        ]),
+      ];
+      recSlide.addTable(recRows, { x:0.3, y:1.2, w:9.4, colW:[1.1,5.5,1.5,1.3], fontSize:8.5, fontFace:'Calibri', border:{type:'solid',pt:0.5,color:K.lightGrey} });
+      addPageNum(recSlide, n);
+    }
+
+    // Network simulation slide
+    if (perfResult?.networkSimulation?.length > 0) {
+      n++;
+      const netSlide = lightSlide(pptx);
+      addLogo(netSlide);
+      addSlideTitle(netSlide, 'Network Simulation Results', 'Performance across connectivity conditions');
+      const netRows: any[][] = [
+        [
+          {text:'Condition', options:{bold:true,color:K.white,fill:K.navy}},
+          {text:'LCP (ms)', options:{bold:true,color:K.white,fill:K.navy}},
+          {text:'FCP (ms)', options:{bold:true,color:K.white,fill:K.navy}},
+          {text:'TTFB (ms)', options:{bold:true,color:K.white,fill:K.navy}},
+          {text:'Score', options:{bold:true,color:K.white,fill:K.navy}},
+        ],
+        ...(perfResult.networkSimulation as any[]).map((sim: any) => [
+          sim.label || sim.preset,
+          sim.lcp != null ? String(Math.round(sim.lcp)) : '—',
+          sim.fcp != null ? String(Math.round(sim.fcp)) : '—',
+          sim.ttfb != null ? String(Math.round(sim.ttfb)) : '—',
+          sim.score != null ? String(sim.score) : '—',
+        ]),
+      ];
+      netSlide.addTable(netRows, { x:0.3, y:1.2, w:9.4, colW:[2.8,1.7,1.7,1.7,1.5], fontSize:10, fontFace:'Calibri', border:{type:'solid',pt:0.5,color:K.lightGrey} });
+      addPageNum(netSlide, n);
+    }
+  }
+
+  // ── PRIVACY SLIDES ───────────────────────────────────────────
+  if (isPriv) {
+    const privResult = (audit as any).pillarResults?.privacy;
+    const privFindings: any[] = privResult?.findings || [];
+
+    // Section divider
+    n++;
+    const privDivSlide = darkSlide(pptx);
+    addLogo(privDivSlide, true);
+    privDivSlide.addText('Privacy & Compliance Findings', { x:1, y:2.8, w:8, h:1, fontSize:36, fontFace:'Calibri', bold:true, color:'E8A33A' });
+    privDivSlide.addText(`Score: ${privResult?.overallScore ?? '—'}/100  ·  ${privFindings.length} finding(s)  ·  Trackers: ${privResult?.totalTrackers ?? 0}`, { x:1, y:3.9, w:8, h:0.5, fontSize:16, fontFace:'Calibri', color:K.midGrey });
+    addPageNum(privDivSlide, n);
+
+    // Findings table slides (10 per slide)
+    if (privFindings.length > 0) {
+      const CHUNK = 10;
+      for (let i = 0; i < privFindings.length; i += CHUNK) {
+        n++;
+        const chunk = privFindings.slice(i, i + CHUNK);
+        const pfSlide = lightSlide(pptx);
+        addLogo(pfSlide);
+        addSlideTitle(pfSlide, 'Privacy Findings', `${i + 1}–${Math.min(i + CHUNK, privFindings.length)} of ${privFindings.length}`);
+        const rows: any[][] = [
+          [
+            {text:'#', options:{bold:true,color:K.white,fill:'B45309'}},
+            {text:'Finding', options:{bold:true,color:K.white,fill:'B45309'}},
+            {text:'Category', options:{bold:true,color:K.white,fill:'B45309'}},
+            {text:'Regulation', options:{bold:true,color:K.white,fill:'B45309'}},
+            {text:'Severity', options:{bold:true,color:K.white,fill:'B45309'}},
+          ],
+          ...chunk.map((f: any, idx: number) => [
+            `#${String(i + idx + 1).padStart(3, '0')}`,
+            (f.title || '—').substring(0, 40),
+            (f.category || '—').substring(0, 20),
+            Array.isArray(f.regulation) ? f.regulation.slice(0, 2).join(', ') : (f.regulation || '—'),
+            (f.severity || '—').toUpperCase(),
+          ]),
+        ];
+        pfSlide.addTable(rows, { x:0.3, y:1.2, w:9.4, colW:[0.8,3.6,2,2,1], fontSize:9, fontFace:'Calibri', border:{type:'solid',pt:0.5,color:K.lightGrey} });
+        addPageNum(pfSlide, n);
+      }
+    }
+
+    // Trackers slide
+    const trackers = (privResult?.trackers || []) as any[];
+    if (trackers.length > 0) {
+      n++;
+      const tkSlide = lightSlide(pptx);
+      addLogo(tkSlide);
+      addSlideTitle(tkSlide, 'Trackers Detected', `${trackers.length} third-party tracker(s) found`);
+      const tkRows: any[][] = [
+        [
+          {text:'Domain', options:{bold:true,color:K.white,fill:K.navy}},
+          {text:'Company', options:{bold:true,color:K.white,fill:K.navy}},
+          {text:'Category', options:{bold:true,color:K.white,fill:K.navy}},
+          {text:'Requests', options:{bold:true,color:K.white,fill:K.navy}},
+        ],
+        ...trackers.slice(0, 15).map((t: any) => [
+          t.domain || '—',
+          t.company || '—',
+          t.category || '—',
+          String(t.requestCount || 0),
+        ]),
+      ];
+      tkSlide.addTable(tkRows, { x:0.3, y:1.2, w:9.4, colW:[3,3,2.2,1.2], fontSize:9.5, fontFace:'Calibri', border:{type:'solid',pt:0.5,color:K.lightGrey} });
+      addPageNum(tkSlide, n);
+    }
   }
 
   const data = await pptx.write({ outputType:'nodebuffer' });

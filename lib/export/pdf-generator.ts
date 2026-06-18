@@ -2,6 +2,7 @@ import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { AuditResult, AccessibilityIssue } from '../types/audit';
 import type { DarkPatternFinding } from '../types/darkpattern';
+import type { RecommendationItem } from '../types/performance';
 
 // ── KPMG Brand Palette (RGB) ──────────────────────────────────
 const K = {
@@ -120,6 +121,10 @@ export async function generatePdf(audit: AuditResult): Promise<Buffer> {
   const isA11y = !pillars || pillars.length === 0 || pillars.includes('accessibility');
   const isDP   = pillars?.includes('darkpatterns') ?? false;
   const isPerf = pillars?.includes('performance')  ?? false;
+  const isPriv2 = pillars?.includes('privacy')     ?? false;
+  const perfOnly = isPerf && !isA11y && !isDP && !isPriv2;
+  const perfResultCover = (audit as any).pillarResults?.performance as any;
+  const perfGradeStr = (s: number) => s >= 90 ? 'A — Excellent' : s >= 75 ? 'B — Good' : s >= 50 ? 'C — Needs Improvement' : s >= 25 ? 'D — Poor' : 'F — Critical';
   const col3H  = isA11y ? 'WCAG SC'    : isDP ? 'Pattern ID' : isPerf ? 'Metric'  : 'Regulation';
   const col4H  = isA11y ? 'Level'      : isDP ? 'Regulation' : isPerf ? 'Target'  : 'Article';
   const col3V  = (iss: AccessibilityIssue) => isA11y ? iss.wcagCriterion : ((iss as any).ruleId || '—');
@@ -172,8 +177,16 @@ export async function generatePdf(audit: AuditResult): Promise<Buffer> {
   const dpFindCount    = ((dpResultsCover?.findings ?? []) as DarkPatternFinding[]).length;
   const dpConsent      = dpResultsCover?.consentIntegrity as number | undefined;
 
-  // Cover metadata table — DP-only vs multi-pillar
-  const coverData = isDP && !isA11y ? [
+  // Cover metadata table — pillar-aware
+  const coverData = perfOnly && perfResultCover ? [
+    ['Audit Date',        auditDate],
+    ['Pages Audited',     String(perfResultCover.pages?.length ?? audit.pages.length)],
+    ['Performance Score', `${perfResultCover.overallScore ?? '—'} / 100`],
+    ['Performance Grade', perfResultCover.overallScore != null ? perfGradeStr(perfResultCover.overallScore) : '—'],
+    ['Resource Issues',   String(perfResultCover.totalResourceIssues ?? 0)],
+    ['P0 Critical',       String((perfResultCover.recommendations || []).filter((r: any) => r.priority === 'P0').length)],
+    ['Classification',    'KPMG Internal — Confidential'],
+  ] : isDP && !isA11y ? [
     ['Audit Date',        auditDate],
     ['Pages Audited',     String(audit.pages.length)],
     ['Ethics Score',      `${dpEthicsScore ?? '—'} / 100`],
@@ -203,9 +216,11 @@ export async function generatePdf(audit: AuditResult): Promise<Buffer> {
     bodyStyles: { fillColor: [5, 15, 40] },
   });
 
-  // Score circle — use Ethics Score for DP-only, otherwise WCAG overall
-  const coverScore      = (isDP && !isA11y && dpEthicsScore != null) ? dpEthicsScore : score.overall;
-  const coverScoreLabel = (isDP && !isA11y) ? 'ETHICS' : 'SCORE';
+  // Score circle — pillar-aware
+  const coverScore      = perfOnly && perfResultCover?.overallScore != null ? perfResultCover.overallScore
+    : (isDP && !isA11y && dpEthicsScore != null) ? dpEthicsScore
+    : score.overall;
+  const coverScoreLabel = perfOnly ? 'PERF' : (isDP && !isA11y) ? 'ETHICS' : 'SCORE';
   doc.setDrawColor(...K.lightBlue);
   doc.setLineWidth(2);
   doc.circle(pw - 50, 90, 28);
@@ -232,39 +247,87 @@ export async function generatePdf(audit: AuditResult): Promise<Buffer> {
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(9);
   doc.setTextColor(...K.darkGrey);
-  const summaryText = report.executiveSummary ||
-    (isA11y
-      ? `This KPMG ${reportTitle} evaluated ${projectName} against ${standard} Level ${testedLevel}. The overall score is ${score.overall}/100 (${compLabel(score.complianceLevel)}). ${score.totalIssues} issues were identified across ${audit.pages.length} page(s).`
-      : `This KPMG ${reportTitle} audited ${projectName} across: ${(pillars||[]).join(', ')}. Overall score: ${score.overall}/100 (${compLabel(score.complianceLevel)}). ${score.totalIssues} issue(s) identified.`);
-  const splitSummary = doc.splitTextToSize(summaryText, pw - 40);
-  doc.text(splitSummary, 20, y);
-  y += splitSummary.length * 4 + 10;
+  // Build summary paragraphs — keep ASCII-safe (jsPDF Helvetica doesn't support Unicode em-dashes, arrows, emoji)
+  const safeText = (s: string) => s.replace(/—/g, '-').replace(/–/g, '-').replace(/[^\x00-\x7F]/g, '');
+  let summaryParas: string[] = [];
+  if (report.executiveSummary) {
+    summaryParas = report.executiveSummary.split(/\n\n+/).map((p: string) => safeText(p.trim())).filter(Boolean);
+  } else if (perfOnly && perfResultCover) {
+    const avg = perfResultCover.averageVitals || {};
+    const p0c = (perfResultCover.recommendations || []).filter((r: any) => r.priority === 'P0').length;
+    const p1c = (perfResultCover.recommendations || []).filter((r: any) => r.priority === 'P1').length;
+    const pgs = perfResultCover.pages?.length ?? audit.pages.length;
+    const grade = perfGradeStr(perfResultCover.overallScore ?? 0).replace(' - ', ': ');
+    summaryParas.push(`KPMG conducted a comprehensive Performance Audit of ${projectName}, evaluating Core Web Vitals, resource efficiency, rendering performance, and network resilience across ${pgs} page(s).`);
+    summaryParas.push(`Overall Performance Score: ${perfResultCover.overallScore ?? 'N/A'}/100 (${grade}). ${perfResultCover.totalResourceIssues ?? 0} resource issue(s) identified across ${pgs} page(s). ${p0c} critical issue(s) require immediate action; ${p1c} high-priority issue(s) are scheduled for the next sprint.`);
+    const vitalsLines: string[] = [];
+    if (avg.lcp != null) { const s = avg.lcp <= 2500 ? 'Good' : avg.lcp <= 4000 ? 'Needs Improvement' : 'Poor'; vitalsLines.push(`LCP (Largest Contentful Paint): ${Math.round(avg.lcp)} ms - ${s} threshold ${avg.lcp <= 2500 ? '(<= 2,500 ms)' : avg.lcp <= 4000 ? '(2,500-4,000 ms)' : '(> 4,000 ms)'}.`); }
+    if (avg.cls != null) { const s = avg.cls <= 0.10 ? 'Good' : avg.cls <= 0.25 ? 'Needs Improvement' : 'Poor'; vitalsLines.push(`CLS (Cumulative Layout Shift): ${avg.cls.toFixed(3)} - ${s}. Measures visual stability of the page.`); }
+    if (avg.fcp != null) { const s = avg.fcp <= 1800 ? 'Good' : avg.fcp <= 3000 ? 'Needs Improvement' : 'Poor'; vitalsLines.push(`FCP (First Contentful Paint): ${Math.round(avg.fcp)} ms - ${s}.`); }
+    if (avg.ttfb != null) { const s = avg.ttfb <= 800 ? 'Good' : avg.ttfb <= 1800 ? 'Needs Improvement' : 'Poor'; vitalsLines.push(`TTFB (Time to First Byte): ${Math.round(avg.ttfb)} ms - ${s}. Reflects server response speed.`); }
+    if (vitalsLines.length > 0) summaryParas.push('Core Web Vitals Summary:\n' + vitalsLines.join('\n'));
+    if (p0c > 0) summaryParas.push(`CRITICAL ALERT: ${p0c} P0 issue(s) must be resolved before the next production release to prevent significant user experience degradation.`);
+  } else if (isA11y) {
+    summaryParas = [`This KPMG ${reportTitle} evaluated ${projectName} against ${standard} Level ${testedLevel}. The overall score is ${score.overall}/100 (${compLabel(score.complianceLevel)}). ${score.totalIssues} issues were identified across ${audit.pages.length} page(s).`];
+  } else {
+    summaryParas = [`This KPMG ${reportTitle} audited ${projectName} across: ${(pillars||[]).join(', ')}. Overall score: ${score.overall}/100 (${compLabel(score.complianceLevel)}). ${score.totalIssues} issue(s) identified.`];
+  }
+
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(9);
+  doc.setTextColor(...K.darkGrey);
+  for (const para of summaryParas) {
+    if (y > ph - 40) { doc.addPage(); y = 18; }
+    // Handle inline \n within a paragraph (e.g. vitals list)
+    const lines = para.split('\n');
+    for (const line of lines) {
+      const wrapped = doc.splitTextToSize(safeText(line), pw - 40);
+      doc.text(wrapped, 20, y);
+      y += wrapped.length * 4;
+    }
+    y += 4; // paragraph gap
+  }
 
   // Severity breakdown table
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(13);
   doc.setTextColor(...K.nearBlack);
-  doc.text('Issue Breakdown by Severity', 20, y);
+  doc.text(perfOnly ? 'Resource Issues by Severity' : 'Issue Breakdown by Severity', 20, y);
   y += 6;
 
-  // Aggregate severity counts across all active pillars (a11y + dark patterns + privacy)
+  // Aggregate severity counts — perf-only uses resource issues, others use a11y+dp+privacy
   const aggBySev: Record<string, number> = { critical: 0, high: 0, medium: 0, low: 0 };
-  const _dpF = ((audit as any).pillarResults?.darkpatterns?.findings ?? []) as Array<{ severity: string }>;
-  const _pvF = ((audit as any).pillarResults?.privacy?.findings ?? []) as Array<{ severity: string }>;
-  for (const f of ([...issues, ..._dpF, ..._pvF] as Array<{ severity: string }>)) {
-    if (f.severity in aggBySev) aggBySev[f.severity]++;
+  if (perfOnly && perfResultCover) {
+    for (const pg of (perfResultCover.pages || [])) {
+      for (const ri of (pg.resourceIssues || [])) {
+        if (ri.severity in aggBySev) aggBySev[ri.severity]++;
+      }
+    }
+  } else {
+    const _dpF = ((audit as any).pillarResults?.darkpatterns?.findings ?? []) as Array<{ severity: string }>;
+    const _pvF = ((audit as any).pillarResults?.privacy?.findings ?? []) as Array<{ severity: string }>;
+    for (const f of ([...issues, ..._dpF, ..._pvF] as Array<{ severity: string }>)) {
+      if (f.severity in aggBySev) aggBySev[f.severity]++;
+    }
   }
   const aggTotal = Object.values(aggBySev).reduce((a, b) => a + b, 0);
 
+  const breakdownActionLabel = perfOnly
+    ? { critical: 'Block Release', high: 'Next Sprint', medium: 'This Quarter', low: 'Backlog' }
+    : { critical: 'Immediate', high: 'High', medium: 'Moderate', low: 'Low' };
+  const breakdownSprintLabel = perfOnly
+    ? { critical: 'Sprint 1', high: 'Sprint 2', medium: 'Q3', low: 'Q4' }
+    : { critical: 'Sprint 1', high: 'Sprint 2', medium: 'Q2', low: 'Today' };
+
   autoTable(doc, {
     startY: y,
-    head: [['Severity', 'Count', '% of Total', 'Priority', 'Target Sprint']],
+    head: [['Severity', 'Count', '% of Total', perfOnly ? 'Action' : 'Priority', 'Target Sprint']],
     body: (['critical', 'high', 'medium', 'low'] as const).map(sev => [
       sev.charAt(0).toUpperCase() + sev.slice(1),
       String(aggBySev[sev]),
       aggTotal > 0 ? `${Math.round((aggBySev[sev] / aggTotal) * 100)}%` : '0%',
-      { critical: 'Immediate', high: 'High', medium: 'Moderate', low: 'Low' }[sev],
-      { critical: 'Sprint 1', high: 'Sprint 2', medium: 'Q2', low: 'Today' }[sev],
+      breakdownActionLabel[sev],
+      breakdownSprintLabel[sev],
     ]),
     headStyles: { fillColor: K.navy, textColor: K.white, fontStyle: 'bold', fontSize: 9 },
     styles: { fontSize: 9, cellPadding: 4, lineColor: K.lightGrey, lineWidth: 0.2 },
@@ -283,9 +346,42 @@ export async function generatePdf(audit: AuditResult): Promise<Buffer> {
     margin: { left: 20, right: 20 },
   });
 
-  // Category scores cards — WCAG principles only for accessibility pillar
-  if (isA11y) {
-    y = (doc as any).lastAutoTable.finalY + 12;
+  // Category scores / CWV cards — pillar-aware
+  y = (doc as any).lastAutoTable.finalY + 12;
+  if (perfOnly && perfResultCover) {
+    // CWV average cards — 3 per row (LCP, FCP, CLS, TTFB, TBT, INP)
+    const avg = perfResultCover.averageVitals || {};
+    const cwvMeta = [
+      { key: 'lcp',  label: 'LCP',  fmt: (v: number) => `${Math.round(v)}ms`, good: 2500, poor: 4000 },
+      { key: 'fcp',  label: 'FCP',  fmt: (v: number) => `${Math.round(v)}ms`, good: 1800, poor: 3000 },
+      { key: 'cls',  label: 'CLS',  fmt: (v: number) => v.toFixed(3),          good: 0.10, poor: 0.25 },
+      { key: 'ttfb', label: 'TTFB', fmt: (v: number) => `${Math.round(v)}ms`, good: 800,  poor: 1800 },
+      { key: 'tbt',  label: 'TBT',  fmt: (v: number) => `${Math.round(v)}ms`, good: 200,  poor: 600  },
+      { key: 'inp',  label: 'INP',  fmt: (v: number) => `${Math.round(v)}ms`, good: 200,  poor: 500  },
+    ];
+    const cardW = (pw - 40 - 10) / 3;
+    if (y + 28 > ph - 20) { doc.addPage(); y = 18; }
+    cwvMeta.forEach((m, i) => {
+      const row = Math.floor(i / 3);
+      const col = i % 3;
+      if (col === 0 && row > 0 && y + 28 > ph - 20) { doc.addPage(); y = 18; }
+      const cx = 20 + col * (cardW + 5);
+      const cy = y + row * 30;
+      const val = avg[m.key];
+      const color: [number,number,number] = val == null ? K.midGrey : val <= m.good ? K.teal : val <= m.poor ? K.medium : K.critical;
+      const displayVal = val != null ? m.fmt(val) : '—';
+      const statusText = val == null ? '—' : val <= m.good ? 'Good' : val <= m.poor ? 'Needs Impr.' : 'Poor';
+      doc.setFillColor(...K.offWhite); doc.roundedRect(cx, cy, cardW, 26, 2, 2, 'F');
+      doc.setDrawColor(...color); doc.setLineWidth(0.4); doc.roundedRect(cx, cy, cardW, 26, 2, 2, 'S');
+      doc.setFont('helvetica', 'bold'); doc.setFontSize(7); doc.setTextColor(...K.navy);
+      doc.text(m.label, cx + cardW / 2, cy + 6, { align: 'center' });
+      doc.setFontSize(13); doc.setTextColor(...color);
+      doc.text(displayVal, cx + cardW / 2, cy + 16, { align: 'center' });
+      doc.setFontSize(6.5); doc.setTextColor(...color);
+      doc.text(statusText, cx + cardW / 2, cy + 22, { align: 'center' });
+    });
+    y += Math.ceil(cwvMeta.length / 3) * 30 + 4;
+  } else if (isA11y) {
     const cats = ['perceivable', 'operable', 'understandable', 'robust'] as const;
     const catLabels = { perceivable: 'Perceivable', operable: 'Operable', understandable: 'Understandable', robust: 'Robust' };
     const cardW = (pw - 40 - 15) / 4;
@@ -1057,6 +1153,307 @@ export async function generatePdf(audit: AuditResult): Promise<Buffer> {
     y = sectionHeading(doc, '8', 'Dark Pattern Findings', y);
     doc.setFont('helvetica', 'normal'); doc.setFontSize(11); doc.setTextColor(0, 150, 100);
     doc.text('✓  No dark patterns detected — the interface respects ethical design principles.', 20, y + 10);
+  }
+
+  // ── PERFORMANCE SECTION ──────────────────────────────────────
+  if (isPerf) {
+    const perfResult = (audit as any).pillarResults?.performance;
+    const perfSectionNum = isA11y && isDP ? '9' : isA11y || isDP ? '3' : '2';
+    doc.addPage();
+    y = 18;
+    y = sectionHeading(doc, perfSectionNum, 'Performance Findings', y);
+
+    if (!perfResult || !perfResult.pages?.length) {
+      doc.setFont('helvetica', 'normal'); doc.setFontSize(11); doc.setTextColor(...K.midGrey);
+      doc.text('No performance data available for this audit.', 20, y + 8);
+    } else {
+      const perfPages: any[] = perfResult.pages;
+      doc.setFont('helvetica', 'normal'); doc.setFontSize(11); doc.setTextColor(...K.darkGrey);
+      doc.text(
+        `Core Web Vitals across ${perfPages.length} page(s). Overall performance score: ${perfResult.overallScore ?? 'N/A'}/100.`,
+        20, y
+      );
+      y += 10;
+
+      // Page vitals table
+      autoTable(doc, {
+        startY: y,
+        head: [['Page', 'Score', 'LCP (ms)', 'CLS', 'FCP (ms)', 'TTFB (ms)', 'Resource Issues']],
+        body: perfPages.map((pg: any) => [
+          (pg.title || pg.url || '').substring(0, 40),
+          String(pg.score ?? '—'),
+          pg.vitals?.lcp != null ? String(Math.round(pg.vitals.lcp)) : '—',
+          pg.vitals?.cls != null ? pg.vitals.cls.toFixed(3) : '—',
+          pg.vitals?.fcp != null ? String(Math.round(pg.vitals.fcp)) : '—',
+          pg.vitals?.ttfb != null ? String(Math.round(pg.vitals.ttfb)) : '—',
+          String(pg.resourceIssues?.length ?? 0),
+        ]),
+        headStyles: { fillColor: [0, 110, 81], textColor: 255, fontStyle: 'bold', fontSize: 9 },
+        bodyStyles: { fontSize: 8, textColor: K.nearBlack },
+        alternateRowStyles: { fillColor: K.offWhite },
+        margin: { left: 20, right: 20 },
+        theme: 'grid',
+      });
+      y = (doc as any).lastAutoTable.finalY + 10;
+
+      // Resource issues detail per page
+      const allResourceIssues: any[] = perfPages.flatMap((pg: any) =>
+        (pg.resourceIssues || []).map((ri: any) => ({
+          ...ri,
+          pageTitle: pg.title || pg.url || '',
+        }))
+      );
+      if (allResourceIssues.length > 0) {
+        doc.addPage(); y = 18;
+        // Section heading
+        doc.setFont('helvetica', 'bold'); doc.setFontSize(16); doc.setTextColor(...K.navy);
+        doc.text(`${perfSectionNum}.1 Resource Issues`, 20, y); y += 3;
+        doc.setDrawColor(...K.lightBlue); doc.setLineWidth(0.6); doc.line(20, y, 90, y); y += 8;
+
+        doc.setFont('helvetica', 'normal'); doc.setFontSize(8.5); doc.setTextColor(...K.darkGrey);
+        doc.text(`${allResourceIssues.length} resource issue(s) identified. Sorted by severity — critical items require immediate action.`, 20, y); y += 8;
+
+        // Severity legend row
+        const sevOrder = ['critical','high','medium','low'] as const;
+        const sevCounts: Record<string,number> = { critical:0, high:0, medium:0, low:0 };
+        for (const ri of allResourceIssues) { if (ri.severity in sevCounts) sevCounts[ri.severity]++; }
+        const lgdW = (pw - 40 - 9) / 4;
+        sevOrder.forEach((sev, i) => {
+          const lx = 20 + i * (lgdW + 3);
+          const bg = sevBg(sev); const col = sevColor(sev);
+          doc.setFillColor(...bg); doc.roundedRect(lx, y, lgdW, 14, 2, 2, 'F');
+          doc.setDrawColor(...col); doc.setLineWidth(0.5); doc.roundedRect(lx, y, lgdW, 14, 2, 2, 'S');
+          doc.setFont('helvetica','bold'); doc.setFontSize(14); doc.setTextColor(...col);
+          doc.text(String(sevCounts[sev]), lx + lgdW/2, y + 8, { align: 'center' });
+          doc.setFontSize(6.5); doc.setTextColor(...K.darkGrey);
+          doc.text(sev.charAt(0).toUpperCase()+sev.slice(1), lx + lgdW/2, y + 12.5, { align: 'center' });
+        });
+        y += 20;
+
+        // Card per issue (sorted by severity)
+        const sevRank: Record<string,number> = { critical:0, high:1, medium:2, low:3 };
+        const sortedIssues = [...allResourceIssues].sort((a,b) => (sevRank[a.severity]||4) - (sevRank[b.severity]||4));
+
+        for (const ri of sortedIssues.slice(0, 40)) {
+          const sev = ri.severity || 'low';
+          const col = sevColor(sev);
+          const bg  = sevBg(sev);
+          const typeLabel = (ri.type || 'issue').replace(/-/g,' ').replace(/\b\w/g,(c:string)=>c.toUpperCase());
+          const descText = (ri.description || '').substring(0, 120);
+          const recText  = (ri.recommendation || '').substring(0, 120);
+          const pageShort = (ri.pageTitle || ri.pageUrl || '').substring(0, 50);
+
+          // Measure card height
+          doc.setFont('helvetica','normal'); doc.setFontSize(8);
+          const descLines = doc.splitTextToSize(descText, pw - 62);
+          const recLines  = doc.splitTextToSize(`Fix: ${recText}`, pw - 62);
+          const cardH = 9 + descLines.length * 3.5 + recLines.length * 3.5 + 10;
+
+          if (y + cardH > ph - 18) { doc.addPage(); y = 18; }
+
+          // Card background + severity left border
+          doc.setFillColor(...K.offWhite); doc.roundedRect(20, y, pw - 40, cardH, 2, 2, 'F');
+          doc.setFillColor(...col); doc.roundedRect(20, y, 4, cardH, 1, 1, 'F');
+          doc.setDrawColor(...K.lightGrey); doc.setLineWidth(0.2); doc.roundedRect(20, y, pw - 40, cardH, 2, 2, 'S');
+
+          // Severity badge
+          doc.setFillColor(...col); doc.roundedRect(28, y + 3, 18, 5.5, 1, 1, 'F');
+          doc.setFont('helvetica','bold'); doc.setFontSize(6); doc.setTextColor(...K.white);
+          doc.text(sev.toUpperCase(), 37, y + 7, { align: 'center' });
+
+          // Issue type label
+          doc.setFont('helvetica','bold'); doc.setFontSize(8.5); doc.setTextColor(...K.navy);
+          doc.text(typeLabel, 50, y + 7);
+
+          // Page label (right-aligned)
+          doc.setFont('helvetica','italic'); doc.setFontSize(7); doc.setTextColor(...K.midGrey);
+          doc.text(pageShort, pw - 22, y + 7, { align: 'right' });
+
+          let cy = y + 12;
+
+          // Description
+          doc.setFont('helvetica','normal'); doc.setFontSize(8); doc.setTextColor(...K.nearBlack);
+          doc.text(descLines, 28, cy);
+          cy += descLines.length * 3.5 + 2;
+
+          // Recommendation
+          doc.setFont('helvetica','italic'); doc.setFontSize(7.5);
+          doc.setTextColor(0, 110, 81);
+          doc.text(recLines, 28, cy);
+
+          y += cardH + 4;
+        }
+
+        if (sortedIssues.length > 40) {
+          doc.setFont('helvetica','italic'); doc.setFontSize(8); doc.setTextColor(...K.midGrey);
+          doc.text(`... and ${sortedIssues.length - 40} more issue(s). See the full report in the web dashboard.`, 20, y);
+          y += 8;
+        }
+        y += 6;
+      }
+
+      // Recommendations
+      const recs = (perfResult.recommendations || []) as RecommendationItem[];
+      if (recs.length > 0) {
+        if (y > ph - 60) { doc.addPage(); y = 18; }
+        doc.setFont('helvetica', 'bold'); doc.setFontSize(13); doc.setTextColor(...K.blue);
+        doc.text(`${perfSectionNum}.2 Performance Recommendations`, 20, y); y += 8;
+        autoTable(doc, {
+          startY: y,
+          head: [['Priority', 'Recommendation', 'Effort', 'Impact']],
+          body: recs.slice(0, 15).map((r) => [
+            r.priority,
+            `${r.title} — ${r.detail}`.substring(0, 80),
+            r.effort,
+            r.impact,
+          ]),
+          headStyles: { fillColor: [0, 110, 81], textColor: 255, fontStyle: 'bold', fontSize: 9 },
+          bodyStyles: { fontSize: 8, textColor: K.nearBlack },
+          alternateRowStyles: { fillColor: K.offWhite },
+          columnStyles: { 0: { cellWidth: 16 }, 1: { cellWidth: 110 }, 2: { cellWidth: 32 }, 3: { cellWidth: 20 } },
+          margin: { left: 20, right: 20 },
+          theme: 'grid',
+        });
+        y = (doc as any).lastAutoTable.finalY + 10;
+      }
+
+      // Auth flow
+      if (perfResult.authFlow && perfResult.authFlow.status !== 'skipped') {
+        if (y > ph - 60) { doc.addPage(); y = 18; }
+        doc.setFont('helvetica', 'bold'); doc.setFontSize(13); doc.setTextColor(...K.blue);
+        doc.text(`${perfSectionNum}.3 Authentication Flow Timing`, 20, y); y += 8;
+        const af = perfResult.authFlow;
+        autoTable(doc, {
+          startY: y,
+          head: [['Metric', 'Value']],
+          body: [
+            ['Status', (af.status || '').toUpperCase()],
+            ['Time to Form (ms)', af.timeToFormMs != null ? String(Math.round(af.timeToFormMs)) : '—'],
+            ['Submit to Response (ms)', af.submitToResponseMs != null ? String(Math.round(af.submitToResponseMs)) : '—'],
+            ['Response to Interactive (ms)', af.responseToInteractiveMs != null ? String(Math.round(af.responseToInteractiveMs)) : '—'],
+            ['Total Round Trip (ms)', af.totalRoundTripMs != null ? String(Math.round(af.totalRoundTripMs)) : '—'],
+          ],
+          headStyles: { fillColor: K.navy, textColor: 255, fontStyle: 'bold', fontSize: 9 },
+          bodyStyles: { fontSize: 9, textColor: K.nearBlack },
+          alternateRowStyles: { fillColor: K.offWhite },
+          margin: { left: 20, right: 20 },
+          theme: 'grid',
+        });
+        y = (doc as any).lastAutoTable.finalY + 10;
+      }
+
+      // Network simulation
+      if (perfResult.networkSimulation?.length > 0) {
+        if (y > ph - 60) { doc.addPage(); y = 18; }
+        doc.setFont('helvetica', 'bold'); doc.setFontSize(13); doc.setTextColor(...K.blue);
+        doc.text(`${perfSectionNum}.4 Network Simulation`, 20, y); y += 8;
+        autoTable(doc, {
+          startY: y,
+          head: [['Condition', 'LCP (ms)', 'FCP (ms)', 'TTFB (ms)', 'Score']],
+          body: (perfResult.networkSimulation as any[]).map((sim: any) => [
+            sim.label || sim.preset,
+            sim.lcp != null ? String(Math.round(sim.lcp)) : '—',
+            sim.fcp != null ? String(Math.round(sim.fcp)) : '—',
+            sim.ttfb != null ? String(Math.round(sim.ttfb)) : '—',
+            sim.score != null ? String(sim.score) : '—',
+          ]),
+          headStyles: { fillColor: K.navy, textColor: 255, fontStyle: 'bold', fontSize: 9 },
+          bodyStyles: { fontSize: 9, textColor: K.nearBlack },
+          alternateRowStyles: { fillColor: K.offWhite },
+          margin: { left: 20, right: 20 },
+          theme: 'grid',
+        });
+        y = (doc as any).lastAutoTable.finalY + 10;
+      }
+
+      // Client-reported confirmed issues
+      if (perfResult.confirmedClientIssues?.length > 0) {
+        if (y > ph - 60) { doc.addPage(); y = 18; }
+        doc.setFont('helvetica', 'bold'); doc.setFontSize(13); doc.setTextColor(...K.blue);
+        doc.text(`${perfSectionNum}.5 Client-Reported Issue Verification`, 20, y); y += 8;
+        autoTable(doc, {
+          startY: y,
+          head: [['Reported Issue', 'Status', 'Summary', 'Evidence']],
+          body: (perfResult.confirmedClientIssues as any[]).map((ci: any) => [
+            ci.flagLabel || ci.flag,
+            (ci.status || '').toUpperCase(),
+            (ci.summary || '').substring(0, 60),
+            (ci.evidence || '').substring(0, 60),
+          ]),
+          headStyles: { fillColor: K.navy, textColor: 255, fontStyle: 'bold', fontSize: 9 },
+          bodyStyles: { fontSize: 8, textColor: K.nearBlack },
+          alternateRowStyles: { fillColor: K.offWhite },
+          margin: { left: 20, right: 20 },
+          theme: 'grid',
+        });
+      }
+    }
+  }
+
+  // ── PRIVACY SECTION ──────────────────────────────────────────
+  if (isPriv2) {
+    const privResult = (audit as any).pillarResults?.privacy;
+    const privSectionNum = isA11y && isDP && isPerf ? '10' : isA11y && isDP ? '9' : isA11y || isDP || isPerf ? '3' : '2';
+    doc.addPage();
+    y = 18;
+    y = sectionHeading(doc, privSectionNum, 'Privacy & Compliance Findings', y);
+
+    if (!privResult) {
+      doc.setFont('helvetica', 'normal'); doc.setFontSize(11); doc.setTextColor(...K.midGrey);
+      doc.text('No privacy data available for this audit.', 20, y + 8);
+    } else {
+      const privFindings: any[] = privResult.findings || [];
+      doc.setFont('helvetica', 'normal'); doc.setFontSize(11); doc.setTextColor(...K.darkGrey);
+      doc.text(
+        `${privFindings.length} finding(s). Score: ${privResult.overallScore ?? '—'}/100. Trackers: ${privResult.totalTrackers ?? 0}. Consent banner: ${privResult.hasConsentBanner ? 'Present' : 'Missing'}.`,
+        20, y
+      );
+      y += 10;
+
+      if (privFindings.length > 0) {
+        autoTable(doc, {
+          startY: y,
+          head: [['#', 'Finding', 'Category', 'Regulation', 'Severity', 'Page']],
+          body: privFindings.slice(0, 30).map((f: any, idx: number) => [
+            `#${String(idx + 1).padStart(3, '0')}`,
+            (f.title || '—').substring(0, 40),
+            (f.category || '—').substring(0, 20),
+            Array.isArray(f.regulation) ? f.regulation.slice(0, 2).join(', ') : (f.regulation || '—'),
+            (f.severity || '—').toUpperCase(),
+            (f.pageUrl || '/').replace(/^https?:\/\/[^/]+/, '').substring(0, 25) || '/',
+          ]),
+          headStyles: { fillColor: [180, 83, 9], textColor: 255, fontStyle: 'bold', fontSize: 9 },
+          bodyStyles: { fontSize: 8, textColor: K.nearBlack },
+          alternateRowStyles: { fillColor: K.offWhite },
+          margin: { left: 20, right: 20 },
+          theme: 'grid',
+        });
+        y = (doc as any).lastAutoTable.finalY + 10;
+      }
+
+      // Trackers
+      const trackers = (privResult.trackers || []) as any[];
+      if (trackers.length > 0) {
+        if (y > ph - 60) { doc.addPage(); y = 18; }
+        doc.setFont('helvetica', 'bold'); doc.setFontSize(13); doc.setTextColor(...K.blue);
+        doc.text(`${privSectionNum}.1 Trackers Detected`, 20, y); y += 8;
+        autoTable(doc, {
+          startY: y,
+          head: [['Tracker Domain', 'Company', 'Category', 'Requests']],
+          body: trackers.slice(0, 20).map((t: any) => [
+            t.domain || '—',
+            t.company || '—',
+            t.category || '—',
+            String(t.requestCount || 0),
+          ]),
+          headStyles: { fillColor: K.navy, textColor: 255, fontStyle: 'bold', fontSize: 9 },
+          bodyStyles: { fontSize: 9, textColor: K.nearBlack },
+          alternateRowStyles: { fillColor: K.offWhite },
+          margin: { left: 20, right: 20 },
+          theme: 'grid',
+        });
+      }
+    }
   }
 
   // Footer on all pages
