@@ -864,6 +864,17 @@ const customRules: CustomRule[] = [
   },
 ];
 
+// Rules where automated detection is heuristic — a human must confirm before reporting
+const MANUAL_VERIFICATION_RULES = new Set([
+  'P-03', // Video captions — can't tell if video has meaningful audio
+  'P-04', // Audio descriptions — same reason
+  'P-05', // Color-only — regex heuristic, many false positives
+  'P-10', // Inline contrast — heuristic color matching
+  'P-13', // Fixed widths — context needed to judge real reflow impact
+  'R-08', // SVG accessibility — many SVGs are intentionally decorative
+  'O-10', // Timeout — can't determine if timeout is accessible
+]);
+
 // ========== MAIN EXPORT ==========
 
 export async function runCustomRules(
@@ -877,33 +888,47 @@ export async function runCustomRules(
   for (const rule of customRules) {
     try {
       const ruleResults = rule.check(pageData.html, pageData.url);
-      for (const result of ruleResults) {
-        issues.push({
-          id: uuidv4(),
-          testId: rule.testId,
-          title: rule.title,
-          description: result.description,
-          element: result.element,
-          elementHtml: result.elementHtml,
-          pageUrl: pageData.url,
-          wcagCriterion: rule.wcagCriterion,
-          wcagName: rule.wcagName,
-          wcagLevel: rule.wcagLevel,
-          severity: rule.severity,
-          impact: getImpactDescription(rule.wcagCriterion, rule.severity),
-          recommendation: result.recommendation,
-          codeFix: result.codeFix,
-          category: rule.category,
-          source: 'custom-rule',
-          confidence: 'medium' as const
-        });
-      }
+      if (ruleResults.length === 0) continue;
+
+      // One grouped issue per rule — not one per element
+      const first = ruleResults[0];
+      const count = ruleResults.length;
+      const affectedElements = ruleResults
+        .filter(r => r.elementHtml)
+        .slice(0, 5)
+        .map(r => r.elementHtml!);
+
+      const instanceSuffix = count > 1 ? ` Affects ${count} elements on this page.` : '';
+
+      issues.push({
+        id: uuidv4(),
+        testId: rule.testId,
+        title: rule.title,
+        description: first.description + instanceSuffix,
+        element: first.element,
+        elementHtml: first.elementHtml,
+        affectedElements: affectedElements.length > 1 ? affectedElements : undefined,
+        pageUrl: pageData.url,
+        wcagCriterion: rule.wcagCriterion,
+        wcagName: rule.wcagName,
+        wcagLevel: rule.wcagLevel,
+        severity: rule.severity,
+        impact: getImpactDescription(rule.wcagCriterion, rule.severity),
+        recommendation: first.recommendation,
+        codeFix: first.codeFix,
+        category: rule.category,
+        source: 'custom-rule',
+        confidence: 'medium' as const,
+        occurrenceCount: count,
+        needsManualVerification: MANUAL_VERIFICATION_RULES.has(rule.testId),
+      });
     } catch (error) {
       console.error(`Custom rule ${rule.testId} failed:`, error);
     }
   }
 
-  onProgress?.(`Custom rules complete: ${issues.length} issues found.`);
+  const totalInstances = issues.reduce((sum, i) => sum + (i.occurrenceCount || 1), 0);
+  onProgress?.(`Custom rules complete: ${issues.length} unique violations (${totalInstances} total instances).`);
   return issues;
 }
 

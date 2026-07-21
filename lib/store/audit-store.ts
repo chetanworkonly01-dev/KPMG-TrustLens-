@@ -80,15 +80,17 @@ export function setAudit(id: string, audit: AuditResult): void {
 const pendingFlush = new Map<string, NodeJS.Timeout>();
 
 function flushToDisk(id: string, audit: AuditResult): void {
-  // For terminal states, flush immediately
-  if (audit.status === 'complete' || audit.status === 'error') {
+  // Write immediately for terminal states AND initial creation (pending).
+  // This ensures the file exists on disk before any HMR can wipe the memory cache,
+  // so runAuditPipeline can always recover the audit via storeGet even after a reload.
+  if (audit.status === 'complete' || audit.status === 'error' || audit.status === 'pending') {
     clearTimeout(pendingFlush.get(id));
     pendingFlush.delete(id);
     writeToDisk(id, audit);
     return;
   }
 
-  // For in-progress, debounce writes (max once per 2s)
+  // For scanning/crawling/analyzing states, debounce writes (max once per 2s) to reduce I/O
   if (pendingFlush.has(id)) return;
   pendingFlush.set(id, setTimeout(() => {
     pendingFlush.delete(id);

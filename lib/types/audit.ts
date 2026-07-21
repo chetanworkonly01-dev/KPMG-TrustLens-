@@ -1,7 +1,19 @@
-import type { AuditPillar, TrustScore, PillarResults, PillarConfig } from './trustscore';
+import type {
+  AuditPillar,
+  TrustScore,
+  PillarResults,
+  PillarConfig,
+} from "./trustscore";
 
-export type AuditType   = 'website' | 'portal' | 'pdf';
-export type AuditStatus = 'pending' | 'crawling' | 'scanning' | 'analyzing' | 'scoring' | 'complete' | 'error';
+export type AuditType = "website" | "portal" | "pdf";
+export type AuditStatus =
+  | "pending"
+  | "crawling"
+  | "scanning"
+  | "analyzing"
+  | "scoring"
+  | "complete"
+  | "error";
 
 export interface LoginConfig {
   loginUrl: string;
@@ -22,18 +34,18 @@ export interface AuditConfig {
   crawlDepth: number;
   maxPages: number;
   includeAI: boolean;
-  wcagLevels: ('A' | 'AA' | 'AAA')[];
+  wcagLevels: ("A" | "AA" | "AAA")[];
   standard?: string;
   enabledPillars?: AuditPillar[];
   pillarConfig?: Partial<PillarConfig>;
   // ── New scope fields from Director Mode UI ──
-  scopeMode?: 'general' | 'specific' | 'predefined' | 'director';
+  scopeMode?: "general" | "specific" | "predefined" | "director";
   specificUrls?: string[];
   selectedJourney?: string;
   journeySteps?: { id: string; label: string; url: string; action?: string }[];
   aiDirection?: string;
   // ── Performance Problem Context (client-reported issues) ──
-  performanceProblemContext?: import('./performance').PerformanceProblemContext;
+  performanceProblemContext?: import("./performance").PerformanceProblemContext;
 }
 
 export interface PageData {
@@ -73,7 +85,7 @@ export interface AuditResult {
   };
   // ── Audit integrity warning (amber banner trigger) ──
   auditIntegrity?: {
-    status: 'clean' | 'warning' | 'partial';
+    status: "clean" | "warning" | "partial";
     message?: string;
     failedPillars?: string[];
   };
@@ -81,20 +93,38 @@ export interface AuditResult {
   siteProfile?: string;
 }
 
-export type ConfidenceLevel = 'high' | 'medium' | 'low';
+export type ConfidenceLevel = "high" | "medium" | "low";
+
+// ── Per-entity Management Response block ──
+export interface ManagementResponseBlock {
+  /** Person or team accountable for the response */
+  owner?: string;
+  /** Target date / sprint for remediation */
+  target?: string;
+  /** Free-form management acknowledgement / narrative */
+  notes?: string;
+  /** Status of the response: accepts, disputes, or plans remediation */
+  status?: "accepted" | "disputed" | "planned" | "in-progress" | "resolved";
+}
 
 // ===== TEST-DRIVEN EXECUTION MODEL =====
 
-export type TestStatus = 'pending' | 'running' | 'pass' | 'fail' | 'error' | 'needs-review';
+export type TestStatus =
+  | "pending"
+  | "running"
+  | "pass"
+  | "fail"
+  | "error"
+  | "needs-review";
 
 export interface TestCase {
   testId: string;
   testName: string;
   wcagCriterion: string;
   wcagName: string;
-  wcagLevel: 'A' | 'AA' | 'AAA';
-  category: 'perceivable' | 'operable' | 'understandable' | 'robust';
-  severity: 'critical' | 'high' | 'medium' | 'low';
+  wcagLevel: "A" | "AA" | "AAA";
+  category: "perceivable" | "operable" | "understandable" | "robust";
+  severity: "critical" | "high" | "medium" | "low";
   description: string;
   browserInteraction: boolean;
 }
@@ -106,8 +136,8 @@ export interface TestResult {
   status: TestStatus;
   wcagCriterion: string;
   wcagName: string;
-  wcagLevel: 'A' | 'AA' | 'AAA';
-  severity: 'critical' | 'high' | 'medium' | 'low';
+  wcagLevel: "A" | "AA" | "AAA";
+  severity: "critical" | "high" | "medium" | "low";
   confidence: ConfidenceLevel;
   evidence: TestEvidence;
   issues: AccessibilityIssue[];
@@ -132,8 +162,8 @@ export interface TestLogEntry {
   message: string;
   pageUrl?: string;
   /** Which audit pillar this log entry belongs to */
-  pillar?: 'accessibility' | 'darkpatterns' | 'performance' | 'privacy';
-  /** The principle, standard or framework being applied (e.g. "Brignull Taxonomy", "GDPR Art. 7", "RAIL Model") */
+  pillar?: "accessibility" | "darkpatterns" | "performance" | "privacy";
+  /** The principle, standard or framework being applied (e.g. "CCPA Taxonomy", "GDPR Art. 7", "RAIL Model") */
   methodology?: string;
   /** The named phase within the engine (e.g. "Phase 1: DOM Scan", "Layer C: Consent Infrastructure") */
   phase?: string;
@@ -151,16 +181,28 @@ export interface AccessibilityIssue {
   pageUrl: string;
   wcagCriterion: string;
   wcagName: string;
-  wcagLevel: 'A' | 'AA' | 'AAA';
-  severity: 'critical' | 'high' | 'medium' | 'low';
+  wcagLevel: "A" | "AA" | "AAA";
+  severity: "critical" | "high" | "medium" | "low";
   impact: string;
   recommendation: string;
   codeFix?: string;
-  category: 'perceivable' | 'operable' | 'understandable' | 'robust' | 'pdf';
-  source: 'axe-core' | 'custom-rule' | 'pdf-analyzer' | 'ai-analysis' | 'journey-test' | 'test-runner';
+  category: "perceivable" | "operable" | "understandable" | "robust" | "pdf";
+  source:
+    | "axe-core"
+    | "custom-rule"
+    | "pdf-analyzer"
+    | "ai-analysis"
+    | "journey-test"
+    | "test-runner";
   confidence: ConfidenceLevel;
   occurrenceCount?: number;
   affectedPages?: string[];
+  /** HTML snippets of each affected element (first 5 max) */
+  affectedElements?: string[];
+  /** True for heuristic rules that require a human to confirm — not counted in auto-verified totals */
+  needsManualVerification?: boolean;
+  /** Optional management response / owner acknowledgement notes (per-issue) */
+  managementResponse?: ManagementResponseBlock;
 }
 
 export interface AuditScore {
@@ -172,11 +214,20 @@ export interface AuditScore {
     robust: number;
     pdf: number;
   };
-  complianceLevel: 'non-compliant' | 'partially-compliant' | 'aa-compliant' | 'aaa-compliant';
+  complianceLevel:
+    | "non-compliant"
+    | "partially-compliant"
+    | "aa-compliant"
+    | "aaa-compliant";
   totalIssues: number;
   uniqueIssues: number;
-  issueBySeverity: { critical: number; high: number; medium: number; low: number; };
-  issueByLevel: { A: number; AA: number; AAA: number; };
+  issueBySeverity: {
+    critical: number;
+    high: number;
+    medium: number;
+    low: number;
+  };
+  issueByLevel: { A: number; AA: number; AAA: number };
   journeyScore?: number;
   testsRun: number;
   testsPassed: number;
@@ -186,7 +237,7 @@ export interface AuditScore {
 // ===== CRAWL COVERAGE =====
 
 export interface CrawlCoverage {
-  totalPagesFound: number;    // all unique URLs discovered (before any cap/skip)
+  totalPagesFound: number; // all unique URLs discovered (before any cap/skip)
   pagesAudited: number;
   pagesSkipped: number;
   coveragePercent: number;
@@ -194,7 +245,10 @@ export interface CrawlCoverage {
   discoveryMethods: Record<string, number>;
 }
 
-export interface SkippedPage { url: string; reason: string; }
+export interface SkippedPage {
+  url: string;
+  reason: string;
+}
 
 // ===== GROUPED ISSUES =====
 
@@ -204,9 +258,9 @@ export interface GroupedIssue {
   testId: string;
   wcagCriterion: string;
   wcagName: string;
-  wcagLevel: 'A' | 'AA' | 'AAA';
-  severity: 'critical' | 'high' | 'medium' | 'low';
-  category: AccessibilityIssue['category'];
+  wcagLevel: "A" | "AA" | "AAA";
+  severity: "critical" | "high" | "medium" | "low";
+  category: AccessibilityIssue["category"];
   description: string;
   recommendation: string;
   codeFix?: string;
@@ -261,19 +315,19 @@ export interface AuditReport {
 export interface WcagMappingEntry {
   criterion: string;
   name: string;
-  level: 'A' | 'AA' | 'AAA';
+  level: "A" | "AA" | "AAA";
   issueCount: number;
   /** 'not-tested' = criterion was N/A for this content (e.g. no video → captions N/A) */
-  status: 'pass' | 'fail' | 'not-tested';
+  status: "pass" | "fail" | "not-tested";
 }
 
 export interface RemediationStep {
   priority: number;
-  severity: 'critical' | 'high' | 'medium' | 'low';
+  severity: "critical" | "high" | "medium" | "low";
   title: string;
   description: string;
   affectedPages: string[];
-  estimatedEffort: 'low' | 'medium' | 'high';
+  estimatedEffort: "low" | "medium" | "high";
   frequency: number;
 }
 
